@@ -156,6 +156,14 @@ class Comment(db.Model):
     # For API articles, we store the hash id directly
     api_article_hash_id = db.Column(db.String(32), nullable=True)
 
+# ==============================================================================
+# --- NEW CODE BLOCK TO ADD ---
+# This ensures the database and its tables are created when the app starts.
+# ==============================================================================
+with app.app_context():
+    db.create_all()
+    app.logger.info("Database tables checked and created if necessary.")
+
 # Function to create the database and tables if they don't exist
 def create_database():
     with app.app_context():
@@ -1228,16 +1236,9 @@ REGISTER_HTML_TEMPLATE = """
 {% endblock %}
 """
 
-# ==============================================================================
-# --- 8. Main Execution Block ---
+# --- 8. Main Execution Block (MODIFIED) ---
 # ==============================================================================
 if __name__ == '__main__':
-    # This block is executed when the script is run directly (e.g., `python Rev15.py`)
-    # It is not run when a production server like Gunicorn imports the `app` object.
-    
-    # Ensure the database is created before the first request
-    create_database()
-    
+    # The create_database() call is no longer needed here.
     # The app is run in debug mode for local development.
-    # Render/Gunicorn will set the host and port and disable debug mode.
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)), debug=True)
