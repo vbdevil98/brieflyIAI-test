@@ -581,6 +581,71 @@ def logout():
     flash("You have been logged out.", "info")
     return redirect(url_for('index'))
 
+# Add this code at the end of Section 6 (Flask Routes) in Rev15.py
+
+@app.errorhandler(404)
+def page_not_found(e):
+    app.logger.error(f"Page not found (404): {request.url} - {e}")
+    return render_template_string(
+        "{% extends 'BASE_HTML_TEMPLATE' %}{% block title %}404 Not Found{% endblock %}{% block content %}<div class='container text-center my-5'><h1><i class='fas fa-exclamation-triangle text-warning me-2'></i>404 - Page Not Found</h1><p>The page you are looking for does not exist.</p><a href='{{url_for(\"index\")}}' class='btn btn-primary'>Go to Homepage</a></div>{% endblock %}"
+    ), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    app.logger.error(f"Internal server error (500): {request.url} - {e}", exc_info=True)
+    return render_template_string(
+        "{% extends 'BASE_HTML_TEMPLATE' %}{% block title %}500 Server Error{% endblock %}{% block content %}<div class='container text-center my-5'><h1><i class='fas fa-cogs text-danger me-2'></i>500 - Internal Server Error</h1><p>Something went wrong on our end. We're looking into it.</p><a href='{{url_for(\"index\")}}' class='btn btn-primary'>Go to Homepage</a></div>{% endblock %}"
+    ), 500
+
+# Add this code to Section 6 (Flask Routes) as well
+
+@app.route('/search')
+def search_results():
+    query_str = request.args.get('query', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = app.config['PER_PAGE']
+    
+    if not query_str:
+        flash("Please enter a search term.", "warning")
+        return redirect(url_for('index'))
+
+    app.logger.info(f"Search request: Query='{query_str}', Page={page}")
+    
+    # Search community articles from the database
+    community_results = CommunityArticle.query.filter(
+        CommunityArticle.title.contains(query_str) | CommunityArticle.description.contains(query_str) | CommunityArticle.full_text.contains(query_str)
+    ).all()
+    
+    # Search API articles (simple search in cached titles/descriptions)
+    api_results = []
+    if MASTER_ARTICLE_STORE:
+        for art_id, art_data in MASTER_ARTICLE_STORE.items():
+            if query_str.lower() in art_data.get('title', '').lower() or \
+               query_str.lower() in art_data.get('description', '').lower():
+                api_results.append(art_data)
+                
+    # Combine, deduplicate, and sort results
+    # A simple way to combine is to treat them differently or standardize them.
+    # For now, we will just pass them to a template that can handle both.
+    # Note: A real-world app might use a dedicated search engine like WhooshAlchemy or Elasticsearch.
+    
+    # This is a simplified combination. We'll show community results first.
+    all_results = community_results + api_results
+    total_articles = len(all_results)
+    
+    start_index = (page - 1) * per_page
+    end_index = start_index + per_page
+    paginated_results = all_results[start_index:end_index]
+    total_pages = (total_articles + per_page - 1) // per_page
+
+    return render_template_string(
+        INDEX_HTML_TEMPLATE,
+        articles=paginated_results,
+        selected_category=f"Search: {query_str}",
+        current_page=page,
+        total_pages=total_pages
+    )
+
 # ... (previous code from Rev15.py) ...
 
 # ==============================================================================
