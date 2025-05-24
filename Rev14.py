@@ -7,7 +7,6 @@ import json
 import hashlib
 import time
 import logging
-import threading
 import urllib.parse
 from datetime import datetime, timedelta
 from functools import wraps
@@ -18,6 +17,7 @@ import requests
 from flask import (Flask, render_template_string, render_template, url_for,
                    redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
+from jinja2 import DictLoader # <-- Re-importing the correct loader
 from newsapi import NewsApiClient
 from newsapi.newsapi_exception import NewsAPIException
 from newspaper import Article, Config
@@ -33,25 +33,18 @@ load_dotenv()
 # ==============================================================================
 # --- 1. NLTK 'punkt' Tokenizer Setup (Robust Version) ---
 # ==============================================================================
-# This setup ensures the NLTK data is bundled with your repository,
-# making deployments on services like Render reliable.
 try:
     project_root = os.path.dirname(os.path.abspath(__file__))
     local_nltk_data_path = os.path.join(project_root, 'nltk_data')
-
     if local_nltk_data_path not in nltk.data.path:
         nltk.data.path.insert(0, local_nltk_data_path)
-
-    # This line will raise a LookupError if 'punkt' is not found in our local path
     nltk.data.find('tokenizers/punkt', paths=[local_nltk_data_path])
     print("NLTK 'punkt' tokenizer found in project's local nltk_data directory.", file=sys.stderr)
-
 except LookupError:
     print("FATAL: NLTK 'punkt' tokenizer not found.", file=sys.stderr)
     print("Please download it to your local project by running this command:", file=sys.stderr)
     print("python -m nltk.downloader punkt -d ./nltk_data", file=sys.stderr)
     print("Then, commit the 'nltk_data' folder to your GitHub repository.", file=sys.stderr)
-    # The application cannot function without this, so we exit.
     sys.exit("Exiting: Missing critical NLTK data.")
 
 
@@ -59,35 +52,29 @@ except LookupError:
 # --- 2. Flask Application Initialization & Configuration ---
 # ==============================================================================
 app = Flask(__name__)
+
+# --- FIX: Restoring the original DictLoader for templates ---
+template_storage = {}
+app.jinja_loader = DictLoader(template_storage)
+# --- End of Fix ---
+
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'a-strong-dev-secret-key')
-
-# --- General App Configuration ---
 app.config['PER_PAGE'] = 10
-## CHANGE 4: Renamed 'My Articles' to 'Community Hub' for a shared space.
 app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
-
-## CHANGE 1: Improved News API query for more trending and specific topics.
 app.config['NEWS_API_QUERY'] = (
     '("latest tech trends" OR "AI breakthroughs" OR "market analysis" OR "business innovation") '
     'AND NOT (celebrity OR gossip OR sports)'
 )
-app.config['NEWS_API_DAYS_AGO'] = 7  # Look at the last 7 days for recent trends
+app.config['NEWS_API_DAYS_AGO'] = 7
 app.config['NEWS_API_PAGE_SIZE'] = 100
-app.config['NEWS_API_SORT_BY'] = 'popularity' # 'popularity' for trending, 'publishedAt' for newest
-
+app.config['NEWS_API_SORT_BY'] = 'popularity'
 app.config['SUMMARY_SENTENCES'] = 3
-app.config['CACHE_EXPIRY_SECONDS'] = 3600 # Cache for 1 hour
+app.config['CACHE_EXPIRY_SECONDS'] = 3600
 app.config['READING_SPEED_WPM'] = 230
 app.permanent_session_lifetime = timedelta(days=30)
-
-# --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app.logger.info("Flask App Configuration Loaded.")
 
-# --- Database Configuration (for Users, Articles, Comments) ---
-## CHANGE 3 & 2: Using SQLite for persistent storage of users, articles, and comments.
-# This replaces the in-memory dictionaries.
-db_path = os.path.join(project_root, 'app_data.db')
+db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'app_data.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -95,22 +82,16 @@ db = SQLAlchemy(app)
 # ==============================================================================
 # --- 3. API Client Initialization (NewsAPI, Groq) ---
 # ==============================================================================
-# --- NewsAPI Client ---
 NEWSAPI_KEY = os.environ.get('NEWSAPI_KEY')
 newsapi = NewsApiClient(api_key=NEWSAPI_KEY) if NEWSAPI_KEY else None
 if not newsapi:
     app.logger.error("CRITICAL: NEWSAPI_KEY is missing. News fetching will fail.")
 
-# --- Groq Client (via LangChain) ---
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 groq_client = None
 if GROQ_API_KEY:
     try:
-        groq_client = ChatGroq(
-            model="llama3-8b-8192",
-            groq_api_key=GROQ_API_KEY,
-            temperature=0.1
-        )
+        groq_client = ChatGroq(model="llama3-8b-8192", groq_api_key=GROQ_API_KEY, temperature=0.1)
         app.logger.info("Groq Chat client initialized successfully.")
     except Exception as e:
         app.logger.error(f"Failed to initialize Groq client: {e}")
@@ -120,7 +101,6 @@ else:
 # ==============================================================================
 # --- 4. Database Models (Users, Community Articles, Comments) ---
 # ==============================================================================
-## CHANGE 3 & 2: Database models for persistent data.
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -131,7 +111,6 @@ class User(db.Model):
 
 class CommunityArticle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    # A unique hash ID for use in URLs, similar to the old system
     article_hash_id = db.Column(db.String(32), unique=True, nullable=False)
     title = db.Column(db.String(250), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -140,55 +119,37 @@ class CommunityArticle(db.Model):
     image_url = db.Column(db.String(500), nullable=True)
     published_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    # Store AI analysis directly in the article table
     groq_summary = db.Column(db.Text, nullable=True)
-    groq_takeaways = db.Column(db.Text, nullable=True) # Stored as JSON string
+    groq_takeaways = db.Column(db.Text, nullable=True)
     comments = db.relationship('Comment', backref='article', lazy=True, cascade="all, delete-orphan")
-
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    # The article_id here will be the hash_id of the API article or DB ID of community article
     article_id_str = db.Column(db.String(32), db.ForeignKey('community_article.article_hash_id'), nullable=True)
-    # For API articles, we store the hash id directly
     api_article_hash_id = db.Column(db.String(32), nullable=True)
 
-# ==============================================================================
-# --- NEW CODE BLOCK TO ADD ---
-# This ensures the database and its tables are created when the app starts.
-# ==============================================================================
 with app.app_context():
     db.create_all()
     app.logger.info("Database tables checked and created if necessary.")
 
-# Function to create the database and tables if they don't exist
-def create_database():
-    with app.app_context():
-        app.logger.info("Checking and creating database tables if needed...")
-        db.create_all()
-        app.logger.info("Database tables are ready.")
-
 # ==============================================================================
 # --- 5. Global Stores & Helper Functions ---
 # ==============================================================================
-# These stores are now for caching API data, not for primary persistence.
-MASTER_ARTICLE_STORE = {} # Caches API articles to avoid re-fetching
-API_CACHE = {}            # Caches function results (like Groq analysis)
+MASTER_ARTICLE_STORE = {}
+API_CACHE = {}
 
 def generate_article_id(url_or_title):
     return hashlib.md5(url_or_title.encode('utf-8')).hexdigest()
 
-# Jinja filter for truncating text
 def jinja_truncate_filter(s, length=120):
     if not s or len(s) <= length:
         return s
     return s[:length-3] + '...'
 app.jinja_env.filters['truncate'] = jinja_truncate_filter
 
-# Caching decorator
 def simple_cache(expiry_seconds_default=None):
     def decorator(func):
         @wraps(func)
@@ -196,20 +157,15 @@ def simple_cache(expiry_seconds_default=None):
             expiry = expiry_seconds_default or app.config['CACHE_EXPIRY_SECONDS']
             key_parts = [func.__name__] + list(args) + sorted(kwargs.items())
             cache_key = hashlib.md5(str(key_parts).encode('utf-8')).hexdigest()
-
             cached_entry = API_CACHE.get(cache_key)
             if cached_entry and (time.time() - cached_entry[1] < expiry):
-                app.logger.debug(f"Cache HIT for {func.__name__}")
                 return cached_entry[0]
-
-            app.logger.debug(f"Cache MISS for {func.__name__}. Calling function.")
             result = func(*args, **kwargs)
             API_CACHE[cache_key] = (result, time.time())
             return result
         return wrapper
     return decorator
 
-# Login required decorator
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -219,21 +175,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-
 def calculate_read_time(text):
     if not text or not isinstance(text, str): return 0
     num_words = len(text.split())
     return max(1, round(num_words / app.config['READING_SPEED_WPM']))
 
-
-@simple_cache(expiry_seconds_default=3600 * 12) # Cache Groq analysis for 12 hours
+@simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
     if not groq_client or not article_text:
         return {"error": "Groq client not available or no text provided."}
-
     app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
-    truncated_text = article_text[:20000] # Safety limit
-
+    truncated_text = article_text[:20000]
     system_prompt = (
         "You are an expert news analyst. Analyze the following article. "
         "1. Provide a concise, neutral summary (3-4 paragraphs). "
@@ -241,133 +193,83 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings)."
     )
     human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{truncated_text}"
-
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
         ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
         analysis = json.loads(ai_response.content)
-
         if 'summary' in analysis and 'takeaways' in analysis:
-            return {
-                "groq_summary": analysis.get("summary", "Summary not generated."),
-                "groq_takeaways": analysis.get("takeaways", ["Takeaways not generated."]),
-                "error": None
-            }
+            return { "groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None }
         raise ValueError("Missing 'summary' or 'takeaways' key in Groq JSON.")
-
     except (json.JSONDecodeError, ValueError, LangChainException) as e:
         app.logger.error(f"Groq analysis failed for '{article_title[:50]}': {e}")
         return {"error": f"AI analysis failed: {e}"}
 
-
 @simple_cache()
 def fetch_news_from_api():
-    if not newsapi:
-        return []
-
+    if not newsapi: return []
     from_date = (datetime.utcnow() - timedelta(days=app.config['NEWS_API_DAYS_AGO'])).strftime('%Y-%m-%d')
-    query = app.config['NEWS_API_QUERY']
-    sort_by = app.config['NEWS_API_SORT_BY']
-    page_size = app.config['NEWS_API_PAGE_SIZE']
-
     try:
-        app.logger.info(f"Fetching news from NewsAPI. Query: '{query}', SortBy: {sort_by}")
+        app.logger.info(f"Fetching news from NewsAPI.")
         response = newsapi.get_everything(
-            q=query,
-            from_param=from_date,
-            language='en',
-            sort_by=sort_by,
-            page_size=page_size
+            q=app.config['NEWS_API_QUERY'], from_param=from_date, language='en',
+            sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
         )
-        raw_articles = response.get('articles', [])
-        processed_articles = []
-        unique_titles = set()
-
-        for art_data in raw_articles:
-            title = art_data.get('title')
-            url = art_data.get('url')
+        processed_articles, unique_titles = [], set()
+        for art_data in response.get('articles', []):
+            title, url = art_data.get('title'), art_data.get('url')
             if not all([url, title, art_data.get('source')]) or title == '[Removed]' or title.lower() in unique_titles:
                 continue
-
             unique_titles.add(title.lower())
             article_id = generate_article_id(url)
             source_name = art_data['source'].get('name', 'Unknown Source')
             placeholder_text = urllib.parse.quote_plus(source_name[:20])
-
             standardized_article = {
-                'id': article_id,
-                'title': title,
-                'description': art_data.get('description', ''),
-                'url': url,
-                'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-                'publishedAt': art_data.get('publishedAt', ''),
-                'source': {'name': source_name},
-                'is_user_added': False
+                'id': article_id, 'title': title, 'description': art_data.get('description', ''),
+                'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
+                'publishedAt': art_data.get('publishedAt', ''), 'source': {'name': source_name}, 'is_user_added': False
             }
             MASTER_ARTICLE_STORE[article_id] = standardized_article
             processed_articles.append(standardized_article)
-
-        app.logger.info(f"Fetched and processed {len(processed_articles)} unique articles from NewsAPI.")
         return processed_articles
-
     except NewsAPIException as e:
         app.logger.error(f"NewsAPI error: {e}")
         return []
 
-
-@simple_cache(expiry_seconds_default=3600 * 6) # Cache scraped content for 6 hours
+@simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_id, url):
     app.logger.info(f"Fetching content for article ID: {article_id}")
     SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
     if not SCRAPER_API_KEY:
-        app.logger.error("ScraperAPI key not configured.")
         return {"error": "ScraperAPI key not configured."}
-
     params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
         response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
         response.raise_for_status()
-
         config = Config()
         config.fetch_images = False
         config.memoize_articles = False
         article_scraper = Article(url, config=config)
         article_scraper.download(input_html=response.text)
         article_scraper.parse()
-
         if not article_scraper.text:
             return {"error": "Newspaper3k could not extract text."}
-        
-        # Once we have the text, we get the AI analysis
         groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_scraper.title)
-
         return {
             "full_text": article_scraper.text,
             "read_time_minutes": calculate_read_time(article_scraper.text),
-            "groq_analysis": groq_analysis,
-            "error": groq_analysis.get("error")
+            "groq_analysis": groq_analysis, "error": groq_analysis.get("error")
         }
-
     except requests.RequestException as e:
-        app.logger.error(f"Error calling ScraperAPI for {url}: {e}")
         return {"error": f"Failed to fetch article content: {e}"}
     except Exception as e:
-        app.logger.error(f"Error parsing article {url}: {e}", exc_info=True)
         return {"error": f"Failed to parse article content: {e}"}
-
 
 # ==============================================================================
 # --- 6. Flask Routes ---
 # ==============================================================================
-
 @app.context_processor
 def inject_global_vars():
-    """Injects variables into all templates."""
-    return {
-        'categories': app.config['CATEGORIES'],
-        'current_year': datetime.utcnow().year,
-        'session': session
-    }
+    return { 'categories': app.config['CATEGORIES'], 'current_year': datetime.utcnow().year, 'session': session }
 
 @app.route('/')
 @app.route('/page/<int:page>')
@@ -375,42 +277,27 @@ def inject_global_vars():
 @app.route('/category/<category_name>/page/<int:page>')
 def index(page=1, category_name='All Articles'):
     per_page = app.config['PER_PAGE']
-    display_articles = []
-    total_articles = 0
-
     if category_name == 'Community Hub':
-        ## CHANGE 4: Logic to show all community articles, not just user-specific ones.
         query = CommunityArticle.query.order_by(CommunityArticle.published_at.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        display_articles = pagination.items
-        total_pages = pagination.pages
-
-    else: # 'All Articles'
+        display_articles, total_pages = pagination.items, pagination.pages
+    else:
         all_api_articles = fetch_news_from_api()
         total_articles = len(all_api_articles)
         start_index = (page - 1) * per_page
-        end_index = start_index + per_page
-        display_articles = all_api_articles[start_index:end_index]
+        display_articles = all_api_articles[start_index:start_index + per_page]
         total_pages = (total_articles + per_page - 1) // per_page
-    
     if page > total_pages and total_pages > 0:
         return redirect(url_for('index', category_name=category_name, page=total_pages))
-
-    return render_template_string(
-        INDEX_HTML_TEMPLATE,
-        articles=display_articles,
-        selected_category=category_name,
-        current_page=page,
-        total_pages=total_pages
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template(
+        "INDEX_HTML_TEMPLATE", articles=display_articles,
+        selected_category=category_name, current_page=page, total_pages=total_pages
     )
 
 @app.route('/article/<article_id>')
 def article_detail(article_id):
-    # Determine if it's a community article (numeric ID) or API article (hash)
     is_community_article = article_id.isdigit()
-    article_data = None
-    comments = []
-
     if is_community_article:
         article_data = CommunityArticle.query.get_or_404(int(article_id))
         comments = Comment.query.filter_by(article_id_str=article_data.article_hash_id).order_by(Comment.timestamp.asc()).all()
@@ -420,242 +307,122 @@ def article_detail(article_id):
             flash("Article not found.", "danger")
             return redirect(url_for('index'))
         comments = Comment.query.filter_by(api_article_hash_id=article_id).order_by(Comment.timestamp.asc()).all()
-
-    return render_template_string(
-        ARTICLE_HTML_TEMPLATE,
-        article=article_data,
-        is_community_article=is_community_article,
-        comments=comments
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template(
+        "ARTICLE_HTML_TEMPLATE", article=article_data,
+        is_community_article=is_community_article, comments=comments
     )
-
 
 @app.route('/get_article_content/<article_id>')
 def get_article_content_json(article_id):
     article_data = MASTER_ARTICLE_STORE.get(article_id)
     if not article_data:
         return jsonify({"error": "Article not found"}), 404
-
-    # This function now always triggers the scrape-and-analyze process for API articles
     processed_content = fetch_and_parse_article_content(article_id, article_data.get('url'))
-
-    # Update master store with the new, detailed data
     MASTER_ARTICLE_STORE[article_id].update(processed_content)
-    
     return jsonify(processed_content)
-
 
 @app.route('/add_comment/<article_id>', methods=['POST'])
 @login_required
 def add_comment(article_id):
-    ## CHANGE 2: New route to handle comment submissions.
-    data = request.json
-    content = data.get('content', '').strip()
-
+    content = request.json.get('content', '').strip()
     if not content:
         return jsonify({"error": "Comment cannot be empty."}), 400
-
     user = User.query.get(session['user_id'])
-    if not user:
-        return jsonify({"error": "User not found."}), 401
-
+    if not user: return jsonify({"error": "User not found."}), 401
     is_community_article = article_id.isdigit()
-    
     new_comment = Comment(
-        content=content,
-        user_id=user.id,
+        content=content, user_id=user.id,
         api_article_hash_id=None if is_community_article else article_id,
         article_id_str=CommunityArticle.query.get(int(article_id)).article_hash_id if is_community_article else None
     )
-
     db.session.add(new_comment)
     db.session.commit()
-    
     app.logger.info(f"User '{user.username}' added comment to article '{article_id}'")
-
     return jsonify({
-        "success": True,
-        "comment": {
-            "content": new_comment.content,
-            "timestamp": new_comment.timestamp.isoformat(),
+        "success": True, "comment": {
+            "content": new_comment.content, "timestamp": new_comment.timestamp.isoformat(),
             "author": {"name": user.name}
         }
     }), 201
 
-
 @app.route('/post_article', methods=['GET', 'POST'])
 @login_required
 def post_article():
-    ## CHANGE 4: A dedicated page for posting articles.
     if request.method == 'POST':
-        title = request.form.get('title')
-        description = request.form.get('description')
-        content = request.form.get('content')
-        source = request.form.get('sourceName')
-        image_url = request.form.get('imageUrl')
-
+        title, description, content, source, image_url = (request.form.get('title'), request.form.get('description'), request.form.get('content'), request.form.get('sourceName'), request.form.get('imageUrl'))
         if not all([title, description, content, source]):
             flash("All fields except Image URL are required.", "danger")
             return redirect(url_for('post_article'))
-            
-        # Generate a unique hash for the article
         unique_identifier = title + str(session['user_id']) + str(time.time())
         article_hash = generate_article_id(unique_identifier)
-        
-        # Pre-emptively run Groq analysis
         groq_analysis = get_article_analysis_with_groq(content, title)
-        
         new_article = CommunityArticle(
-            article_hash_id=article_hash,
-            title=title,
-            description=description,
-            full_text=content,
-            source_name=source,
-            image_url=image_url,
-            user_id=session['user_id'],
+            article_hash_id=article_hash, title=title, description=description, full_text=content,
+            source_name=source, image_url=image_url, user_id=session['user_id'],
             groq_summary=groq_analysis.get('groq_summary'),
             groq_takeaways=json.dumps(groq_analysis.get('takeaways')) if groq_analysis.get('takeaways') else None
         )
-        
         db.session.add(new_article)
         db.session.commit()
-        
         flash("Your article has been posted successfully!", "success")
         return redirect(url_for('index', category_name='Community Hub'))
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template("POST_ARTICLE_TEMPLATE")
 
-    return render_template_string(POST_ARTICLE_TEMPLATE)
-
-
-# --- Authentication Routes ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if 'user_id' in session:
-        return redirect(url_for('index'))
+    if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
-        name = request.form.get('name')
-        username = request.form.get('username')
-        password = request.form.get('password')
-
+        name, username, password = request.form.get('name'), request.form.get('username'), request.form.get('password')
         if not all([name, username, password]):
             flash('All fields are required.', 'danger')
             return redirect(url_for('register'))
-        
         if User.query.filter_by(username=username).first():
             flash('Username already exists.', 'warning')
             return redirect(url_for('register'))
-            
-        new_user = User(
-            name=name,
-            username=username,
-            password_hash=generate_password_hash(password)
-        )
+        new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
         db.session.add(new_user)
         db.session.commit()
-        
         app.logger.info(f"New user registered: {username}")
         flash(f'Registration successful, {name}! Please log in.', 'success')
         return redirect(url_for('login'))
-
-    return render_template_string(REGISTER_HTML_TEMPLATE)
-
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template("REGISTER_HTML_TEMPLATE")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if 'user_id' in session:
-        return redirect(url_for('index'))
+    if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username, password = request.form.get('username'), request.form.get('password')
         user = User.query.filter_by(username=username).first()
-
         if user and check_password_hash(user.password_hash, password):
             session.permanent = True
-            session['user_id'] = user.id
-            session['user_name'] = user.name
+            session['user_id'], session['user_name'] = user.id, user.name
             app.logger.info(f"User '{username}' logged in successfully.")
             flash(f"Welcome back, {user.name}!", "success")
-            next_url = request.args.get('next')
-            return redirect(next_url or url_for('index'))
+            return redirect(request.args.get('next') or url_for('index'))
         else:
             flash('Invalid username or password.', 'danger')
-            
-    return render_template_string(LOGIN_HTML_TEMPLATE)
-
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
 def logout():
-    user_name = session.get('user_name', 'User')
     session.clear()
-    app.logger.info(f"User '{user_name}' logged out.")
     flash("You have been logged out.", "info")
     return redirect(url_for('index'))
 
-# Add this code at the end of Section 6 (Flask Routes) in Rev15.py
-
 @app.errorhandler(404)
 def page_not_found(e):
-    app.logger.error(f"Page not found (404): {request.url} - {e}")
-    return render_template_string(
-        "{% extends 'BASE_HTML_TEMPLATE' %}{% block title %}404 Not Found{% endblock %}{% block content %}<div class='container text-center my-5'><h1><i class='fas fa-exclamation-triangle text-warning me-2'></i>404 - Page Not Found</h1><p>The page you are looking for does not exist.</p><a href='{{url_for(\"index\")}}' class='btn btn-primary'>Go to Homepage</a></div>{% endblock %}"
-    ), 404
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template("404_TEMPLATE"), 404
 
 @app.errorhandler(500)
 def internal_server_error(e):
     app.logger.error(f"Internal server error (500): {request.url} - {e}", exc_info=True)
-    return render_template_string(
-        "{% extends 'BASE_HTML_TEMPLATE' %}{% block title %}500 Server Error{% endblock %}{% block content %}<div class='container text-center my-5'><h1><i class='fas fa-cogs text-danger me-2'></i>500 - Internal Server Error</h1><p>Something went wrong on our end. We're looking into it.</p><a href='{{url_for(\"index\")}}' class='btn btn-primary'>Go to Homepage</a></div>{% endblock %}"
-    ), 500
-
-# Add this code to Section 6 (Flask Routes) as well
-
-@app.route('/search')
-def search_results():
-    query_str = request.args.get('query', '').strip()
-    page = request.args.get('page', 1, type=int)
-    per_page = app.config['PER_PAGE']
-    
-    if not query_str:
-        flash("Please enter a search term.", "warning")
-        return redirect(url_for('index'))
-
-    app.logger.info(f"Search request: Query='{query_str}', Page={page}")
-    
-    # Search community articles from the database
-    community_results = CommunityArticle.query.filter(
-        CommunityArticle.title.contains(query_str) | CommunityArticle.description.contains(query_str) | CommunityArticle.full_text.contains(query_str)
-    ).all()
-    
-    # Search API articles (simple search in cached titles/descriptions)
-    api_results = []
-    if MASTER_ARTICLE_STORE:
-        for art_id, art_data in MASTER_ARTICLE_STORE.items():
-            if query_str.lower() in art_data.get('title', '').lower() or \
-               query_str.lower() in art_data.get('description', '').lower():
-                api_results.append(art_data)
-                
-    # Combine, deduplicate, and sort results
-    # A simple way to combine is to treat them differently or standardize them.
-    # For now, we will just pass them to a template that can handle both.
-    # Note: A real-world app might use a dedicated search engine like WhooshAlchemy or Elasticsearch.
-    
-    # This is a simplified combination. We'll show community results first.
-    all_results = community_results + api_results
-    total_articles = len(all_results)
-    
-    start_index = (page - 1) * per_page
-    end_index = start_index + per_page
-    paginated_results = all_results[start_index:end_index]
-    total_pages = (total_articles + per_page - 1) // per_page
-
-    return render_template_string(
-        INDEX_HTML_TEMPLATE,
-        articles=paginated_results,
-        selected_category=f"Search: {query_str}",
-        current_page=page,
-        total_pages=total_pages
-    )
-
-# ... (previous code from Rev15.py) ...
-
+    # --- FIX: Using render_template instead of render_template_string ---
+    return render_template("500_TEMPLATE"), 500
 # ==============================================================================
 # --- 7. HTML Templates ---
 # ==============================================================================
@@ -1236,9 +1003,31 @@ REGISTER_HTML_TEMPLATE = """
 {% endblock %}
 """
 
-# --- 8. Main Execution Block (MODIFIED) ---
+ERROR_404_TEMPLATE = """
+{% extends "BASE_HTML_TEMPLATE" %}
+{% block title %}404 Not Found{% endblock %}
+{% block content %}<div class='container text-center my-5'><h1><i class='fas fa-exclamation-triangle text-warning me-2'></i>404 - Page Not Found</h1><p>The page you are looking for does not exist.</p><a href='{{url_for("index")}}' class='btn btn-primary'>Go to Homepage</a></div>{% endblock %}
+"""
+ERROR_500_TEMPLATE = """
+{% extends "BASE_HTML_TEMPLATE" %}
+{% block title %}500 Server Error{% endblock %}
+{% block content %}<div class='container text-center my-5'><h1><i class='fas fa-cogs text-danger me-2'></i>500 - Internal Server Error</h1><p>Something went wrong on our end. We're looking into it.</p><a href='{{url_for("index")}}' class='btn btn-primary'>Go to Homepage</a></div>{% endblock %}
+"""
+
+# ==============================================================================
+# --- FIX: Add all templates to the template_storage dictionary ---
+# ==============================================================================
+template_storage['BASE_HTML_TEMPLATE'] = BASE_HTML_TEMPLATE
+template_storage['INDEX_HTML_TEMPLATE'] = INDEX_HTML_TEMPLATE
+template_storage['ARTICLE_HTML_TEMPLATE'] = ARTICLE_HTML_TEMPLATE
+template_storage['POST_ARTICLE_TEMPLATE'] = POST_ARTICLE_TEMPLATE
+template_storage['LOGIN_HTML_TEMPLATE'] = LOGIN_HTML_TEMPLATE
+template_storage['REGISTER_HTML_TEMPLATE'] = REGISTER_HTML_TEMPLATE
+template_storage['404_TEMPLATE'] = ERROR_404_TEMPLATE
+template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
+
+# ==============================================================================
+# --- 8. Main Execution Block ---
 # ==============================================================================
 if __name__ == '__main__':
-    # The create_database() call is no longer needed here.
-    # The app is run in debug mode for local development.
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)), debug=True)
