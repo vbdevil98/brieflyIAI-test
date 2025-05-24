@@ -8,15 +8,48 @@
 # This Jupyter magic command suppresses output from NLTK download.
 # If not in Jupyter, remove this line.
 import nltk
-try:
-    nltk.data.find('tokenizers/punkt')
-    print("NLTK 'punkt' tokenizer already downloaded.")
-except LookupError:
-    print("NLTK 'punkt' tokenizer not found. Downloading...")
-    nltk.download('punkt', quiet=True)
-    print("NLTK 'punkt' tokenizer downloaded.")
-
 import os
+import sys # For print statements to stderr for logging on Render
+
+# --- Robust NLTK 'punkt' Tokenizer Setup ---
+# Define the path to the local NLTK data directory within your project
+# __file__ gives the path of the currently running script (Rev14.py)
+# os.path.dirname(__file__) gives the directory where Rev14.py is located (your project root)
+project_root = os.path.dirname(os.path.abspath(__file__))
+local_nltk_data_path = os.path.join(project_root, 'nltk_data')
+
+# Add this path to NLTK's data path list
+# This ensures NLTK looks for data in ./nltk_data first
+if local_nltk_data_path not in nltk.data.path:
+    nltk.data.path.insert(0, local_nltk_data_path) # Insert at the beginning to prioritize
+
+# Check if 'punkt' is available in the specified path
+try:
+    nltk.data.find('tokenizers/punkt', paths=[local_nltk_data_path])
+    print(f"NLTK 'punkt' tokenizer found in project's nltk_data directory: {local_nltk_data_path}", file=sys.stderr)
+except LookupError:
+    print(f"NLTK 'punkt' tokenizer NOT FOUND in {local_nltk_data_path}.", file=sys.stderr)
+    print("IMPORTANT: Please ensure you have the 'punkt' tokenizer data in the 'nltk_data' directory in your project root.", file=sys.stderr)
+    print("You can download it by running the following command in your project's root directory:", file=sys.stderr)
+    print("python -m nltk.downloader punkt -d ./nltk_data", file=sys.stderr)
+    print("Then, commit the 'nltk_data' folder (especially nltk_data/tokenizers/punkt) to your repository.", file=sys.stderr)
+    # As a fallback for local development, try downloading if not found,
+    # but this is not recommended for server environments like Render if it fails.
+    # The bundled data is the robust solution.
+    print(f"Attempting to download 'punkt' to {local_nltk_data_path} as a fallback (may not work on Render if dir not writable/persisted)...", file=sys.stderr)
+    try:
+        if not os.path.exists(local_nltk_data_path):
+            os.makedirs(local_nltk_data_path, exist_ok=True)
+        nltk.download('punkt', download_dir=local_nltk_data_path, quiet=False)
+        nltk.data.find('tokenizers/punkt', paths=[local_nltk_data_path]) # Verify
+        print(f"NLTK 'punkt' tokenizer was downloaded to {local_nltk_data_path}. Please commit this directory.", file=sys.stderr)
+    except Exception as e:
+        print(f"ERROR: Failed to download 'punkt' to {local_nltk_data_path}: {e}", file=sys.stderr)
+        print("Please ensure the 'nltk_data/tokenizers/punkt' directory and its contents are committed to your repository.", file=sys.stderr)
+        # Optionally, re-raise or exit if 'punkt' is critical and download fails
+        # raise RuntimeError("NLTK 'punkt' tokenizer is missing and download failed. Application cannot start.")
+
+# Continue with other imports
 import socket
 import hashlib
 import time
@@ -33,7 +66,7 @@ from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash # For login
 import groq # For Groq API
 
-print("Cell 1: Imports executed.")
+print("Cell 1: Imports and NLTK setup executed.", file=sys.stderr)
 
 
 # In[2]:
@@ -90,7 +123,7 @@ else:
     app.logger.error(
         "NEWSAPI_KEY is missing from .env file. News fetching will fail."
     )
-    print("WARNING: NEWSAPI_KEY is missing. News fetching will fail.")
+    print("WARNING: NEWSAPI_KEY is missing. News fetching will fail.", file=sys.stderr)
 
 # Groq API Configuration using LangChain
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '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') # Replace with your key if needed
@@ -106,15 +139,15 @@ if GROQ_API_KEY:
     except Exception as e:
         groq_client = None
         app.logger.error(f"Failed to initialize Groq client via LangChain: {e}")
-        print(f"WARNING: Failed to initialize Groq client via LangChain: {e}")
+        print(f"WARNING: Failed to initialize Groq client via LangChain: {e}", file=sys.stderr)
 else:
     groq_client = None
     app.logger.warning(
         "GROQ_API_KEY is missing from .env file. Advanced article processing will be disabled."
     )
-    print("WARNING: GROQ_API_KEY is missing. Advanced article processing will be disabled.")
+    print("WARNING: GROQ_API_KEY is missing. Advanced article processing will be disabled.", file=sys.stderr)
 
-print("Cell 2: Initial setup and configuration complete. Jinja DictLoader configured.")
+print("Cell 2: Initial setup and configuration complete. Jinja DictLoader configured.", file=sys.stderr)
 
 
 # In[3]:
@@ -136,23 +169,16 @@ from werkzeug.security import generate_password_hash
 
 from newsapi.newsapi_client import NewsAPIException # Specific exception for NewsAPI
 from newspaper import Article, Config
-import nltk # For NLP tasks like sentence tokenization (used in summary fallback)
+# NLTK is already imported in Cell 1
+# from nltk.tokenize import sent_tokenize # No, NLTK should be available globally
 
 # LangChain specific imports
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.exceptions import LangChainException
 
 
-# --- NLTK Data Check ---
-try:
-    nltk.data.find('tokenizers/punkt')
-except nltk.downloader.DownloadError:
-    app.logger.info("NLTK 'punkt' tokenizer not found. Downloading...")
-    nltk.download('punkt', quiet=True)
-    app.logger.info("'punkt' tokenizer downloaded.")
-except Exception as e:
-    app.logger.error(f"Error during NLTK 'punkt' check/download: {e}. Some NLP features might fail.")
-
+# --- NLTK Data Check (REMOVED as it's handled in Cell 1 more robustly) ---
+# The setup in Cell 1 should ensure 'punkt' is found or provide clear instructions.
 
 # --- Global Stores ---
 MASTER_ARTICLE_STORE = {}  # Maps article_hash_id to article_data
@@ -166,7 +192,7 @@ if USERS:
 else:
     app.logger.info("User store is initially empty. Register users through the app.")
 
-print("Cell 3: Global stores initialized.")
+print("Cell 3: Global stores initialized.", file=sys.stderr)
 
 
 # --- Helper Functions ---
@@ -257,16 +283,16 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 
     app.logger.info(f"Requesting Groq analysis for article (title: {article_title[:50]}...).")
     max_retries = 2
-    text_limit = 20000
-    truncated_text = article_text[:text_limit]
+    text_limit = 20000 # Groq might have input token limits, llama3-8b-8192 has 8k tokens
+    truncated_text = article_text[:text_limit] # Simple character truncation
 
     system_prompt_content = (
         "You are an expert news analyst. Analyze the following article. "
-        "1. Provide a concise summary (around 500 words). "
-        "2. List 7-8 key takeaways as bullet points. "
+        "1. Provide a concise summary (around 300-500 words, focusing on the core information). "
+        "2. List 5-7 key takeaways as bullet points. Each takeaway should be a complete sentence. "
         "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings)."
     )
-    user_prompt_content = f"Article Title: {article_title}\\n\\nArticle Text:\\n{truncated_text}"
+    user_prompt_content = f"Article Title: {article_title}\n\nArticle Text:\n{truncated_text}"
 
     lc_messages = [
         SystemMessage(content=system_prompt_content),
@@ -276,7 +302,7 @@ def get_article_analysis_with_groq(article_text, article_title=""):
     try:
         json_model = groq_client.bind(
             response_format={"type": "json_object"},
-            temperature=0.3
+            temperature=0.3 # Slightly higher for more natural summaries if needed
         )
     except Exception as e:
         app.logger.error(f"Failed to bind model with JSON format: {e}")
@@ -290,14 +316,22 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         try:
             ai_response = json_model.invoke(lc_messages)
             response_content_str = ai_response.content
-            app.logger.debug(f"Groq raw JSON response string: {response_content_str[:500]}...")
+            app.logger.debug(f"Groq raw JSON response string (attempt {attempt+1}): {response_content_str[:500]}...")
 
             try:
                 analysis = json.loads(response_content_str)
                 if not all(k in analysis for k in ['summary', 'takeaways']):
                     raise ValueError("Missing 'summary' or 'takeaways' key in Groq JSON response.")
                 if not isinstance(analysis.get('takeaways'), list):
+                    # Attempt to fix if takeaways is a single string
                     analysis['takeaways'] = [str(analysis['takeaways'])] if analysis.get('takeaways') is not None else ["Takeaways format error."]
+                
+                # Basic validation of content
+                if not analysis.get("summary"):
+                    analysis["summary"] = "Summary was empty or not provided by AI."
+                if not analysis.get("takeaways") or not analysis.get("takeaways")[0]:
+                     analysis["takeaways"] = ["Takeaways were empty or not provided by AI."]
+
 
                 return {
                     "groq_summary": analysis.get("summary", "Summary not generated."),
@@ -305,19 +339,28 @@ def get_article_analysis_with_groq(article_text, article_title=""):
                     "error": None
                 }
             except (json.JSONDecodeError, ValueError) as e:
+                app.logger.error(f"Groq JSON parsing error (attempt {attempt+1}): {e}. Response: {response_content_str[:200]}")
                 if attempt == max_retries - 1:
-                    return {"groq_summary": "Could not parse summary.", "groq_takeaways": [f"Could not parse takeaways. Error: {e}"], "error": f"JSON parsing error: {e}"}
-                time.sleep(1)
-        except Exception as e:
+                    return {"groq_summary": "Could not parse summary from Groq.", "groq_takeaways": [f"Could not parse takeaways. Error: {e}"], "error": f"JSON parsing error: {e}"}
+                time.sleep(1) # Wait before retry
+        except LangChainException as lce: # Catch LangChain specific errors
+            app.logger.error(f"LangChain/Groq API error (attempt {attempt+1}) for '{article_title[:50]}': {lce}")
+            if attempt == max_retries - 1:
+                return {"groq_summary": f"Groq summary unavailable: {lce}", "groq_takeaways": [f"Groq takeaways unavailable: {lce}"], "error": str(lce)}
+            time.sleep(2) # Wait longer for API errors
+        except Exception as e: # Catch other unexpected errors
+            app.logger.error(f"Unexpected error during Groq call (attempt {attempt+1}) for '{article_title[:50]}': {e}")
             if attempt == max_retries - 1:
                 return {"groq_summary": f"Groq summary unavailable: {e}", "groq_takeaways": [f"Groq takeaways unavailable: {e}"], "error": str(e)}
             time.sleep(1)
+            
+    app.logger.error(f"Groq analysis failed for '{article_title[:50]}' after {max_retries} retries.")
     return {"groq_summary": "Groq summary unavailable after retries.", "groq_takeaways": ["Groq takeaways unavailable after retries."], "error": "Failed after retries."}
 
 @simple_cache()
 def fetch_news_from_api(query=None, category_keyword=None,
-                              days_ago=None,
-                              page_size=None, lang='en'):
+                                days_ago=None,
+                                page_size=None, lang='en'):
     if not newsapi:
         app.logger.error("NewsAPI client not available. Cannot fetch news.")
         return []
@@ -332,11 +375,13 @@ def fetch_news_from_api(query=None, category_keyword=None,
     full_search_query = " AND ".join(search_query_parts)
     
     try:
-        response = newsapi.get_everything(q=full_search_query, from_param=from_date, language=lang, sort_by='publishedAt', page_size=final_page_size)
+        app.logger.info(f"Fetching news from NewsAPI. Query: '{full_search_query}', From: {from_date}, Page Size: {final_page_size}")
+        response = newsapi.get_everything(q=full_search_query, from_param=from_date, language=lang, sort_by='relevancy', page_size=final_page_size) # Consider sort_by
         raw_articles = response.get('articles', [])
         processed_articles = []
         for art_data in raw_articles:
             if not all(art_data.get(key) for key in ['url', 'title', 'source']) or art_data.get('title') == '[Removed]' or not art_data['source'].get('name'):
+                app.logger.warning(f"Skipping incomplete article: {art_data.get('title', 'N/A_TITLE')} from {art_data.get('url', 'N/A_URL')}")
                 continue
             article_id = generate_article_id(art_data['url'])
             source_name = art_data['source']['name']
@@ -345,105 +390,173 @@ def fetch_news_from_api(query=None, category_keyword=None,
                 'id': article_id, 'title': art_data.get('title'), 'description': art_data.get('description', ''), 'url': art_data.get('url'),
                 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_image_text}',
                 'publishedAt': art_data.get('publishedAt', ''), 'source': {'name': source_name, 'id': art_data['source'].get('id')},
-                'api_category_keyword': category_keyword or "All Articles",
-                'full_text': None, 'newspaper_summary': None, 'read_time_minutes': 0, 'groq_analysis': None
+                'api_category_keyword': category_keyword or "All Articles", # Store the category it was fetched for
+                'full_text': None, 'newspaper_summary': None, 'read_time_minutes': 0, 'groq_analysis': None, 'is_user_added': False
             }
             MASTER_ARTICLE_STORE[article_id] = standardized_article
             processed_articles.append(standardized_article)
+        app.logger.info(f"Fetched {len(processed_articles)} articles from NewsAPI for query '{full_search_query}'.")
         return processed_articles
+    except NewsAPIException as nae:
+        app.logger.error(f"NewsAPI specific error for query '{full_search_query}': {nae}")
+        if "apiKeyDisabled" in str(nae) or "apiKeyExhausted" in str(nae) or "apiKeyInvalid" in str(nae):
+            app.logger.critical("NewsAPI key is invalid or disabled. NEWS FETCHING STOPPED.")
+            # Potentially disable news fetching for a while or alert admin
+        return []
     except Exception as e:
-        app.logger.error(f"NewsAPI Error: {e}")
+        app.logger.error(f"Generic error fetching news for query '{full_search_query}': {e}")
         return []
 
 
 # THIS IS THE MODIFIED FUNCTION THAT USES SCRAPERAPI
-@simple_cache(expiry_seconds_default=3600 * 2)
+@simple_cache(expiry_seconds_default=3600 * 2) # Cache for 2 hours
 def fetch_process_and_analyze_article_content(article_id, url, title=""):
     """
     Downloads article content using ScraperAPI to bypass blocks, then parses with Newspaper3k
     and uses Groq for analysis. Updates MASTER_ARTICLE_STORE.
     """
-    app.logger.info(f"Fetching content for article ID: {article_id} via proxy.")
+    app.logger.info(f"Processing article content for ID: {article_id}, URL: {url}")
     summary_sentences_count = app.config.get('SUMMARY_SENTENCES', 3)
 
-    # --- Check for fully processed data first ---
+    # --- Check for fully processed data in MASTER_ARTICLE_STORE first ---
+    # This check helps avoid re-processing if data is already complete from a previous call.
     if article_id in MASTER_ARTICLE_STORE:
         cached_master_data = MASTER_ARTICLE_STORE[article_id]
-        if cached_master_data.get('full_text') and cached_master_data.get('groq_analysis') and not cached_master_data['groq_analysis'].get('error'):
+        if (cached_master_data.get('full_text') and 
+            cached_master_data.get('groq_analysis') and 
+            not cached_master_data['groq_analysis'].get('error') and
+            cached_master_data['groq_analysis'].get('groq_summary') and # Ensure summary exists
+            "unavailable" not in cached_master_data['groq_analysis']['groq_summary'].lower()): # Check for valid summary
             app.logger.info(f"Using already fully processed data from MASTER_ARTICLE_STORE for {article_id}")
             return (
                 cached_master_data['full_text'],
-                cached_master_data.get('newspaper_summary', "Summary not found."),
+                cached_master_data.get('newspaper_summary', "Summary not found."), # n3k summary might still be useful
                 cached_master_data.get('read_time_minutes', 0),
                 cached_master_data['groq_analysis']
             )
 
+    # Default values
+    full_text = "Article text could not be extracted."
+    newspaper_summary = "Newspaper3k summary unavailable." # n3k's own summary
+    groq_analysis_result = {
+        "groq_summary": "AI summary could not be generated.",
+        "groq_takeaways": ["AI takeaways could not be generated."],
+        "error": "Initial error state before processing."
+    }
+    read_time = 0
+
     # --- ScraperAPI Configuration ---
     SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
     if not SCRAPER_API_KEY:
-        error_message = "ScraperAPI key is not configured on the server."
+        error_message = "ScraperAPI key is not configured on the server. Cannot fetch external article content."
         app.logger.error(error_message)
-        groq_analysis_result = {"groq_summary": "Summary unavailable.", "groq_takeaways": ["Takeaways unavailable."], "error": error_message}
-        return "Article text could not be extracted.", "Scraping service not configured.", 0, groq_analysis_result
+        # Update Groq analysis result to reflect this specific error
+        groq_analysis_result["error"] = error_message
+        groq_analysis_result["groq_summary"] = "AI summary unavailable: " + error_message
+        groq_analysis_result["groq_takeaways"] = ["AI takeaways unavailable: " + error_message]
+        # Update master store if article exists
+        if article_id in MASTER_ARTICLE_STORE:
+            MASTER_ARTICLE_STORE[article_id].update({
+                'full_text': full_text, 'newspaper_summary': newspaper_summary, 
+                'read_time_minutes': read_time, 'groq_analysis': groq_analysis_result
+            })
+        return full_text, newspaper_summary, read_time, groq_analysis_result
 
-    scraperapi_payload = {'api_key': SCRAPER_API_KEY, 'url': url}
-
-    full_text = "Article text could not be extracted."
-    newspaper_summary = "Newspaper3k summary unavailable."
-    groq_analysis_result = None
-    read_time = 0
+    scraperapi_payload = {'api_key': SCRAPER_API_KEY, 'url': url, 'render': 'false'} # 'render': 'true' if JS rendering needed, but costs more
 
     try:
-        # --- Make the request through ScraperAPI ---
-        response = requests.get('http://api.scraperapi.com', params=scraperapi_payload, timeout=45)
-        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+        app.logger.info(f"Calling ScraperAPI for {url}")
+        response = requests.get('http://api.scraperapi.com', params=scraperapi_payload, timeout=45) # Increased timeout
+        response.raise_for_status()
+        html_content = response.text
+        app.logger.info(f"ScraperAPI successfully fetched content for {url} (length: {len(html_content)}).")
 
-        # --- Configure Newspaper3k to parse the downloaded HTML ---
+        # --- Configure Newspaper3k ---
+        # NLTK 'punkt' should be available due to setup in Cell 1
         config = Config()
-        config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
-        
+        config.browser_user_agent = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' # Google bot user agent
+        config.request_timeout = 15 # Timeout for n3k's own requests (though we provide HTML)
+        config.fetch_images = False # Don't need images for text processing
+        config.memoize_articles = False # Disable n3k's own caching as we have ours
+
         article_scraper = Article(url, config=config)
-        # Download the HTML from our successful proxy request instead of making a new request
-        article_scraper.download(input_html=response.text)
+        article_scraper.download(input_html=html_content) # Provide HTML from ScraperAPI
         article_scraper.parse()
 
         if article_scraper.text:
             full_text = article_scraper.text
             read_time = calculate_read_time(full_text)
+            app.logger.info(f"Newspaper3k parsed text for {url} (length: {len(full_text)}).")
 
             try:
+                # This is where 'punkt' is critical for newspaper3k's nlp methods
                 article_scraper.nlp()
                 newspaper_summary = article_scraper.summary.strip()
-                if not newspaper_summary:
-                    sentences = nltk.sent_tokenize(article_scraper.text)
+                if not newspaper_summary: # Fallback if n3k summary is empty
+                    app.logger.warning(f"Newspaper3k .summary was empty for {url}. Using NLTK sentence tokenizer as fallback.")
+                    sentences = nltk.sent_tokenize(full_text) # Requires 'punkt'
                     newspaper_summary = ' '.join(sentences[:summary_sentences_count])
+                app.logger.info(f"Newspaper3k NLP successful for {url}.")
             except Exception as nlp_e:
-                app.logger.warning(f"Newspaper3k NLP failed for {url}: {nlp_e}")
-                sentences = nltk.sent_tokenize(full_text)
-                newspaper_summary = ' '.join(sentences[:summary_sentences_count])
-
-        if full_text != "Article text could not be extracted." and groq_client:
-            groq_analysis_result = get_article_analysis_with_groq(full_text, title)
+                app.logger.error(f"Newspaper3k NLP FAILED for {url}: {nlp_e}. Text length: {len(full_text)}", exc_info=True)
+                # Fallback if NLP fails (e.g. punkt not found despite earlier checks, or text is problematic)
+                try:
+                    sentences = nltk.sent_tokenize(full_text) # Requires 'punkt'
+                    newspaper_summary = ' '.join(sentences[:summary_sentences_count])
+                    app.logger.info(f"Used NLTK sent_tokenize as fallback for Newspaper3k NLP failure for {url}.")
+                except Exception as sent_tokenize_e:
+                    app.logger.error(f"NLTK sent_tokenize ALSO FAILED for {url} after NLP error: {sent_tokenize_e}", exc_info=True)
+                    newspaper_summary = "Summary generation failed due to NLP issues."
+                    # This indicates a severe problem with NLTK or the text.
         else:
-            groq_analysis_result = {"error": "Groq analysis not performed as no text was extracted."}
-            
+            app.logger.warning(f"Newspaper3k could not extract text from {url} after ScraperAPI download.")
+            full_text = "Article content was empty after parsing." # More specific message
+
+        # --- Groq Analysis ---
+        if full_text and full_text not in ["Article text could not be extracted.", "Article content was empty after parsing."]:
+            if groq_client:
+                app.logger.info(f"Proceeding to Groq analysis for {url}")
+                groq_analysis_result = get_article_analysis_with_groq(full_text, title)
+                if groq_analysis_result.get("error"):
+                    app.logger.warning(f"Groq analysis for {url} encountered an error: {groq_analysis_result['error']}")
+                else:
+                    app.logger.info(f"Groq analysis successful for {url}")
+            else:
+                app.logger.warning(f"Groq client not available. Skipping Groq analysis for {url}.")
+                groq_analysis_result["error"] = "Groq client not available."
+                groq_analysis_result["groq_summary"] = "AI summary unavailable: Groq client not configured."
+                groq_analysis_result["groq_takeaways"] = ["AI takeaways unavailable: Groq client not configured."]
+        else:
+            app.logger.warning(f"No valid text extracted for {url}. Skipping Groq analysis.")
+            groq_analysis_result["error"] = "No text content was extracted from the article."
+            groq_analysis_result["groq_summary"] = "AI summary unavailable: No text extracted."
+            groq_analysis_result["groq_takeaways"] = ["AI takeaways unavailable: No text extracted."]
+
+    except requests.exceptions.Timeout as e:
+        app.logger.error(f"ScraperAPI request timed out for {url}: {e}")
+        error_message = f"Proxy service timeout: {e}"
+        groq_analysis_result.update({"groq_summary": "Summary unavailable.", "groq_takeaways": ["Takeaways unavailable."], "error": error_message})
     except requests.exceptions.RequestException as e:
         app.logger.error(f"Error calling ScraperAPI for {url}: {e}")
         error_message = f"Proxy service error: {e}"
-        groq_analysis_result = {"groq_summary": "Summary unavailable.", "groq_takeaways": ["Takeaways unavailable."], "error": error_message}
-    except Exception as e:
-        app.logger.error(f"Error processing article {url} after proxy download: {e}")
-        error_message = f"Article processing error after download: {e}"
-        groq_analysis_result = {"groq_summary": "Summary unavailable.", "groq_takeaways": ["Takeaways unavailable."], "error": error_message}
+        groq_analysis_result.update({"groq_summary": "Summary unavailable.", "groq_takeaways": ["Takeaways unavailable."], "error": error_message})
+    except Exception as e: # Catch-all for other errors during the process
+        app.logger.error(f"Unexpected error processing article {url}: {e}", exc_info=True)
+        error_message = f"Unexpected article processing error: {e}"
+        groq_analysis_result.update({"groq_summary": "Summary unavailable.", "groq_takeaways": ["Takeaways unavailable."], "error": error_message})
 
-    # --- Update the master store with the results ---
+    # --- Update the master store with potentially new/updated results ---
     if article_id in MASTER_ARTICLE_STORE:
         MASTER_ARTICLE_STORE[article_id].update({
-            'full_text': full_text,
-            'newspaper_summary': newspaper_summary,
+            'full_text': full_text, # Store the extracted text
+            'newspaper_summary': newspaper_summary, # Store n3k's summary or fallback
             'read_time_minutes': read_time,
-            'groq_analysis': groq_analysis_result
+            'groq_analysis': groq_analysis_result # Store AI analysis results
         })
+    else:
+        # This case should ideally not happen if article was added to MASTER_ARTICLE_STORE before calling this
+        app.logger.warning(f"Article ID {article_id} was not in MASTER_ARTICLE_STORE during fetch_process_and_analyze. This is unexpected.")
+
 
     return full_text, newspaper_summary, read_time, groq_analysis_result
 
@@ -456,7 +569,7 @@ def find_free_port():
     sock.close()
     return port
 
-print("Cell 3: Helper functions defined and updated.")
+print("Cell 3: Helper functions defined and updated.", file=sys.stderr)
 
 
 # In[4]:
@@ -906,10 +1019,10 @@ BASE_HTML_TEMPLATE = '''
                     <h5>Categories</h5>
                     <div class="footer-links">
                          {% for cat_item in categories %}
-                            {% if cat_item != 'My Articles' or session.get('user_id') %}
-                                <a href="{{ url_for('index', category_name=cat_item, page=1) }}"><i class="fas fa-angle-right"></i> {{ cat_item }}</a>
-                            {% endif %}
-                        {% endfor %}
+                             {% if cat_item != 'My Articles' or session.get('user_id') %}
+                                 <a href="{{ url_for('index', category_name=cat_item, page=1) }}"><i class="fas fa-angle-right"></i> {{ cat_item }}</a>
+                             {% endif %}
+                         {% endfor %}
                     </div>
                 </div>
                 <div class="footer-section">
@@ -962,7 +1075,7 @@ BASE_HTML_TEMPLATE = '''
         if (storedTheme) {
             applyTheme(storedTheme);
         } else {
-            updateThemeIcon();
+            updateThemeIcon(); // Set initial icon based on default (no class) or cookie-set class
         }
 
 
@@ -1075,7 +1188,6 @@ BASE_HTML_TEMPLATE = '''
 </body>
 </html>
 '''
-
 INDEX_HTML_TEMPLATE = '''
 {% extends "BASE_HTML_TEMPLATE" %}
 
@@ -1107,10 +1219,6 @@ INDEX_HTML_TEMPLATE = '''
                     {% if articles[0].read_time_minutes and articles[0].read_time_minutes > 0 %}
                         <span class="meta-item"><i class="far fa-clock"></i> {{ articles[0].read_time_minutes }} min read</span>
                     {% endif %}
-                    {% set f_display_cat = articles[0].groq_analysis.groq_category if articles[0].groq_analysis and articles[0].groq_analysis.groq_category and articles[0].groq_analysis.groq_category not in ['General', 'General (Parsing Error)'] else articles[0].category %}
-                    {% if f_display_cat and f_display_cat not in ['All Articles', 'General', 'General (Parsing Error)', 'Search Result', 'My Articles'] %}
-                            <span class="meta-item"><i class="fas fa-tag"></i> {{ f_display_cat }}</span>
-                    {% endif %}
                 </div>
 
                 <h2 class="mb-2 h4">
@@ -1120,13 +1228,11 @@ INDEX_HTML_TEMPLATE = '''
                 </h2>
 
                 <p class="article-description flex-grow-1 small">
-                    {# Prioritize Groq summary if available and valid #}
-                    {% if articles[0].groq_analysis and articles[0].groq_analysis.groq_summary and "unavailable" not in articles[0].groq_analysis.groq_summary|lower and "not generated" not in articles[0].groq_analysis.groq_summary|lower and "could not parse" not in articles[0].groq_analysis.groq_summary|lower %}
-                        {{ articles[0].groq_analysis.groq_summary|truncate(220) }}
-                    {% elif articles[0].description %}
+                    {# Use pre-fetched description as a placeholder before full analysis #}
+                    {% if articles[0].description %}
                         {{ articles[0].description|truncate(220) }}
                     {% else %}
-                        No summary available for this article.
+                        Click to view AI-enhanced summary and full article details.
                     {% endif %}
                 </p>
                 <a href="{{ url_for('article_detail', article_id=articles[0].id) }}" class="read-more mt-auto align-self-start py-2 px-3" style="width:auto;">
@@ -1147,31 +1253,25 @@ INDEX_HTML_TEMPLATE = '''
     {# Regular Article Grid #}
     {% set articles_to_display = (articles[1:] if featured_article_on_this_page and articles else articles) %}
     {% if articles_to_display %}
-    <div class="article-grid mt-4 row gx-3 gy-4"> {# Bootstrap row for grid structure #}
+    <div class="row g-4"> {# Bootstrap row for grid structure #}
         {% for art in articles_to_display %}
         <div class="col-md-6 col-lg-4 d-flex"> {# Bootstrap column classes #}
-        <article class="article-card animate-fade-in w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
+        <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
             <div class="article-image-container">
-                {% set display_category = art.groq_analysis.groq_category if art.groq_analysis and art.groq_analysis.groq_category and art.groq_analysis.groq_category not in ['General', 'General (Parsing Error)'] else art.category %}
-                {% if display_category and display_category not in ['All Articles', 'General', 'General (Parsing Error)', 'Search Result', 'My Articles'] %}
-                <span class="category-tag">
-                    {{ display_category | truncate(15) }}
-                </span>
-                {% endif %}
                 <a href="{{ url_for('article_detail', article_id=art.id) }}">
                     <img src="{{ art.urlToImage or 'https://via.placeholder.com/400x220/0A2342/FFFFFF?text=News' }}"
                          class="article-image"
                          alt="{{ art.title|truncate(50) }}">
                 </a>
             </div>
-            <div class="article-body">
+            <div class="article-body d-flex flex-column">
                 <h5 class="article-title mb-2">
                     <a href="{{ url_for('article_detail', article_id=art.id) }}" class="text-decoration-none">
                         {{ art.title|truncate(70) }}
                     </a>
                 </h5>
 
-                <div class="article-meta small">
+                <div class="article-meta small mb-2">
                     <span class="meta-item text-muted">
                         <i class="fas fa-building"></i> {{ art.source.name | truncate(20) }}
                     </span>
@@ -1180,16 +1280,14 @@ INDEX_HTML_TEMPLATE = '''
                     </span>
                 </div>
 
-                <p class="article-description my-2 small">
-                    {% if art.groq_analysis and art.groq_analysis.groq_summary and "unavailable" not in art.groq_analysis.groq_summary|lower and "not generated" not in art.groq_analysis.groq_summary|lower and "could not parse" not in art.groq_analysis.groq_summary|lower %}
-                        {{ art.groq_analysis.groq_summary|truncate(100) }}
-                    {% elif art.description %}
+                <p class="article-description small">
+                    {% if art.description %}
                         {{ art.description|truncate(100) }}
                     {% else %}
                         Click to read more.
                     {% endif %}
                 </p>
-                <a href="{{ url_for('article_detail', article_id=art.id) }}" class="read-more btn btn-sm">
+                <a href="{{ url_for('article_detail', article_id=art.id) }}" class="read-more btn btn-sm mt-auto">
                     Read More <i class="fas fa-chevron-right ms-1 small"></i>
                 </a>
             </div>
@@ -1206,7 +1304,7 @@ INDEX_HTML_TEMPLATE = '''
 
     {# Pagination Controls #}
     {% if total_pages > 1 %}
-    <nav aria-label="Page navigation" class="mt-4">
+    <nav aria-label="Page navigation" class="mt-5">
         <ul class="pagination justify-content-center">
             {# Previous Page Link #}
             <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}">
@@ -1282,32 +1380,32 @@ ARTICLE_HTML_TEMPLATE = '''
 
     .article-meta-detailed .meta-item i { color: var(--secondary-color); margin-right: 0.4rem; font-size:0.95rem; }
 
-    .summary-box { background-color: var(--light-bg); padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border: 1px solid var(--card-border-color); }
+    .summary-box { background-color: rgba(var(--primary-color-rgb), 0.04); padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border: 1px solid rgba(var(--primary-color-rgb), 0.1); }
     .summary-box h5 { color: var(--primary-color); font-weight: 600; margin-bottom: 0.75rem; font-size:1.1rem; }
-    .summary-box p {font-size:0.95rem; line-height:1.6; color: var(--text-color);}
-    body.dark-mode .summary-box { background-color: rgba(var(--secondary-color-rgb, 212, 160, 23), 0.05); border-color: rgba(var(--secondary-color-rgb, 212, 160, 23), 0.2); }
+    .summary-box p {font-size:0.95rem; line-height:1.7; color: var(--text-color);}
+    body.dark-mode .summary-box { background-color: rgba(var(--secondary-color-rgb), 0.05); border-color: rgba(var(--secondary-color-rgb), 0.2); }
     body.dark-mode .summary-box h5 { color: var(--secondary-light); }
     body.dark-mode .summary-box p { color: var(--text-muted-color); }
 
 
-    .takeaways-box { margin: 1.5rem 0; padding: 1.5rem; border-left: 4px solid var(--secondary-color); background-color: var(--light-bg); border-radius: 0 8px 8px 0;}
+    .takeaways-box { margin: 1.5rem 0; padding: 1.5rem 1.5rem 1.5rem 1.8rem; border-left: 4px solid var(--secondary-color); background-color: rgba(var(--primary-color-rgb), 0.04); border-radius: 0 8px 8px 0;}
     .takeaways-box h5 { color: var(--primary-color); font-weight: 600; margin-bottom: 0.75rem; font-size:1.1rem; }
-    .takeaways-box ul { padding-left: 1.2rem; margin-bottom:0; list-style-type: disc; color: var(--text-color); }
-    .takeaways-box ul li { margin-bottom: 0.5rem; font-size:0.95rem; }
-    body.dark-mode .takeaways-box { background-color: rgba(var(--secondary-color-rgb, 212, 160, 23), 0.05); border-left-color: var(--secondary-light); }
+    .takeaways-box ul { padding-left: 1.2rem; margin-bottom:0; color: var(--text-color); }
+    .takeaways-box ul li { margin-bottom: 0.6rem; font-size:0.95rem; line-height:1.6; }
+    body.dark-mode .takeaways-box { background-color: rgba(var(--secondary-color-rgb), 0.05); border-left-color: var(--secondary-light); }
     body.dark-mode .takeaways-box h5 { color: var(--secondary-light); }
     body.dark-mode .takeaways-box ul { color: var(--text-muted-color); }
 
     .article-source-link { display: inline-block; font-weight: 500; }
 
     .loader-container {
-        display: flex; justify-content: center; align-items: center;
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
         min-height: 200px; padding: 2rem; font-size: 1rem; color: var(--text-muted-color);
     }
     .loader {
         border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color);
         border-radius: 50%; width: 50px; height: 50px;
-        animation: spin 1s linear infinite; margin-right: 10px;
+        animation: spin 1s linear infinite; margin-bottom: 1rem;
     }
     body.dark-mode .loader { border-top-color: var(--secondary-color); }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -1321,8 +1419,8 @@ ARTICLE_HTML_TEMPLATE = '''
         <div class="article-meta-detailed">
             <span class="meta-item" title="Source"><i class="fas fa-building"></i> {{ article.source.name }}</span>
             <span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ article.publishedAt.split('T')[0] if article.publishedAt else 'N/A' }}</span>
-            <span class="meta-item" title="Estimated Reading Time" id="articleReadTimeMeta" {% if not (read_time_minutes and read_time_minutes > 0) %} style="display:none;" {% endif %}>
-                <i class="far fa-clock"></i> <span id="articleReadTimeText">{{ read_time_minutes if read_time_minutes and read_time_minutes > 0 else '' }}</span> min read
+            <span class="meta-item" title="Estimated Reading Time" id="articleReadTimeMeta" style="display:none;">
+                <i class="far fa-clock"></i> <span id="articleReadTimeText"></span> min read
             </span>
         </div>
 
@@ -1331,13 +1429,13 @@ ARTICLE_HTML_TEMPLATE = '''
         {% endif %}
 
         <div id="contentLoader" class="loader-container my-4">
-            <div class="loader"></div> Loading analysis...
+            <div class="loader"></div>
+            <div>Analyzing article and generating summary...</div>
         </div>
 
         <div id="articleAnalysisContainer" style="display: none;">
             <div id="articleAnalysisSection"></div>
-
-            <div id="originalLinkContainer" class="mt-4"></div>
+            <div id="originalContentContainer" class="mt-4"></div>
         </div>
 
     </article>
@@ -1354,13 +1452,14 @@ ARTICLE_HTML_TEMPLATE = '''
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const articleId = {{ article.id | tojson | safe if article else 'null' }};
-    const articleUrlForJs = {{ article.url | tojson | safe if article and article.url != '#' and not article.url.startswith('#user-added') else 'null' }};
+    const isUserAdded = {{ article.is_user_added | tojson | safe if article else 'false' }};
+    const articleUrlForJs = {{ article.url | tojson | safe if article and not article.is_user_added else 'null' }};
     const articleSourceForJs = {{ article.source.name | tojson | safe if article and article.source and article.source.name else 'null' }};
 
     const contentLoader = document.getElementById('contentLoader');
     const articleAnalysisContainer = document.getElementById('articleAnalysisContainer');
     const analysisSection = document.getElementById('articleAnalysisSection');
-    const originalLinkContainer = document.getElementById('originalLinkContainer'); // MODIFICATION: Target new container
+    const originalContentContainer = document.getElementById('originalContentContainer');
     const readTimeMetaSpan = document.getElementById('articleReadTimeMeta');
     const readTimeTextSpan = document.getElementById('articleReadTimeText');
 
@@ -1369,17 +1468,60 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
     }
 
-    // Function to create and append the original article link
-    function appendOriginalLink(container, url, sourceName) {
-        if (container && url && sourceName) {
-            container.innerHTML = ''; // Clear previous content
+    // Function to render the analysis data
+    function renderAnalysis(data) {
+        let newAnalysisHtml = '';
+        const groqData = data.groq_analysis;
+
+        const hasValidGroqSummary = groqData && groqData.groq_summary && !groqData.groq_summary.toLowerCase().includes("unavailable") && !groqData.groq_summary.toLowerCase().includes("could not");
+        const hasValidGroqTakeaways = groqData && groqData.groq_takeaways && groqData.groq_takeaways.length > 0 && !groqData.groq_takeaways[0].toLowerCase().includes("unavailable") && !groqData.groq_takeaways[0].toLowerCase().includes("could not");
+
+        if (hasValidGroqSummary) {
+            newAnalysisHtml += `
+            <div class="summary-box my-3">
+                <h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5>
+                <p class="mb-0">${groqData.groq_summary.replace(/\\n/g, '<br>')}</p>
+            </div>`;
+        }
+
+        if (hasValidGroqTakeaways) {
+            newAnalysisHtml += `
+            <div class="takeaways-box my-3">
+                <h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
+                <ul>${groqData.groq_takeaways.map(takeaway => `<li>${takeaway}</li>`).join('')}</ul>
+            </div>`;
+        }
+
+        if (!hasValidGroqSummary && !hasValidGroqTakeaways) {
+            newAnalysisHtml = `<div class="alert alert-secondary small p-3 mt-3">No AI-generated summary or takeaways are available for this article. This can happen if the article content is inaccessible or too short for analysis.</div>`;
+        }
+
+        analysisSection.innerHTML = newAnalysisHtml;
+        
+        // Display original article content for user-added articles OR a link for external articles
+        originalContentContainer.innerHTML = ''; // Clear previous content
+        if (isUserAdded && data.full_text) {
+             const originalContentDiv = document.createElement('div');
+             originalContentDiv.innerHTML = `
+                <hr class="my-4">
+                <h5><i class="fas fa-file-alt me-2"></i>Original Content</h5>
+                <p style="white-space: pre-wrap;">${data.full_text}</p>
+             `;
+             originalContentContainer.appendChild(originalContentDiv);
+        } else if (articleUrlForJs && articleSourceForJs) {
             const link = document.createElement('a');
-            link.href = url;
+            link.href = articleUrlForJs;
             link.target = '_blank';
             link.rel = 'noopener noreferrer';
             link.className = 'btn btn-outline-primary article-source-link';
-            link.innerHTML = `Read Original at ${sourceName} <i class="fas fa-external-link-alt ms-1"></i>`;
-            container.appendChild(link);
+            link.innerHTML = `Read Original at ${articleSourceForJs} <i class="fas fa-external-link-alt ms-1"></i>`;
+            originalContentContainer.appendChild(link);
+        }
+
+        // Update read time
+        if (readTimeMetaSpan && readTimeTextSpan && data.read_time_minutes > 0) {
+            readTimeTextSpan.textContent = data.read_time_minutes;
+            readTimeMetaSpan.style.display = 'inline-flex';
         }
     }
 
@@ -1394,60 +1536,18 @@ document.addEventListener('DOMContentLoaded', function () {
             if (contentLoader) contentLoader.style.display = 'none';
             if (articleAnalysisContainer) articleAnalysisContainer.style.display = 'block';
 
-            if (data.error) {
-                analysisSection.innerHTML = `<div class="alert alert-danger small p-2">Could not load article analysis: ${data.error}</div>`;
+            if (data.error && !data.groq_analysis) { // Handle catastrophic failure
+                analysisSection.innerHTML = `<div class="alert alert-danger small p-3">Could not load article analysis: ${data.error}</div>`;
                 return;
             }
-
-            // Update read time
-            if (readTimeMetaSpan && readTimeTextSpan) {
-                if (data.read_time_minutes && data.read_time_minutes > 0) {
-                    readTimeTextSpan.textContent = data.read_time_minutes;
-                    readTimeMetaSpan.style.display = 'inline-flex';
-                } else {
-                    readTimeMetaSpan.style.display = 'none';
-                }
-            }
-
-            // Update analysis section (Summary and Takeaways)
-            if (analysisSection && data.groq_analysis) {
-                let newAnalysisHtml = '';
-                const groqData = data.groq_analysis;
-
-                const hasValidGroqSummary = groqData.groq_summary && !groqData.groq_summary.toLowerCase().includes("unavailable");
-                if (hasValidGroqSummary) {
-                    newAnalysisHtml += `
-                    <div class="summary-box my-3">
-                        <h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5>
-                        <p class="mb-0">${groqData.groq_summary}</p>
-                    </div>`;
-                }
-
-                const hasValidGroqTakeaways = groqData.groq_takeaways && groqData.groq_takeaways.length > 0 && !groqData.groq_takeaways[0].toLowerCase().includes("unavailable");
-                if (hasValidGroqTakeaways) {
-                    newAnalysisHtml += `
-                    <div class="takeaways-box my-3">
-                        <h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
-                        <ul>${groqData.groq_takeaways.map(takeaway => `<li>${takeaway}</li>`).join('')}</ul>
-                    </div>`;
-                }
-
-                if (!hasValidGroqSummary && !hasValidGroqTakeaways) {
-                    newAnalysisHtml = `<div class="alert alert-secondary small p-2 mt-3">No AI-generated summary or takeaways are available for this article.</div>`;
-                }
-                analysisSection.innerHTML = newAnalysisHtml;
-            }
-
-            // MODIFICATION: Always try to add the original link if the URL exists
-            if (articleUrlForJs) {
-                appendOriginalLink(originalLinkContainer, articleUrlForJs, articleSourceForJs);
-            }
+            
+            renderAnalysis(data);
         })
         .catch(error => {
-            console.error("Error fetching article content:", error);
+            console.error("Error fetching or processing article content:", error);
             if (contentLoader) contentLoader.style.display = 'none';
             if (articleAnalysisContainer) articleAnalysisContainer.style.display = 'block';
-            analysisSection.innerHTML = `<div class="alert alert-danger small p-2">Failed to load analysis. Please try again later.</div>`;
+            analysisSection.innerHTML = `<div class="alert alert-danger small p-3">Failed to load analysis due to a network or server error. Please try again later.</div>`;
         });
 });
 </script>
@@ -1510,7 +1610,7 @@ REGISTER_HTML_TEMPLATE = '''
 </div>
 {% endblock %}
 '''
-print("Cell 4: HTML templates defined and updated.")
+print("Cell 4: HTML templates defined and updated.", file=sys.stderr)
 
 
 # In[5]:
@@ -1524,9 +1624,9 @@ if 'template_storage' in globals():
     template_storage['ARTICLE_HTML_TEMPLATE'] = ARTICLE_HTML_TEMPLATE
     template_storage['LOGIN_HTML_TEMPLATE'] = LOGIN_HTML_TEMPLATE
     template_storage['REGISTER_HTML_TEMPLATE'] = REGISTER_HTML_TEMPLATE
-    print("Cell 5: HTML templates loaded into Jinja DictLoader storage.")
+    print("Cell 5: HTML templates loaded into Jinja DictLoader storage.", file=sys.stderr)
 else:
-    print("Error: template_storage dictionary not found. Make sure Flask app initialization cell was run correctly.")
+    print("Error: template_storage dictionary not found. Make sure Flask app initialization cell was run correctly.", file=sys.stderr)
 
 
 # In[6]:
@@ -1543,6 +1643,7 @@ def index(page=1, category_name='All Articles'):
     query_param = request.args.get('query', None)
     display_articles = []
     total_articles = 0
+    # A featured article is shown on page 1 of main categories, but not on search results.
     featured_article_on_this_page = (page == 1 and not query_param and category_name in ['All Articles', 'My Articles'])
 
     if category_name == 'My Articles':
@@ -1560,13 +1661,19 @@ def index(page=1, category_name='All Articles'):
         end_index = start_index + per_page
         display_articles = all_user_articles[start_index:end_index]
     else:
-        category_keyword = category_name if category_name != 'All Articles' else None
+        # For 'All Articles' or other API-based categories
+        category_keyword = None if category_name == 'All Articles' else category_name
+        
+        # We fetch a large batch from the API and paginate it in memory.
+        # This is simpler than paginating via API calls but assumes the total result set is manageable.
         api_page_size_to_fetch = app.config['NEWS_API_PAGE_SIZE']
         fetched_articles_from_api = fetch_news_from_api(
             query=app.config['NEWS_API_QUERY'],
             category_keyword=category_keyword,
             page_size=api_page_size_to_fetch
         )
+        
+        # Deduplicate articles based on title, as APIs can return similar articles from different sources
         unique_titles = set()
         unique_api_articles = []
         for art in fetched_articles_from_api:
@@ -1574,20 +1681,25 @@ def index(page=1, category_name='All Articles'):
                 unique_api_articles.append(art)
                 unique_titles.add(art['title'].lower())
         
+        # Sort all unique articles by published date
         unique_api_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.isoformat()), reverse=True)
+
         total_articles = len(unique_api_articles)
         start_index = (page - 1) * per_page
         end_index = start_index + per_page
         display_articles = unique_api_articles[start_index:end_index]
 
+    # Redirect to page 1 if a requested page is empty (and not the first page)
     if not display_articles and page > 1:
         return redirect(url_for('index', category_name=category_name, page=1))
-
+    
+    # Ensure any displayed article data is the latest from the master store
     for art in display_articles:
-        if art['id'] not in MASTER_ARTICLE_STORE:
+        if art['id'] in MASTER_ARTICLE_STORE:
+             # update the list item with potentially processed data from the store
+            art.update(MASTER_ARTICLE_STORE[art['id']])
+        else: # Should not happen if fetch_news_from_api is working correctly
             MASTER_ARTICLE_STORE[art['id']] = art
-        stored_art_data = MASTER_ARTICLE_STORE[art['id']]
-        art.update(stored_art_data)
 
     total_pages = (total_articles + per_page - 1) // per_page
     if page > total_pages and total_pages > 0:
@@ -1615,25 +1727,30 @@ def search_results(page=1):
     if not query:
         flash("Please enter a search term.", "warning")
         return redirect(url_for('index'))
-    api_search_query = f"({app.config['NEWS_API_QUERY']}) AND ({query})"
+        
+    # Search API
+    api_search_query = f"({query})" # Search query directly in NewsAPI
     api_results = fetch_news_from_api(query=api_search_query, page_size=app.config['NEWS_API_PAGE_SIZE'])
     
+    # Search user-added articles
     user_articles_results = []
     if USER_ADDED_ARTICLES_STORE:
         for art in USER_ADDED_ARTICLES_STORE:
-            if query.lower() in art.get('title', '').lower() or \
-               query.lower() in art.get('description', '').lower() or \
-               query.lower() in art.get('full_text', '').lower() or \
-               (art.get('groq_analysis') and query.lower() in art['groq_analysis'].get('groq_summary','').lower()):
+            # Simple text search across relevant fields
+            if (query.lower() in art.get('title', '').lower() or
+                query.lower() in art.get('description', '').lower() or
+                query.lower() in art.get('full_text', '').lower()):
                 user_articles_results.append(art)
 
+    # Combine and deduplicate results
     combined_articles = api_results + user_articles_results
     unique_ids = set()
     all_search_results = []
     for art in combined_articles:
         if art['id'] not in unique_ids:
+            # Ensure article is in master store
             if art['id'] not in MASTER_ARTICLE_STORE:
-                 MASTER_ARTICLE_STORE[art['id']] = art
+                   MASTER_ARTICLE_STORE[art['id']] = art
             all_search_results.append(MASTER_ARTICLE_STORE[art['id']])
             unique_ids.add(art['id'])
 
@@ -1653,34 +1770,27 @@ def search_results(page=1):
         current_page=page,
         total_pages=total_pages,
         query=query,
-        featured_article_on_this_page=False,
+        featured_article_on_this_page=False, # No featured article on search results
         current_year=datetime.utcnow().year,
         session=session
     )
 
 @app.route('/article/<article_id>')
 def article_detail(article_id):
-    app.logger.info(f"Article detail requested for ID: {article_id}")
+    app.logger.info(f"Article detail page requested for ID: {article_id}")
     article_data = MASTER_ARTICLE_STORE.get(article_id)
     if not article_data:
-        app.logger.warning(f"Article ID {article_id} not found.")
+        app.logger.warning(f"Article ID {article_id} not found in MASTER_ARTICLE_STORE.")
         flash("Article not found.", "danger")
         return redirect(url_for('index'))
 
-    # We still need to calculate initial read_time if available,
-    # but full_text itself is no longer passed to the template for display.
-    read_time_minutes = article_data.get('read_time_minutes', 0)
-    if read_time_minutes == 0 and article_data.get('full_text'):
-        read_time_minutes = calculate_read_time(article_data.get('full_text'))
-
+    # The template will initially render without analysis.
+    # The actual processing is triggered by an async JS call.
     return render_template(
         "ARTICLE_HTML_TEMPLATE",
         article=article_data,
-        read_time_minutes=read_time_minutes,
-        # groq_analysis is needed for server-side render if available
-        groq_analysis=article_data.get('groq_analysis'),
         categories=app.config['CATEGORIES'],
-        selected_category=article_data.get('category', 'All Articles'),
+        selected_category=article_data.get('api_category_keyword', 'All Articles'),
         current_year=datetime.utcnow().year,
         session=session
     )
@@ -1688,23 +1798,40 @@ def article_detail(article_id):
 @app.route('/get_article_content/<article_id>')
 def get_article_content_json(article_id):
     app.logger.info(f"Async JSON request for processed content of article ID: {article_id}")
-    article_data_from_master = MASTER_ARTICLE_STORE.get(article_id)
-    if not article_data_from_master:
+    article_data = MASTER_ARTICLE_STORE.get(article_id)
+    if not article_data:
         app.logger.warning(f"Article ID {article_id} not found for async content fetch.")
         return jsonify({"error": "Article not found"}), 404
 
-    url = article_data_from_master.get('url')
-    title = article_data_from_master.get('title', '')
+    url = article_data.get('url')
+    title = article_data.get('title', '')
+    is_user_added = article_data.get('is_user_added', False)
     
-    # This function still needs the full_text to perform analysis, but won't return it.
-    _, newspaper_summary, read_time, groq_analysis_data = fetch_process_and_analyze_article_content(article_id, url, title)
+    if is_user_added:
+        # For user-added articles, the content is already in the store.
+        # We just need to ensure the Groq analysis has been run.
+        full_text = article_data.get('full_text', '')
+        read_time = article_data.get('read_time_minutes', 0)
+        groq_analysis_data = article_data.get('groq_analysis')
+        
+        # If Groq analysis was not run during creation, run it now.
+        if not groq_analysis_data and full_text and groq_client:
+            app.logger.info(f"Running on-demand Groq analysis for user-added article ID: {article_id}")
+            groq_analysis_data = get_article_analysis_with_groq(full_text, title)
+            article_data['groq_analysis'] = groq_analysis_data # Update store
+            
+    else:
+        # For external articles, trigger the full fetch/process pipeline.
+        # This function handles fetching, parsing, NLP, and Groq analysis.
+        full_text, _, read_time, groq_analysis_data = fetch_process_and_analyze_article_content(article_id, url, title)
 
-    # MODIFICATION: Removed 'full_text' and 'newspaper_summary' from the JSON response
-    # as they are no longer displayed on the page.
+    # Return a JSON payload for the front-end to render.
+    # For user-added articles, include the full_text for display.
     return jsonify({
         "read_time_minutes": read_time,
         "groq_analysis": groq_analysis_data,
-        "error": None
+        "full_text": full_text if is_user_added else None, # Only send full text for user articles
+        "error": groq_analysis_data.get('error') if groq_analysis_data else None
     })
 
 @app.route('/add_article', methods=['POST'])
@@ -1722,6 +1849,7 @@ def add_article():
         app.logger.warning(f"Add article failed: Missing fields: {', '.join(missing_fields)}")
         return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}."}), 400
 
+    # Create a unique ID for the user-added article
     unique_identifier = data['title'] + session['user_id'] + str(time.time())
     article_id = generate_article_id(unique_identifier)
     current_time_iso = datetime.utcnow().isoformat() + "Z"
@@ -1730,29 +1858,27 @@ def add_article():
         'id': article_id,
         'title': data['title'],
         'description': data['description'],
-        'url': f'#user-added-{article_id}',
-        'urlToImage': data.get('imageUrl') or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={data["title"][:20].replace(" ", "+")}',
+        'url': f'#user-added-{article_id}', # User-added articles don't have an external URL
+        'urlToImage': data.get('imageUrl') or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(data["title"][:20])}',
         'publishedAt': current_time_iso,
         'source': {'name': data.get('sourceName', 'My Publication'), 'id': None},
         'full_text': data['content'],
-        'category': 'My Articles',
-        'api_category_keyword': 'My Articles',
+        'api_category_keyword': 'My Articles', # Special category
         'user_id': session['user_id'],
         'user_name': session.get('user_name', 'Unknown User'),
         'read_time_minutes': calculate_read_time(data['content']),
-        'newspaper_summary': data['description']
+        'newspaper_summary': data['description'], # Use the provided description as the base summary
+        'is_user_added': True, # Flag for special handling
+        'groq_analysis': None # Will be populated on first view if not here
     }
 
+    # Pre-emptively run Groq analysis if possible to speed up first view
     if groq_client and new_article_data['full_text']:
         app.logger.info(f"Performing Groq analysis for new user-added article: {new_article_data['title'][:50]}")
         groq_result = get_article_analysis_with_groq(new_article_data['full_text'], new_article_data['title'])
         new_article_data['groq_analysis'] = groq_result
-    else:
-        new_article_data['groq_analysis'] = {
-            "groq_summary": "", "groq_takeaways": [], "error": "Groq analysis not performed."
-        }
 
-    USER_ADDED_ARTICLES_STORE.insert(0, new_article_data)
+    USER_ADDED_ARTICLES_STORE.insert(0, new_article_data) # Add to the front of the list
     MASTER_ARTICLE_STORE[article_id] = new_article_data
 
     app.logger.info(f"User article '{new_article_data['title'][:50]}' (ID: {article_id}) added by {session.get('user_name')}.")
@@ -1806,11 +1932,11 @@ def login():
         if user_account and check_password_hash(user_account['password_hash'], password):
             session['user_id'] = username
             session['user_name'] = user_account['name']
-            session.permanent = True
+            session.permanent = True # Make session last longer
             app.permanent_session_lifetime = timedelta(days=30)
             app.logger.info(f"User '{username}' logged in successfully.")
             flash(f"Welcome back, {user_account['name']}!", "success")
-            next_url = request.args.get('next')
+            next_url = request.args.get('next') # For redirecting after login
             if next_url:
                 return redirect(next_url)
             return redirect(url_for('index'))
@@ -1849,11 +1975,18 @@ def internal_server_error(e):
         session=session, categories=app.config['CATEGORIES'], selected_category='All Articles', current_year=datetime.utcnow().year
     ), 500
 
-print("Cell 6: Flask routes defined and updated.")
+print("Cell 6: Flask routes defined and updated.", file=sys.stderr)
 
-# In[ ]:
-
-
+# In[7]:
 
 
-
+# Cell 7: Main Execution Block
+# This block is only executed when you run the script directly (e.g., `python Rev14.py`).
+# It is ignored by production servers like Gunicorn on Render.
+if __name__ == '__main__':
+    # 'debug=True' is suitable for local development as it provides detailed error pages and auto-reloads on code changes.
+    # On Render, Gunicorn will be used as the production server, and debug mode will be off.
+    # The find_free_port() function helps avoid port conflicts when running the app locally.
+    port = find_free_port()
+    print(f"Starting Flask development server on http://127.0.0.1:{port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
