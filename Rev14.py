@@ -117,14 +117,21 @@ class CommunityArticle(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     groq_summary = db.Column(db.Text, nullable=True)
     groq_takeaways = db.Column(db.Text, nullable=True)
-    comments = db.relationship('Comment', backref='article', lazy=True, cascade="all, delete-orphan")
-
+    comments = db.relationship('Comment',
+                               foreign_keys='Comment.article_id_str', # Specify the FK column in Comment model
+                               backref='community_article_ref', # Changed backref name for clarity
+                               lazy=True,
+                               cascade="all, delete-orphan")
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    article_id_str = db.Column(db.String(32), nullable=True)
+    # This will now store the hash_id for BOTH community articles AND API articles.
+    # For community articles, it's linked via ForeignKey. For API articles, it's just stored.
+    article_id_str = db.Column(db.String(32), db.ForeignKey('community_article.article_hash_id', name='fk_comment_community_article_hash'), nullable=True)
+    # We can remove api_article_hash_id if article_id_str serves both purposes
+    # api_article_hash_id = db.Column(db.String(32), nullable=True) # Consider removing
 
 with app.app_context():
     db.create_all()
@@ -335,16 +342,25 @@ def search_results(page=1):
 @app.route('/article/<article_id>')
 def article_detail(article_id):
     is_community_article = article_id.isdigit()
+    comments = []
+    article_data = None
+
     if is_community_article:
-        article_data = CommunityArticle.query.get_or_404(int(article_id))
-        comments = Comment.query.filter_by(article_id_str=article_data.article_hash_id).order_by(Comment.timestamp.asc()).all()
+        article_db_id = int(article_id)
+        article_data = CommunityArticle.query.get_or_404(article_db_id)
+        # SQLAlchemy handles this through the relationship if lazy='dynamic'
+        # comments = article_data.comments.order_by(Comment.timestamp.asc()).all() 
+        # Or if lazy='select' (default) or 'joined'
+        comments = sorted(article_data.comments, key=lambda c: c.timestamp)
     else:
         article_data = MASTER_ARTICLE_STORE.get(article_id)
-        if not article_data: return redirect(url_for('index'))
-        comments = Comment.query.filter_by(article_id_str=article_id).order_by(Comment.timestamp.asc()).all()
+        if not article_data: 
+            flash("Article not found.", "danger")
+            return redirect(url_for('index'))
+        # Query comments for API articles using the hash_id
+        comments = Comment.query.filter_by(api_article_hash_id=article_id).order_by(Comment.timestamp.asc()).all()
 
     return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments)
-
 @app.route('/get_article_content/<article_id>')
 def get_article_content_json(article_id):
     article_data = MASTER_ARTICLE_STORE.get(article_id)
@@ -361,14 +377,28 @@ def add_comment(article_id):
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
     user = User.query.get(session['user_id'])
     
-    # For community articles, the ID is the numeric DB ID, but we should store its hash_id for consistency
-    article_hash_id_to_store = article_id
-    if article_id.isdigit():
-        comm_article = CommunityArticle.query.get(int(article_id))
-        if comm_article:
-            article_hash_id_to_store = comm_article.article_hash_id
+    is_community_article = article_id.isdigit()
+    new_comment_attrs = {
+        "content": content,
+        "user_id": user.id,
+    }
 
-    new_comment = Comment(content=content, user_id=user.id, article_id_str=article_hash_id_to_store)
+    if is_community_article:
+        comm_article_db_id = int(article_id)
+        # Verify community article exists
+        comm_article = CommunityArticle.query.get(comm_article_db_id)
+        if not comm_article:
+            return jsonify({"error": "Community article not found."}), 404
+        new_comment_attrs["community_article_db_id"] = comm_article_db_id
+    else:
+        # For API articles, article_id is the hash
+        new_comment_attrs["api_article_hash_id"] = article_id
+        # You'd also want to check if the API article exists in MASTER_ARTICLE_STORE
+        if article_id not in MASTER_ARTICLE_STORE:
+             return jsonify({"error": "API article not found."}), 404
+
+
+    new_comment = Comment(**new_comment_attrs)
     db.session.add(new_comment)
     db.session.commit()
     
