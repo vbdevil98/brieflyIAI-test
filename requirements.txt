@@ -1,3 +1,5 @@
+# requirements.txt
+
 Flask
 Flask-SQLAlchemy
 python-dotenv
@@ -11,4 +13,5 @@ nltk
 lxml_html_clean
 groq
 langchain-groq
+# Added for PostgreSQL support on Render to ensure data persistence
 psycopg2-binary
