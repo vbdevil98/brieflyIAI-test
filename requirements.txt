@@ -15,3 +15,5 @@ groq
 langchain-groq
 # Added for PostgreSQL support on Render to ensure data persistence
 psycopg2-binary
+# Added for timezone conversions
+pytz
