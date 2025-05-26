@@ -855,7 +855,7 @@ BASE_HTML_TEMPLATE = """
                         <i class="fas fa-bolt-lightning footer-brand-icon me-2"></i>
                         <span class="h5 mb-0 footer-brand-text">Briefly</span>
                     </div>
-                    <p class="small">Your premier source for news, summarized.</p>
+                    <p class="small">Your premier source for news, AI summarized.</p>
                     <div class="social-links">
                         <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
                     </div>
