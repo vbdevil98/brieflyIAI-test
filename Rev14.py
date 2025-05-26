@@ -1,4 +1,4 @@
-# Rev14.py - MODIFIED FOR INCREASED ARTICLE FETCHING
+# Rev14.py - MODIFIED FOR MORE ROBUST AND DIAGNOSTIC NEWS FETCHING
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -27,7 +27,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.exceptions import LangChainException
-import pytz # Added for IST conversion
+import pytz
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -48,7 +48,7 @@ except LookupError:
         nltk.download('punkt')
         print("NLTK 'punkt' downloaded successfully.", file=sys.stderr)
     except Exception as e:
-        print(f"FATAL: Failed to download 'punkt'. Please ensure the 'nltk_data' folder is in your repository. Error: {e}", file=sys.stderr)
+        print(f"FATAL: Failed to download 'punkt'. Error: {e}", file=sys.stderr)
         sys.exit("Exiting: Missing critical NLTK data.")
 
 # ==============================================================================
@@ -60,15 +60,14 @@ template_storage = {}
 app.jinja_loader = DictLoader(template_storage)
 
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'YOUR_FALLBACK_FLASK_SECRET_KEY_HERE_32_CHARS')
-app.config['PER_PAGE'] = 9 # Articles per page on the website
+app.config['PER_PAGE'] = 9
 app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
-# ## MODIFIED ##: News fetching configuration
-app.config['NEWS_API_QUERY'] = ( # Query for the 'everything' endpoint
-    'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
-)
-app.config['NEWS_API_DAYS_AGO'] = 3 # Fetch articles from the last 3 days
-app.config['NEWS_API_PAGE_SIZE'] = 100 # Max articles per API request
+# ## MODIFIED ##: News fetching configuration with domain fallback
+app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
+app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com' # Fallback domains
+app.config['NEWS_API_DAYS_AGO'] = 3
+app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt'
 app.config['CACHE_EXPIRY_SECONDS'] = 1800
 app.permanent_session_lifetime = timedelta(days=30)
@@ -76,7 +75,7 @@ app.permanent_session_lifetime = timedelta(days=30)
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app.logger.setLevel(logging.INFO)
 
-# Data Persistence on Render using PostgreSQL
+# Data Persistence
 database_url = os.environ.get('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -221,10 +220,8 @@ def login_required(f):
 
 @simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
-    if not groq_client:
-        return {"error": "AI analysis service not available."}
-    if not article_text or not article_text.strip():
-        return {"error": "No text provided for AI analysis."}
+    if not groq_client: return {"error": "AI analysis service not available."}
+    if not article_text or not article_text.strip(): return {"error": "No text provided for AI analysis."}
     app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
     system_prompt = ("You are an expert news analyst. Analyze the following article. "
         "1. Provide a concise, neutral summary (3-4 paragraphs). "
@@ -246,7 +243,7 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         return {"error": "An unexpected error occurred during AI analysis."}
 
 # ==============================================================================
-# --- NEWS FETCHING: MODIFIED FOR GREATER VOLUME AND FRESHNESS ---
+# --- NEWS FETCHING: REWRITTEN FOR MORE ROBUSTNESS AND DIAGNOSTICS ---
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api():
@@ -256,23 +253,34 @@ def fetch_news_from_api():
 
     from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
     from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-
     all_raw_articles = []
 
+    # --- CALL 1: Get top headlines for quality ---
     try:
-        # --- CALL 1: Get top headlines for quality ---
-        app.logger.info("Fetching top headlines from country: 'in'")
+        app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
         top_headlines_response = newsapi.get_top_headlines(
             country='in',
             language='en',
             page_size=app.config['NEWS_API_PAGE_SIZE']
         )
-        if top_headlines_response.get('articles'):
+        # **DIAGNOSTIC LOGGING**
+        status = top_headlines_response.get('status')
+        total_results = top_headlines_response.get('totalResults', 0)
+        app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
+        
+        if status == 'ok' and total_results > 0:
             all_raw_articles.extend(top_headlines_response['articles'])
-        app.logger.info(f"Fetched {len(top_headlines_response.get('articles', []))} top headlines.")
+        elif status == 'error':
+            app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
 
-        # --- CALL 2: Get everything for quantity ---
-        app.logger.info(f"Fetching 'everything' with query: {app.config['NEWS_API_QUERY']}")
+    except NewsAPIException as e:
+        app.logger.error(f"NewsAPI Exception (Top-Headlines): {e}")
+    except Exception as e:
+        app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
+
+    # --- CALL 2: Get everything for quantity ---
+    try:
+        app.logger.info(f"Attempt 2: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']}")
         everything_response = newsapi.get_everything(
             q=app.config['NEWS_API_QUERY'],
             from_param=from_date_str,
@@ -280,56 +288,86 @@ def fetch_news_from_api():
             sort_by=app.config['NEWS_API_SORT_BY'],
             page_size=app.config['NEWS_API_PAGE_SIZE']
         )
-        if everything_response.get('articles'):
+        # **DIAGNOSTIC LOGGING**
+        status = everything_response.get('status')
+        total_results = everything_response.get('totalResults', 0)
+        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
+
+        if status == 'ok' and total_results > 0:
             all_raw_articles.extend(everything_response['articles'])
-        app.logger.info(f"Fetched {len(everything_response.get('articles', []))} articles from 'everything' endpoint.")
-
-        # --- Process, Deduplicate, and Sort ---
-        processed_articles = []
-        unique_urls = set()
-
-        for art_data in all_raw_articles:
-            url = art_data.get('url')
-            # Deduplicate based on URL
-            if not url or url in unique_urls:
-                continue
-            
-            title = art_data.get('title')
-            # Filter out invalid or removed articles
-            if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
-                continue
-            
-            unique_urls.add(url)
-            article_id = generate_article_id(url)
-            source_name = art_data['source'].get('name', 'Unknown Source')
-            placeholder_text = urllib.parse.quote_plus(source_name[:20])
-            
-            standardized_article = {
-                'id': article_id, 'title': title, 'description': art_data.get('description', ''),
-                'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-                'publishedAt': art_data.get('publishedAt'),
-                'source': {'name': source_name}, 'is_community_article': False
-            }
-            MASTER_ARTICLE_STORE[article_id] = standardized_article
-            processed_articles.append(standardized_article)
-        
-        # Final sort by publish date, descending (newest first)
-        processed_articles.sort(key=lambda x: x.get('publishedAt', ''), reverse=True)
-        app.logger.info(f"Total unique articles processed: {len(processed_articles)}.")
-        return processed_articles
+        elif status == 'error':
+            app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
 
     except NewsAPIException as e:
-        app.logger.error(f"NewsAPI API Error: {e}")
-        return []
+        app.logger.error(f"NewsAPI Exception (Everything): {e}")
     except Exception as e:
-        app.logger.error(f"Generic error fetching news: {e}", exc_info=True)
-        return []
+        app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
+
+    # --- CALL 3: Fallback call using specific domains if still no articles ---
+    if not all_raw_articles:
+        try:
+            app.logger.warning("No articles found from primary calls. Trying Fallback with specific domains.")
+            domains_to_check = app.config['NEWS_API_DOMAINS']
+            app.logger.info(f"Attempt 3 (Fallback): Fetching 'everything' from domains: {domains_to_check}")
+            fallback_response = newsapi.get_everything(
+                domains=domains_to_check,
+                from_param=from_date_str,
+                language='en',
+                sort_by=app.config['NEWS_API_SORT_BY'],
+                page_size=app.config['NEWS_API_PAGE_SIZE']
+            )
+            # **DIAGNOSTIC LOGGING**
+            status = fallback_response.get('status')
+            total_results = fallback_response.get('totalResults', 0)
+            app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
+
+            if status == 'ok' and total_results > 0:
+                all_raw_articles.extend(fallback_response['articles'])
+            elif status == 'error':
+                 app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
+        
+        except NewsAPIException as e:
+            app.logger.error(f"NewsAPI Exception (Fallback): {e}")
+        except Exception as e:
+            app.logger.error(f"Generic Exception (Fallback): {e}", exc_info=True)
+
+    # --- Process, Deduplicate, and Sort ---
+    processed_articles = []
+    unique_urls = set()
+
+    app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
+    for art_data in all_raw_articles:
+        url = art_data.get('url')
+        if not url or url in unique_urls:
+            continue
+        
+        title = art_data.get('title')
+        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
+            continue
+        
+        unique_urls.add(url)
+        article_id = generate_article_id(url)
+        source_name = art_data['source'].get('name', 'Unknown Source')
+        placeholder_text = urllib.parse.quote_plus(source_name[:20])
+        
+        standardized_article = {
+            'id': article_id, 'title': title, 'description': art_data.get('description', ''),
+            'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
+            'publishedAt': art_data.get('publishedAt'),
+            'source': {'name': source_name}, 'is_community_article': False
+        }
+        MASTER_ARTICLE_STORE[article_id] = standardized_article
+        processed_articles.append(standardized_article)
+    
+    processed_articles.sort(key=lambda x: x.get('publishedAt', '') or '', reverse=True)
+    app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
+    return processed_articles
+
 
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}")
-    if not SCRAPER_API_KEY:
-        return {"error": "Content fetching service unavailable."}
+    if not SCRAPER_API_KEY: return {"error": "Content fetching service unavailable."}
     params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
         response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
@@ -340,8 +378,7 @@ def fetch_and_parse_article_content(article_hash_id, url):
         article_scraper = Article(url, config=config)
         article_scraper.download(input_html=response.text)
         article_scraper.parse()
-        if not article_scraper.text:
-            return {"error": "Could not extract text from the article."}
+        if not article_scraper.text: return {"error": "Could not extract text from the article."}
         
         article_title = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
         groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_title)
@@ -378,18 +415,12 @@ def get_sort_key(article):
     elif hasattr(article, 'published_at'):
         date_val = article.published_at
 
-    if not date_val:
-        return datetime.min.replace(tzinfo=timezone.utc)
-    
+    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
     if isinstance(date_val, str):
-        try:
-            return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
-        except ValueError:
-            return datetime.min.replace(tzinfo=timezone.utc)
-    
+        try: return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+        except ValueError: return datetime.min.replace(tzinfo=timezone.utc)
     if isinstance(date_val, datetime):
         return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
-
     return datetime.min.replace(tzinfo=timezone.utc)
 
 @app.route('/')
@@ -412,9 +443,7 @@ def index(page=1, category_name='All Articles'):
             all_display_articles.append(art_dict)
             
     all_display_articles.sort(key=get_sort_key, reverse=True)
-    
     paginated_display_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
-    
     featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and paginated_display_articles)
 
     return render_template("INDEX_HTML_TEMPLATE", 
@@ -429,32 +458,24 @@ def index(page=1, category_name='All Articles'):
 def search_results(page=1):
     query_str = request.args.get('query', '').strip()
     per_page = app.config['PER_PAGE']
-    if not query_str:
-        return redirect(url_for('index'))
-
+    if not query_str: return redirect(url_for('index'))
     app.logger.info(f"Search query: '{query_str}'")
     
-    api_results = []
-    for art_id, art_data in MASTER_ARTICLE_STORE.items():
+    api_results = [
+        art_data.copy() for art_id, art_data in MASTER_ARTICLE_STORE.items()
         if query_str.lower() in art_data.get('title', '').lower() or \
-           query_str.lower() in art_data.get('description', '').lower():
-            art_data_copy = art_data.copy()
-            art_data_copy['is_community_article'] = False
-            api_results.append(art_data_copy)
-    
+           query_str.lower() in art_data.get('description', '').lower()
+    ]
+    for art in api_results: art['is_community_article'] = False
+
     community_db_articles = CommunityArticle.query.filter(
         db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), 
                CommunityArticle.description.ilike(f'%{query_str}%'))
     ).order_by(CommunityArticle.published_at.desc()).all()
-    
-    community_results = []
-    for art in community_db_articles:
-        art.is_community_article = True
-        community_results.append(art)
+    for art in community_db_articles: art.is_community_article = True
             
-    all_search_results = api_results + community_results
+    all_search_results = api_results + community_db_articles
     all_search_results.sort(key=get_sort_key, reverse=True)
-
     paginated_search_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
     
     return render_template("INDEX_HTML_TEMPLATE", 
@@ -467,69 +488,45 @@ def search_results(page=1):
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
-    article_data = None
-    comments = []
-    is_community_article = False
-
+    article_data, comments, is_community_article = None, [], False
     article_db = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
     if article_db:
-        article_data = article_db
-        is_community_article = True
+        article_data, is_community_article = article_db, True
         comments = article_data.comments.order_by(Comment.timestamp.asc()).all()
-        if article_data.groq_takeaways:
-            try:
-                article_data.parsed_takeaways = json.loads(article_data.groq_takeaways)
-            except json.JSONDecodeError:
-                article_data.parsed_takeaways = []
-                app.logger.error(f"Failed to parse takeaways JSON for community article {article_hash_id}")
-        else:
-            article_data.parsed_takeaways = []
+        article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
     else:
         article_api = MASTER_ARTICLE_STORE.get(article_hash_id)
         if article_api:
-            article_data = article_api
-            is_community_article = False
+            article_data, is_community_article = article_api, False
             comments = Comment.query.filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
         else:
             flash("Article not found.", "danger")
             return redirect(url_for('index'))
     
-    if isinstance(article_data, dict):
-        article_data['is_community_article'] = False
-    else: 
-        article_data.is_community_article = True # type: ignore
+    if isinstance(article_data, dict): article_data['is_community_article'] = False
+    else: article_data.is_community_article = True
             
-    return render_template("ARTICLE_HTML_TEMPLATE", 
-                           article=article_data, 
-                           is_community_article=is_community_article, 
-                           comments=comments)
+    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
     article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
     if not article_data or 'url' not in article_data:
-        app.logger.warning(f"API Article or URL not found for hash_id: {article_hash_id}")
         return jsonify({"error": "Article data or URL not found"}), 404
-    
     processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
     if processed_content and not processed_content.get("error"):
         MASTER_ARTICLE_STORE[article_hash_id].update(processed_content)
-    else:
-        app.logger.error(f"Failed to process content for {article_hash_id}: {processed_content.get('error')}")
     return jsonify(processed_content)
-
 
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
     content = request.json.get('content', '').strip()
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
-    
     user = User.query.get(session['user_id'])
     if not user: return jsonify({"error": "User not found."}), 401
     
     community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
-    new_comment = None
     if community_article:
         new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id)
     elif article_hash_id in MASTER_ARTICLE_STORE:
@@ -539,79 +536,49 @@ def add_comment(article_hash_id):
 
     db.session.add(new_comment)
     db.session.commit()
-    app.logger.info(f"User '{user.username}' added comment to article '{article_hash_id}'")
-    return jsonify({
-        "success": True, 
-        "comment": {
-            "content": new_comment.content, 
-            "timestamp": new_comment.timestamp.isoformat(),
-            "author": {"name": user.name}
-        }
-    }), 201
-
+    return jsonify({"success": True, "comment": {"content": new_comment.content, "timestamp": new_comment.timestamp.isoformat(), "author": {"name": user.name}}}), 201
 
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
-    title = request.form.get('title')
-    description = request.form.get('description')
-    content = request.form.get('content')
-    source_name = request.form.get('sourceName', 'Community Post')
-    image_url = request.form.get('imageUrl')
-
+    title, description, content = request.form.get('title'), request.form.get('description'), request.form.get('content')
+    source_name, image_url = request.form.get('sourceName', 'Community Post'), request.form.get('imageUrl')
     if not all([title, description, content, source_name]):
         flash("Title, Description, Content, and Source Name are required.", "danger")
         return redirect(url_for('index')) 
 
-    unique_string_for_hash = title + str(session['user_id']) + str(time.time())
-    article_hash_id = generate_article_id(unique_string_for_hash)
-    
+    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
     groq_analysis_result = get_article_analysis_with_groq(content, title)
-    groq_summary = None
-    groq_takeaways_json = None
+    groq_summary, groq_takeaways_json = None, None
     if groq_analysis_result and not groq_analysis_result.get("error"):
         groq_summary = groq_analysis_result.get('groq_summary')
         takeaways_list = groq_analysis_result.get('groq_takeaways')
         if takeaways_list and isinstance(takeaways_list, list):
              groq_takeaways_json = json.dumps(takeaways_list)
-        else:
-            app.logger.warning(f"Groq takeaways for new article '{title}' were not a list: {takeaways_list}")
             
     new_article = CommunityArticle(
-        article_hash_id=article_hash_id, title=title, description=description, full_text=content,
-        source_name=source_name,
-        image_url=image_url if image_url else f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
-        user_id=session['user_id'], 
-        published_at=datetime.now(timezone.utc),
-        groq_summary=groq_summary, 
-        groq_takeaways=groq_takeaways_json
+        article_hash_id=article_hash_id, title=title, description=description, full_text=content, source_name=source_name,
+        image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
+        user_id=session['user_id'], published_at=datetime.now(timezone.utc),
+        groq_summary=groq_summary, groq_takeaways=groq_takeaways_json
     )
     db.session.add(new_article)
     db.session.commit()
-    flash("Your article has been posted to the Community Hub!", "success")
+    flash("Your article has been posted!", "success")
     return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
-
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        username = request.form.get('username', '').strip().lower()
-        password = request.form.get('password', '')
-        if not all([name, username, password]):
-            flash('All fields are required.', 'danger')
-        elif len(username) < 3:
-            flash('Username must be at least 3 characters.', 'warning')
-        elif len(password) < 6:
-            flash('Password must be at least 6 characters.', 'warning')
-        elif User.query.filter_by(username=username).first():
-            flash('Username already exists. Please choose another.', 'warning')
+        name, username, password = request.form.get('name', '').strip(), request.form.get('username', '').strip().lower(), request.form.get('password', '')
+        if not all([name, username, password]): flash('All fields are required.', 'danger')
+        elif len(username) < 3: flash('Username must be at least 3 characters.', 'warning')
+        elif len(password) < 6: flash('Password must be at least 6 characters.', 'warning')
+        elif User.query.filter_by(username=username).first(): flash('Username already exists.', 'warning')
         else:
-            new_user = User(name=name, username=username, password_hash=generate_password_hash(password, method='pbkdf2:sha256'))
-            db.session.add(new_user)
-            db.session.commit()
-            app.logger.info(f"New user registered: {username}")
+            new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
+            db.session.add(new_user); db.session.commit()
             flash(f'Registration successful, {name}! Please log in.', 'success')
             return redirect(url_for('login'))
         return redirect(url_for('register'))
@@ -621,69 +588,49 @@ def register():
 def login():
     if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
-        username = request.form.get('username', '').strip().lower()
-        password = request.form.get('password', '')
+        username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
-            session.permanent = True
-            session['user_id'] = user.id
-            session['user_name'] = user.name
-            app.logger.info(f"User '{username}' logged in.")
+            session.permanent, session['user_id'], session['user_name'] = True, user.id, user.name
             flash(f"Welcome back, {user.name}!", "success")
-            next_url = request.args.get('next')
-            return redirect(next_url or url_for('index'))
+            return redirect(request.args.get('next') or url_for('index'))
         else:
             flash('Invalid username or password.', 'danger')
     return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
 def logout():
-    user_name_logged_out = session.get('user_name', 'User')
     session.clear()
-    app.logger.info(f"User '{user_name_logged_out}' logged out.")
     flash("You have been successfully logged out.", "info")
     return redirect(url_for('index'))
 
 @app.route('/about')
-def about():
-    return render_template("ABOUT_US_HTML_TEMPLATE")
+def about(): return render_template("ABOUT_US_HTML_TEMPLATE")
 
 @app.route('/contact')
-def contact():
-    return render_template("CONTACT_HTML_TEMPLATE")
+def contact(): return render_template("CONTACT_HTML_TEMPLATE")
 
 @app.route('/privacy')
-def privacy():
-    return render_template("PRIVACY_POLICY_HTML_TEMPLATE")
+def privacy(): return render_template("PRIVACY_POLICY_HTML_TEMPLATE")
 
 @app.route('/subscribe', methods=['POST'])
 def subscribe():
     email = request.form.get('email', '').strip().lower()
     if not email:
         flash('Email is required to subscribe.', 'warning')
-        return redirect(request.referrer or url_for('index'))
-
-    existing_subscriber = Subscriber.query.filter_by(email=email).first()
-    if existing_subscriber:
-        flash('You are already subscribed with this email address.', 'info')
+    elif Subscriber.query.filter_by(email=email).first():
+        flash('You are already subscribed.', 'info')
     else:
         try:
-            new_subscriber = Subscriber(email=email, subscribed_at=datetime.now(timezone.utc))
-            db.session.add(new_subscriber)
-            db.session.commit()
-            flash('Thank you for subscribing to our weekly updates!', 'success')
-            app.logger.info(f"New subscriber: {email}")
+            db.session.add(Subscriber(email=email)); db.session.commit()
+            flash('Thank you for subscribing!', 'success')
         except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error subscribing email {email}: {e}")
-            flash('Could not subscribe at this time. Please try again later.', 'danger')
-    
+            db.session.rollback(); app.logger.error(f"Error subscribing email {email}: {e}")
+            flash('Could not subscribe. Please try again.', 'danger')
     return redirect(request.referrer or url_for('index'))
-
 
 @app.errorhandler(404)
 def page_not_found(e):
-    app.logger.warning(f"404 error at {request.url}: {e}")
     return render_template("404_TEMPLATE"), 404
 
 @app.errorhandler(500)
