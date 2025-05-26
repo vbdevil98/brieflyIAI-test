@@ -252,7 +252,7 @@ def fetch_news_from_api():
         return []
 
     from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
     all_raw_articles = []
 
     # --- CALL 1: Get top headlines for quality ---
