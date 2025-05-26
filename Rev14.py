@@ -1,4 +1,4 @@
-# Rev14.py - FULLY RESTORED AND MODIFIED
+# Rev14.py - CORRECTED CODE TO FIX NEWSAPI ERROR
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -72,7 +72,6 @@ app.config['NEWS_API_DAYS_AGO'] = 2 # Fetch more recent news (e.g., last 2 days)
 app.config['NEWS_API_PAGE_SIZE'] = 99
 app.config['NEWS_API_SORT_BY'] = 'publishedAt' # Sort by published date for latest news
 app.config['CACHE_EXPIRY_SECONDS'] = 1800 # Cache for 30 minutes for fresher news
-# app.config['READING_SPEED_WPM'] = 230 # Removed as per request
 app.permanent_session_lifetime = timedelta(days=30)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -160,10 +159,6 @@ def init_db():
         db.create_all()
         app.logger.info("Database tables should be ready.")
 
-# Call init_db() carefully, especially in production if you use migrations
-# For Render, this usually runs once on service start or when code changes.
-# init_db() # Consider if this is the right place for your deployment strategy
-
 # ==============================================================================
 # --- 5. Helper Functions ---
 # ==============================================================================
@@ -236,10 +231,6 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# def calculate_read_time(text): # Removed as per request
-#     if not text: return 0
-#     return max(1, round(len(text.split()) / app.config['READING_SPEED_WPM']))
-
 @simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
     if not groq_client:
@@ -252,7 +243,7 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         "1. Provide a concise, neutral summary (3-4 paragraphs). "
         "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
         "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}" # Increased limit if necessary
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
         ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
@@ -268,44 +259,43 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         app.logger.error(f"Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
 
+# ==============================================================================
+# --- NEWS FETCHING: CORRECTED LOGIC ---
+# ==============================================================================
 @simple_cache()
 def fetch_news_from_api():
-    if not newsapi: return []
-    from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-
+    if not newsapi: 
+        app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
+        return []
+    
     preferred_sources = app.config.get('NEWS_API_SOURCES', '').strip()
+    response = None
     
     try:
+        # **FIXED LOGIC**: Use either sources OR country, but not both.
         if preferred_sources:
-            app.logger.info(f"Fetching top headlines from India, sources: {preferred_sources}, sort_by: {app.config['NEWS_API_SORT_BY']}")
+            # If sources are defined, use them exclusively. This gives priority to user's config.
+            app.logger.info(f"Fetching top headlines from preferred sources: {preferred_sources}")
             response = newsapi.get_top_headlines(
                 sources=preferred_sources,
-                country='in', # Focus on India
                 language='en',
-                page_size=app.config['NEWS_API_PAGE_SIZE'],
-                # sort_by is not a direct param for top-headlines, it's more for 'everything'
+                page_size=app.config['NEWS_API_PAGE_SIZE']
             )
         else:
-            app.logger.info(f"Fetching general news from India with query: {app.config['NEWS_API_QUERY']}")
-            response = newsapi.get_everything(
-                q=app.config['NEWS_API_QUERY'],
-                from_param=from_date_str, # Use ISO format
+            # If no sources are defined, fall back to fetching by country for general news.
+            app.logger.info("Fetching top headlines from country: 'in'")
+            response = newsapi.get_top_headlines(
+                country='in',
                 language='en',
-                sort_by=app.config['NEWS_API_SORT_BY'],
-                page_size=app.config['NEWS_API_PAGE_SIZE'],
-                # consider adding 'domains' for specific Indian news sites if sources are not enough
-                # domains='timesofindia.indiatimes.com,thehindu.com,ndtv.com'
+                page_size=app.config['NEWS_API_PAGE_SIZE']
             )
-        
+
         processed_articles, unique_titles = [], set()
         for art_data in response.get('articles', []):
             title, url = art_data.get('title'), art_data.get('url')
-            # Ensure essential data is present and title is not a placeholder
             if not all([url, title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
                 continue
             
-            # Deduplication based on title (case-insensitive)
             if title.lower() in unique_titles:
                 continue
             unique_titles.add(title.lower())
@@ -314,28 +304,28 @@ def fetch_news_from_api():
             source_name = art_data['source'].get('name', 'Unknown Source')
             placeholder_text = urllib.parse.quote_plus(source_name[:20])
             
-            # Ensure publishedAt is available and valid
             published_at_str = art_data.get('publishedAt')
             if not published_at_str:
-                app.logger.warning(f"Article '{title}' missing publishedAt, skipping or using default.")
-                # Optionally skip or use a default past date: published_at_str = datetime.min.isoformat() + "Z"
-                continue # Skip if no published date
+                continue 
 
             standardized_article = {
                 'id': article_id, 'title': title, 'description': art_data.get('description', ''),
                 'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-                'publishedAt': published_at_str, # Keep as string from API
+                'publishedAt': published_at_str,
                 'source': {'name': source_name}, 'is_community_article': False
             }
             MASTER_ARTICLE_STORE[article_id] = standardized_article
             processed_articles.append(standardized_article)
         
-        # Sort by publishedAt if not already sorted by API (redundant if API sorts)
         processed_articles.sort(key=lambda x: x.get('publishedAt', ''), reverse=True)
-        app.logger.info(f"Fetched {len(processed_articles)} articles from NewsAPI.")
+        app.logger.info(f"Fetched and processed {len(processed_articles)} articles from NewsAPI.")
         return processed_articles
+    except ValueError as e:
+        # This will catch the specific error if the logic is wrong, and other ValueErrors.
+        app.logger.error(f"NewsAPI ValueError: {e}", exc_info=True)
+        return []
     except NewsAPIException as e:
-        app.logger.error(f"NewsAPI error: {e}")
+        app.logger.error(f"NewsAPI API Error: {e}")
         return []
     except Exception as e:
         app.logger.error(f"Generic error fetching news: {e}", exc_info=True)
@@ -367,7 +357,6 @@ def fetch_and_parse_article_content(article_hash_id, url):
         
         return {
             "full_text": article_scraper.text,
-            # "read_time_minutes": calculate_read_time(article_scraper.text), # Removed
             "groq_analysis": groq_analysis, 
             "error": groq_analysis.get("error") if groq_analysis else "AI analysis unavailable."
         }
@@ -393,6 +382,27 @@ def get_paginated_articles(articles, page, per_page):
     total_pages = (total + per_page - 1) // per_page
     return paginated_items, total_pages
 
+def get_sort_key(article):
+    date_val = None
+    if isinstance(article, dict):
+        date_val = article.get('publishedAt')
+    elif hasattr(article, 'published_at'):
+        date_val = article.published_at
+
+    if not date_val:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    
+    if isinstance(date_val, str):
+        try:
+            return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)
+    
+    if isinstance(date_val, datetime):
+        return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
+
+    return datetime.min.replace(tzinfo=timezone.utc)
+
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/category/<category_name>')
@@ -406,26 +416,12 @@ def index(page=1, category_name='All Articles'):
         for art in db_articles:
             art.is_community_article = True
             all_display_articles.append(art)
-    else: # 'All Articles'
-        api_articles = fetch_news_from_api() # This now fetches more recent, India-centric news
+    else: 
+        api_articles = fetch_news_from_api() 
         for art_dict in api_articles:
             art_dict['is_community_article'] = False
             all_display_articles.append(art_dict)
             
-    # Sort all articles by published_at (descending) before pagination
-    # Ensure API articles have 'publishedAt' and CommunityArticles have 'published_at'
-    def get_sort_key(article):
-        if isinstance(article, dict) and 'publishedAt' in article and article['publishedAt']:
-            try:
-                return datetime.fromisoformat(article['publishedAt'].replace('Z', '+00:00'))
-            except ValueError:
-                app.logger.warning(f"Could not parse date for API article: {article.get('title')}, date: {article['publishedAt']}")
-                return datetime.min.replace(tzinfo=timezone.utc) # Fallback for unparseable dates
-        elif hasattr(article, 'published_at') and article.published_at:
-            # Ensure community article published_at is timezone-aware (should be UTC from DB)
-            return article.published_at if article.published_at.tzinfo else pytz.utc.localize(article.published_at)
-        return datetime.min.replace(tzinfo=timezone.utc) # Fallback for missing dates
-
     all_display_articles.sort(key=get_sort_key, reverse=True)
     
     paginated_display_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
@@ -449,7 +445,6 @@ def search_results(page=1):
 
     app.logger.info(f"Search query: '{query_str}'")
     
-    # Search in API articles (MASTER_ARTICLE_STORE)
     api_results = []
     for art_id, art_data in MASTER_ARTICLE_STORE.items():
         if query_str.lower() in art_data.get('title', '').lower() or \
@@ -458,7 +453,6 @@ def search_results(page=1):
             art_data_copy['is_community_article'] = False
             api_results.append(art_data_copy)
     
-    # Search in Community Articles (DB)
     community_db_articles = CommunityArticle.query.filter(
         db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), 
                CommunityArticle.description.ilike(f'%{query_str}%'))
@@ -470,8 +464,7 @@ def search_results(page=1):
         community_results.append(art)
             
     all_search_results = api_results + community_results
-    # Sort all search results by date
-    all_search_results.sort(key=lambda x: get_sort_key(x), reverse=True)
+    all_search_results.sort(key=get_sort_key, reverse=True)
 
     paginated_search_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
     
@@ -507,8 +500,6 @@ def article_detail(article_hash_id):
         if article_api:
             article_data = article_api
             is_community_article = False
-            # API articles don't have takeaways stored directly in MASTER_ARTICLE_STORE this way
-            # They are fetched via get_article_content_json
             comments = Comment.query.filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
         else:
             flash("Article not found.", "danger")
@@ -528,12 +519,11 @@ def article_detail(article_hash_id):
 def get_article_content_json(article_hash_id):
     article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
     if not article_data or 'url' not in article_data:
-        app.logger.warning(f"API Article or URL not found in MASTER_ARTICLE_STORE for hash_id: {article_hash_id}")
+        app.logger.warning(f"API Article or URL not found for hash_id: {article_hash_id}")
         return jsonify({"error": "Article data or URL not found"}), 404
     
     processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
     if processed_content and not processed_content.get("error"):
-        # Update the MASTER_ARTICLE_STORE with the fetched full text and analysis
         MASTER_ARTICLE_STORE[article_hash_id].update(processed_content)
     else:
         app.logger.error(f"Failed to process content for {article_hash_id}: {processed_content.get('error')}")
@@ -547,7 +537,7 @@ def add_comment(article_hash_id):
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
     
     user = User.query.get(session['user_id'])
-    if not user: return jsonify({"error": "User not found."}), 401 # Should not happen if @login_required works
+    if not user: return jsonify({"error": "User not found."}), 401
     
     community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
     new_comment = None
@@ -561,12 +551,11 @@ def add_comment(article_hash_id):
     db.session.add(new_comment)
     db.session.commit()
     app.logger.info(f"User '{user.username}' added comment to article '{article_hash_id}'")
-    # Return timestamp as ISO string for JS to parse, it will be converted by to_ist filter in template
     return jsonify({
         "success": True, 
         "comment": {
             "content": new_comment.content, 
-            "timestamp": new_comment.timestamp.isoformat(), # Send as ISO UTC
+            "timestamp": new_comment.timestamp.isoformat(),
             "author": {"name": user.name}
         }
     }), 201
@@ -585,8 +574,6 @@ def post_article():
         flash("Title, Description, Content, and Source Name are required.", "danger")
         return redirect(url_for('index')) 
 
-    # Generate a unique hash_id for the community article
-    # Include user_id and current time to ensure uniqueness even for same titles by different users or at different times
     unique_string_for_hash = title + str(session['user_id']) + str(time.time())
     article_hash_id = generate_article_id(unique_string_for_hash)
     
@@ -595,7 +582,6 @@ def post_article():
     groq_takeaways_json = None
     if groq_analysis_result and not groq_analysis_result.get("error"):
         groq_summary = groq_analysis_result.get('groq_summary')
-        # Ensure takeaways are stored as a JSON string if they exist
         takeaways_list = groq_analysis_result.get('groq_takeaways')
         if takeaways_list and isinstance(takeaways_list, list):
              groq_takeaways_json = json.dumps(takeaways_list)
@@ -607,7 +593,7 @@ def post_article():
         source_name=source_name,
         image_url=image_url if image_url else f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
         user_id=session['user_id'], 
-        published_at=datetime.now(timezone.utc), # Explicitly set UTC timestamp
+        published_at=datetime.now(timezone.utc),
         groq_summary=groq_summary, 
         groq_takeaways=groq_takeaways_json
     )
@@ -622,7 +608,7 @@ def register():
     if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
-        username = request.form.get('username', '').strip().lower() # Store username in lowercase
+        username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
         if not all([name, username, password]):
             flash('All fields are required.', 'danger')
@@ -639,20 +625,20 @@ def register():
             app.logger.info(f"New user registered: {username}")
             flash(f'Registration successful, {name}! Please log in.', 'success')
             return redirect(url_for('login'))
-        return redirect(url_for('register')) # Redirect to clear form on error, or remove if you prefer sticky forms
+        return redirect(url_for('register'))
     return render_template("REGISTER_HTML_TEMPLATE")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
-        username = request.form.get('username', '').strip().lower() # Convert to lowercase for comparison
+        username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
-            session.permanent = True # Makes session last for app.permanent_session_lifetime
+            session.permanent = True
             session['user_id'] = user.id
-            session['user_name'] = user.name # Store user's display name
+            session['user_name'] = user.name
             app.logger.info(f"User '{username}' logged in.")
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
@@ -663,7 +649,7 @@ def login():
 
 @app.route('/logout')
 def logout():
-    user_name_logged_out = session.get('user_name', 'User') # Get name before clearing
+    user_name_logged_out = session.get('user_name', 'User')
     session.clear()
     app.logger.info(f"User '{user_name_logged_out}' logged out.")
     flash("You have been successfully logged out.", "info")
@@ -713,12 +699,12 @@ def page_not_found(e):
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    db.session.rollback() # Rollback any pending DB transactions on server error
+    db.session.rollback()
     app.logger.error(f"500 error at {request.url}: {e}", exc_info=True)
     return render_template("500_TEMPLATE"), 500
 
 # ==============================================================================
-# --- 7. HTML Templates ---
+# --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
 BASE_HTML_TEMPLATE = """
 <!doctype html>
@@ -853,7 +839,7 @@ BASE_HTML_TEMPLATE = """
         .btn-outline-secondary-modal { padding: 0.6rem 1.2rem; font-weight:600; border-color: var(--text-muted-color); color: var(--text-muted-color); }
         body.dark-mode .btn-outline-secondary-modal { border-color: var(--text-muted-color); color: var(--text-muted-color); }
         body.dark-mode .btn-outline-secondary-modal:hover { background-color: #333; color: var(--text-color); border-color: #444;}
-        .alert-top { position: fixed; top: 105px; /* Adjusted for category nav */ left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: 0 3px 10px rgba(0,0,0,0.1);}
+        .alert-top { position: fixed; top: 105px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: 0 3px 10px rgba(0,0,0,0.1);}
         .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(25px); } to { opacity: 1; transform: translateY(0); } }
@@ -863,22 +849,22 @@ BASE_HTML_TEMPLATE = """
         .static-content-wrapper h1, .static-content-wrapper h2 { color: var(--primary-color); font-family: 'Poppins', sans-serif; }
         body.dark-mode .static-content-wrapper h1, body.dark-mode .static-content-wrapper h2 { color: var(--secondary-color); }
 
-        @media (max-width: 991.98px) { /* md breakpoint */
-            body { padding-top: 180px; /* Adjusted */ }
+        @media (max-width: 991.98px) {
+            body { padding-top: 180px; }
             .navbar-main { padding-bottom: 0.5rem; height: auto;}
             .navbar-content-wrapper { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
             .navbar-brand-custom { margin-bottom: 0.5rem; }
             .search-form-container { width: 100%; order: 3; margin-top:0.5rem; padding: 0; }
             .header-controls { position: absolute; top: 0.9rem; right: 1rem; order: 2; }
-            .category-nav { top: 130px; /* Adjusted based on expanded main nav height */ }
+            .category-nav { top: 130px; }
         }
-        @media (max-width: 767.98px) { /* sm breakpoint */
-            body { padding-top: 170px; /* Adjusted */ }
-            .category-nav { top: 120px; /* Adjusted */ }
+        @media (max-width: 767.98px) {
+            body { padding-top: 170px; }
+            .category-nav { top: 120px; }
             .featured-article .row { flex-direction: column; }
             .featured-image { margin-bottom: 1rem; height: 250px; }
         }
-        @media (max-width: 575.98px) { /* xs breakpoint */
+        @media (max-width: 575.98px) {
             .navbar-brand-custom { font-size: 1.8rem;}
             .header-controls { gap: 0.3rem; }
             .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
@@ -887,7 +873,6 @@ BASE_HTML_TEMPLATE = """
         .auth-container { max-width: 450px; margin: 3rem auto; padding: 2rem; }
         .auth-title { text-align: center; color: var(--primary-color); margin-bottom: 1.5rem; font-weight: 700;}
         body.dark-mode .auth-title { color: var(--secondary-color); }
-        /* Comment section specific styling */
         .comment-section { margin-top: 3rem; }
         .comment-card { border-bottom: 1px solid var(--card-border-color); padding-bottom: 1rem; margin-bottom: 1rem; }
         .comment-card:last-child { border-bottom: none; margin-bottom: 0; }
@@ -1036,18 +1021,17 @@ BASE_HTML_TEMPLATE = """
         function applyTheme(theme) {
             if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
             updateThemeIcon();
-            localStorage.setItem('darkMode', theme); // Use localStorage for persistence
-            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax"; // Also use cookie for SSR if needed
+            localStorage.setItem('darkMode', theme);
+            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
         }
         if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
         
-        // Prioritize localStorage for theme, fallback to cookie
         let storedTheme = localStorage.getItem('darkMode');
         if (!storedTheme) {
              const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
              if (cookieTheme) storedTheme = cookieTheme;
         }
-        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); } // Apply if found, else just update icon
+        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
 
         const addArticleBtn = document.getElementById('addArticleBtn');
         const addArticleModal = document.getElementById('addArticleModal');
@@ -1092,7 +1076,6 @@ INDEX_HTML_TEMPLATE = """
             <div class="col-lg-6 d-flex flex-column ps-lg-3 pt-3 pt-lg-0">
                 <div class="article-meta mb-2">
                     <span class="badge bg-primary me-2" style="font-size:0.75rem;">{{ (art0.author.name if art0.is_community_article else art0.source.name)|truncate(25) }}</span>
-                    {# Use to_ist filter for displaying timestamp #}
                     <span class="meta-item"><i class="far fa-calendar-alt"></i> {{ (art0.published_at | to_ist if art0.is_community_article else (art0.publishedAt | to_ist if art0.publishedAt else 'N/A')) }}</span>
                 </div>
                 <h2 class="mb-2 h4"><a href="{{ article_url }}" class="text-decoration-none article-title">{{ art0.title }}</a></h2>
@@ -1123,7 +1106,6 @@ INDEX_HTML_TEMPLATE = """
                 <h5 class="article-title mb-2"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
                 <div class="article-meta small mb-2">
                     <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {{ (art.author.name if art.is_community_article else art.source.name)|truncate(20) }}</span>
-                     {# Use to_ist filter for displaying timestamp #}
                     <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
                 </div>
                 <p class="article-description small">{{ art.description|truncate(100) }}</p>
@@ -1134,7 +1116,6 @@ INDEX_HTML_TEMPLATE = """
         {% endfor %}
     </div>
 
-    {# Pagination #}
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
         <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query) if current_page > 1 else '#' }}">&laquo; Prev</a></li>
@@ -1182,7 +1163,6 @@ ARTICLE_HTML_TEMPLATE = """
     <div class="article-meta-detailed">
         <span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article else article.source.name }}</span>
         <span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span>
-        {# Time to read removed as per request #}
     </div>
     {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
     {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
@@ -1233,16 +1213,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function convertUTCToIST(utcIsoString) {
         if (!utcIsoString) return "N/A";
         const date = new Date(utcIsoString);
-        // Using Intl.DateTimeFormat for robust, locale-aware formatting
         return new Intl.DateTimeFormat('en-IN', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-            timeZone: 'Asia/Kolkata',
-            timeZoneName: 'short'
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: 'numeric', minute: '2-digit', hour12: true,
+            timeZone: 'Asia/Kolkata', timeZoneName: 'short'
         }).format(date);
     }
 
@@ -1273,11 +1247,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (analysis && analysis.groq_takeaways && analysis.groq_takeaways.length > 0 && !analysis.error) {
                     html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5><ul>${analysis.groq_takeaways.map(t => `<li>${t}</li>`).join('')}</ul></div>`;
                 }
-                if (html === '') { // If no summary or takeaways, show a message
+                if (html === '') {
                     html = `<div class="alert alert-secondary small p-3 mt-3">AI analysis is not available for this article.</div>`;
                 }
                 
-                // Add link to original article
                 html += `<a href="${'{{ article.url }}'}" class="btn btn-outline-primary mt-3" target="_blank" rel="noopener noreferrer">Read Original at ${'{{ article.source.name }}'} <i class="fas fa-external-link-alt ms-1"></i></a>`;
 
                 apiArticleContent.innerHTML = html;
@@ -1312,7 +1285,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     newEl.className = 'comment-card';
                     const commentDate = convertUTCToIST(data.comment.timestamp);
                     newEl.innerHTML = `<div class="d-flex justify-content-between"><span class="comment-author">${data.comment.author.name}</span><span class="comment-date">${commentDate}</span></div><p class="mt-2 mb-0">${data.comment.content}</p>`;
-                    list.prepend(newEl); // Add new comment to the top
+                    list.prepend(newEl);
                     document.getElementById('comment-content').value = '';
 
                     const countEl = document.querySelector('.comment-section h3');
@@ -1438,7 +1411,7 @@ PRIVACY_POLICY_HTML_TEMPLATE = """
 {% block content %}
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">Privacy Policy</h1>
-    <p class="text-muted">Last updated: May 27, 2024</p>
+    <p class="text-muted">Last updated: May 26, 2024</p>
     
     <p>Briefly ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website <a href="https://briefly-news-app.onrender.com/">briefly-news-app.onrender.com</a>.</p>
     
@@ -1492,8 +1465,8 @@ with app.app_context():
     init_db()
 
 if __name__ == '__main__':
-    # The 'debug=True' is fine for development but should be 'False' in production
-    # Render sets the PORT environment variable automatically.
     port = int(os.environ.get("PORT", 8080))
-    app.logger.info(f"Starting Flask app locally on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't'))
+    # Set debug=False for production on Render. You can use an env var to control this.
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
+    app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production'} mode on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
