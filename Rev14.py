@@ -1,4 +1,4 @@
-# Rev14.py - CORRECTED CODE TO FIX NEWSAPI ERROR
+# Rev14.py - MODIFIED FOR INCREASED ARTICLE FETCHING
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -59,25 +59,24 @@ app = Flask(__name__)
 template_storage = {}
 app.jinja_loader = DictLoader(template_storage)
 
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'YOUR_FALLBACK_FLASK_SECRET_KEY_HERE_32_CHARS') # IMPORTANT: Set in Render
-app.config['PER_PAGE'] = 9
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'YOUR_FALLBACK_FLASK_SECRET_KEY_HERE_32_CHARS')
+app.config['PER_PAGE'] = 9 # Articles per page on the website
 app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
-# ## IMPROVEMENT 5 & India-centric ##: Added config for better news quality control
-app.config['NEWS_API_SOURCES'] = os.environ.get('NEWS_API_SOURCES', 'the-times-of-india,the-hindu,ndtv') # Prioritize Indian sources
-app.config['NEWS_API_QUERY'] = ( # More India-centric query
-    '"India news" OR "latest Indian developments" OR "India business" OR "Indian politics" OR "India technology" OR "Bollywood news"'
+# ## MODIFIED ##: News fetching configuration
+app.config['NEWS_API_QUERY'] = ( # Query for the 'everything' endpoint
+    'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 )
-app.config['NEWS_API_DAYS_AGO'] = 2 # Fetch more recent news (e.g., last 2 days)
-app.config['NEWS_API_PAGE_SIZE'] = 99
-app.config['NEWS_API_SORT_BY'] = 'publishedAt' # Sort by published date for latest news
-app.config['CACHE_EXPIRY_SECONDS'] = 1800 # Cache for 30 minutes for fresher news
+app.config['NEWS_API_DAYS_AGO'] = 3 # Fetch articles from the last 3 days
+app.config['NEWS_API_PAGE_SIZE'] = 100 # Max articles per API request
+app.config['NEWS_API_SORT_BY'] = 'publishedAt'
+app.config['CACHE_EXPIRY_SECONDS'] = 1800
 app.permanent_session_lifetime = timedelta(days=30)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app.logger.setLevel(logging.INFO)
 
-# ## FIX 4 ##: Data Persistence on Render using PostgreSQL
+# Data Persistence on Render using PostgreSQL
 database_url = os.environ.get('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -122,7 +121,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     name = db.Column(db.String(120), nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False) # Increased length for stronger hashes
+    password_hash = db.Column(db.String(256), nullable=False)
     articles = db.relationship('CommunityArticle', backref='author', lazy='dynamic', cascade="all, delete-orphan")
     comments = db.relationship('Comment', backref='author', lazy='dynamic', cascade="all, delete-orphan")
 
@@ -134,21 +133,21 @@ class CommunityArticle(db.Model):
     full_text = db.Column(db.Text, nullable=False)
     source_name = db.Column(db.String(100), nullable=False)
     image_url = db.Column(db.String(500), nullable=True)
-    published_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)) # Store as UTC
+    published_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     groq_summary = db.Column(db.Text, nullable=True)
-    groq_takeaways = db.Column(db.Text, nullable=True) # Stored as JSON string
+    groq_takeaways = db.Column(db.Text, nullable=True)
     comments = db.relationship('Comment', backref='community_article', lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)) # Store as UTC
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id'), nullable=True)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
 
-class Subscriber(db.Model): # New model for newsletter subscribers
+class Subscriber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     subscribed_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -183,26 +182,15 @@ def jinja_truncate_filter(s, length=120, killwords=False, end='...'):
 app.jinja_env.filters['truncate'] = jinja_truncate_filter
 
 def to_ist_filter(utc_dt):
-    if not utc_dt:
-        return "N/A"
-    if isinstance(utc_dt, str): # Handle cases where datetime might be a string
-        try:
-            utc_dt = datetime.fromisoformat(utc_dt.replace('Z', '+00:00'))
-        except ValueError:
-            try:
-                utc_dt = datetime.strptime(utc_dt, '%Y-%m-%dT%H:%M:%S.%f%z') # Handle another possible format
-            except ValueError:
-                 return "Invalid date" # Or handle error appropriately
-
-    if utc_dt.tzinfo is None: # If datetime is naive, assume UTC
-        utc_dt = pytz.utc.localize(utc_dt)
-    else: # If datetime is aware, convert to UTC first then to IST
-        utc_dt = utc_dt.astimezone(pytz.utc)
-
+    if not utc_dt: return "N/A"
+    if isinstance(utc_dt, str):
+        try: utc_dt = datetime.fromisoformat(utc_dt.replace('Z', '+00:00'))
+        except ValueError: return "Invalid date"
+    if utc_dt.tzinfo is None: utc_dt = pytz.utc.localize(utc_dt)
+    else: utc_dt = utc_dt.astimezone(pytz.utc)
     ist_dt = utc_dt.astimezone(INDIAN_TIMEZONE)
     return ist_dt.strftime('%b %d, %Y at %I:%M %p %Z')
 app.jinja_env.filters['to_ist'] = to_ist_filter
-
 
 def simple_cache(expiry_seconds_default=None):
     def decorator(func):
@@ -234,7 +222,6 @@ def login_required(f):
 @simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
     if not groq_client:
-        app.logger.warning("Groq client not initialized. Skipping AI analysis.")
         return {"error": "AI analysis service not available."}
     if not article_text or not article_text.strip():
         return {"error": "No text provided for AI analysis."}
@@ -250,7 +237,6 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         analysis = json.loads(ai_response.content)
         if 'summary' in analysis and 'takeaways' in analysis:
             return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
-        app.logger.warning("Groq response missing 'summary' or 'takeaways'.")
         raise ValueError("Missing 'summary' or 'takeaways' key in Groq JSON.")
     except (json.JSONDecodeError, ValueError, LangChainException) as e:
         app.logger.error(f"Groq analysis failed for '{article_title[:50]}': {e}")
@@ -260,70 +246,78 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         return {"error": "An unexpected error occurred during AI analysis."}
 
 # ==============================================================================
-# --- NEWS FETCHING: CORRECTED LOGIC ---
+# --- NEWS FETCHING: MODIFIED FOR GREATER VOLUME AND FRESHNESS ---
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api():
     if not newsapi: 
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
-    
-    preferred_sources = app.config.get('NEWS_API_SOURCES', '').strip()
-    response = None
-    
-    try:
-        # **FIXED LOGIC**: Use either sources OR country, but not both.
-        if preferred_sources:
-            # If sources are defined, use them exclusively. This gives priority to user's config.
-            app.logger.info(f"Fetching top headlines from preferred sources: {preferred_sources}")
-            response = newsapi.get_top_headlines(
-                sources=preferred_sources,
-                language='en',
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-        else:
-            # If no sources are defined, fall back to fetching by country for general news.
-            app.logger.info("Fetching top headlines from country: 'in'")
-            response = newsapi.get_top_headlines(
-                country='in',
-                language='en',
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
 
-        processed_articles, unique_titles = [], set()
-        for art_data in response.get('articles', []):
-            title, url = art_data.get('title'), art_data.get('url')
-            if not all([url, title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
+    from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    all_raw_articles = []
+
+    try:
+        # --- CALL 1: Get top headlines for quality ---
+        app.logger.info("Fetching top headlines from country: 'in'")
+        top_headlines_response = newsapi.get_top_headlines(
+            country='in',
+            language='en',
+            page_size=app.config['NEWS_API_PAGE_SIZE']
+        )
+        if top_headlines_response.get('articles'):
+            all_raw_articles.extend(top_headlines_response['articles'])
+        app.logger.info(f"Fetched {len(top_headlines_response.get('articles', []))} top headlines.")
+
+        # --- CALL 2: Get everything for quantity ---
+        app.logger.info(f"Fetching 'everything' with query: {app.config['NEWS_API_QUERY']}")
+        everything_response = newsapi.get_everything(
+            q=app.config['NEWS_API_QUERY'],
+            from_param=from_date_str,
+            language='en',
+            sort_by=app.config['NEWS_API_SORT_BY'],
+            page_size=app.config['NEWS_API_PAGE_SIZE']
+        )
+        if everything_response.get('articles'):
+            all_raw_articles.extend(everything_response['articles'])
+        app.logger.info(f"Fetched {len(everything_response.get('articles', []))} articles from 'everything' endpoint.")
+
+        # --- Process, Deduplicate, and Sort ---
+        processed_articles = []
+        unique_urls = set()
+
+        for art_data in all_raw_articles:
+            url = art_data.get('url')
+            # Deduplicate based on URL
+            if not url or url in unique_urls:
                 continue
             
-            if title.lower() in unique_titles:
+            title = art_data.get('title')
+            # Filter out invalid or removed articles
+            if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
                 continue
-            unique_titles.add(title.lower())
-
+            
+            unique_urls.add(url)
             article_id = generate_article_id(url)
             source_name = art_data['source'].get('name', 'Unknown Source')
             placeholder_text = urllib.parse.quote_plus(source_name[:20])
             
-            published_at_str = art_data.get('publishedAt')
-            if not published_at_str:
-                continue 
-
             standardized_article = {
                 'id': article_id, 'title': title, 'description': art_data.get('description', ''),
                 'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-                'publishedAt': published_at_str,
+                'publishedAt': art_data.get('publishedAt'),
                 'source': {'name': source_name}, 'is_community_article': False
             }
             MASTER_ARTICLE_STORE[article_id] = standardized_article
             processed_articles.append(standardized_article)
         
+        # Final sort by publish date, descending (newest first)
         processed_articles.sort(key=lambda x: x.get('publishedAt', ''), reverse=True)
-        app.logger.info(f"Fetched and processed {len(processed_articles)} articles from NewsAPI.")
+        app.logger.info(f"Total unique articles processed: {len(processed_articles)}.")
         return processed_articles
-    except ValueError as e:
-        # This will catch the specific error if the logic is wrong, and other ValueErrors.
-        app.logger.error(f"NewsAPI ValueError: {e}", exc_info=True)
-        return []
+
     except NewsAPIException as e:
         app.logger.error(f"NewsAPI API Error: {e}")
         return []
@@ -331,12 +325,10 @@ def fetch_news_from_api():
         app.logger.error(f"Generic error fetching news: {e}", exc_info=True)
         return []
 
-
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}")
     if not SCRAPER_API_KEY:
-        app.logger.error("SCRAPER_API_KEY not set. Cannot fetch external article content.")
         return {"error": "Content fetching service unavailable."}
     params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
@@ -349,7 +341,6 @@ def fetch_and_parse_article_content(article_hash_id, url):
         article_scraper.download(input_html=response.text)
         article_scraper.parse()
         if not article_scraper.text:
-            app.logger.warning(f"Newspaper3k could not extract text from {url}")
             return {"error": "Could not extract text from the article."}
         
         article_title = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
@@ -361,14 +352,12 @@ def fetch_and_parse_article_content(article_hash_id, url):
             "error": groq_analysis.get("error") if groq_analysis else "AI analysis unavailable."
         }
     except requests.exceptions.RequestException as e:
-        app.logger.error(f"ScraperAPI error for {url}: {e}")
         return {"error": f"Failed to fetch article content via proxy: {str(e)}"}
     except Exception as e:
-        app.logger.error(f"Generic error parsing article {url}: {e}", exc_info=True)
         return {"error": f"Failed to parse article content: {str(e)}"}
 
 # ==============================================================================
-# --- 6. Flask Routes ---
+# --- 6. Flask Routes (No changes needed below this line) ---
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
@@ -1466,7 +1455,6 @@ with app.app_context():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
-    # Set debug=False for production on Render. You can use an env var to control this.
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production'} mode on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
