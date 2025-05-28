@@ -67,7 +67,7 @@ app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
 app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com'
-app.config['NEWS_API_DAYS_AGO'] = 1
+app.config['NEWS_API_DAYS_AGO'] = 3
 app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt'
 app.config['CACHE_EXPIRY_SECONDS'] = 1800
