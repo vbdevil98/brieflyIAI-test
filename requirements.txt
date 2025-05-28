@@ -17,3 +17,12 @@ langchain-groq
 psycopg2-binary
 # Added for timezone conversions
 pytz
+psycopg2-binary
+celery
+redis
+langchain-groq
+nltk
+newspaper3k
+requests
+python-dotenv
+pytz
