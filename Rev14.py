@@ -336,11 +336,11 @@ def fetch_news_from_api(target_date_str=None):
             app.logger.info(f"Fetching news for a specific date: {target_date_str}")
         else:
             # Default to the last 2 days if no date is specified
-            target_date = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO',2))
+            target_date = datetime.now(timezone.utc) - timedelta(days=app.config.get('NEWS_API_DAYS_AGO',2))
             app.logger.info(f"Fetching news for the default period (last {app.config['NEWS_API_DAYS_AGO']} days).")
     except (ValueError, TypeError):
         app.logger.warning(f"Invalid date format '{target_date_str}'. Falling back to default.")
-        target_date = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO',2))
+        target_date = datetime.now(timezone.utc) - timedelta(days=app.config.get('NEWS_API_DAYS_AGO',2))
 
     # For a specific day, we fetch from the start to the end of that day.
     if target_date_str:
