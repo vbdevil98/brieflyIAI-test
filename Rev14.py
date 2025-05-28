@@ -1,3 +1,5 @@
+# Rev14.py - MODIFIED FOR MORE ROBUST AND DIAGNOSTIC NEWS FETCHING, AND NEW COMMENT FEATURES
+
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -14,7 +16,7 @@ from functools import wraps
 # Third-party imports
 import nltk
 import requests
-from flask import Flask, render_template, url_for, redirect, request, jsonify, session, flash
+from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
@@ -41,14 +43,14 @@ try:
     if local_nltk_data_path not in nltk.data.path:
         nltk.data.path.insert(0, local_nltk_data_path)
     nltk.data.find('tokenizers/punkt', paths=[local_nltk_data_path])
-    logging.info("NLTK 'punkt' tokenizer found.")
+    print("NLTK 'punkt' tokenizer found.", file=sys.stderr)
 except LookupError:
-    logging.warning("NLTK 'punkt' tokenizer not found. Attempting to download...")
+    print("WARNING: NLTK 'punkt' tokenizer not found. Attempting to download...", file=sys.stderr)
     try:
-        nltk.download('punkt', quiet=True)
-        logging.info("NLTK 'punkt' downloaded successfully.")
+        nltk.download('punkt')
+        print("NLTK 'punkt' downloaded successfully.", file=sys.stderr)
     except Exception as e:
-        logging.critical(f"Failed to download 'punkt'. Error: {e}")
+        print(f"FATAL: Failed to download 'punkt'. Error: {e}", file=sys.stderr)
         sys.exit("Exiting: Missing critical NLTK data.")
 
 # ==============================================================================
@@ -65,36 +67,27 @@ app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
 app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com'
-app.config['NEWS_API_DAYS_AGO'] = 2  # Fetch news from the last 2 days
+app.config['NEWS_API_DAYS_AGO'] = 7 # Fetch news from the last 2 days
 app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt'
-app.config['CACHE_EXPIRY_SECONDS'] = 1800  # 30 minutes
+app.config['CACHE_EXPIRY_SECONDS'] = 3600 # 30 minutes
 app.permanent_session_lifetime = timedelta(days=30)
 
-# Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(sys.stderr),
-        logging.FileHandler('app.log')
-    ]
-)
-app.logger = logging.getLogger(__name__)
+logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+app.logger.setLevel(logging.INFO)
 
 # Data Persistence
 database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    app.logger.info("Connecting to PostgreSQL database.")
+    app.logger.info("Connecting to persistent PostgreSQL database.")
 else:
     db_file_name = 'app_data.db'
     project_root_for_db = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(project_root_for_db, db_file_name)
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.logger.info(f"Using SQLite database: {db_path}")
+    app.logger.info(f"Using local SQLite database for development at {db_path}.")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -102,46 +95,24 @@ db = SQLAlchemy(app)
 # ==============================================================================
 # --- 3. API Client Initialization ---
 # ==============================================================================
-def initialize_api_clients():
-    """Initialize and validate API clients with proper error handling"""
-    global newsapi, groq_client
-    
-    NEWSAPI_KEY = os.environ.get('NEWSAPI_KEY')
-    if NEWSAPI_KEY:
-        try:
-            newsapi = NewsApiClient(api_key=NEWSAPI_KEY)
-            app.logger.info("NewsAPI client initialized.")
-        except Exception as e:
-            app.logger.error(f"Failed to initialize NewsAPI client: {e}")
-            newsapi = None
-    else:
-        app.logger.error("NEWSAPI_KEY missing. News fetching disabled.")
-        newsapi = None
+NEWSAPI_KEY = os.environ.get('NEWSAPI_KEY')
+newsapi = NewsApiClient(api_key=NEWSAPI_KEY) if NEWSAPI_KEY else None
+if not newsapi: app.logger.error("NEWSAPI_KEY missing. News fetching will fail.")
 
-    GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-    if GROQ_API_KEY:
-        try:
-            groq_client = ChatGroq(
-                model="llama3-70b-8192", 
-                groq_api_key=GROQ_API_KEY, 
-                temperature=0.1,
-                request_timeout=30
-            )
-            app.logger.info("Groq client initialized.")
-        except Exception as e:
-            app.logger.error(f"Failed to initialize Groq client: {e}")
-            groq_client = None
-    else:
-        app.logger.warning("GROQ_API_KEY missing. AI analysis disabled.")
-        groq_client = None
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+groq_client = None
+if GROQ_API_KEY:
+    try:
+        groq_client = ChatGroq(model="llama3-70b-8192", groq_api_key=GROQ_API_KEY, temperature=0.1)
+        app.logger.info("Groq client initialized.")
+    except Exception as e:
+        app.logger.error(f"Failed to initialize Groq client: {e}")
+else:
+    app.logger.warning("GROQ_API_KEY missing. AI analysis disabled.")
 
-    SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
-    if not SCRAPER_API_KEY:
-        app.logger.warning("SCRAPER_API_KEY missing. Article content fetching may fail.")
-        
-    return newsapi, groq_client
-
-newsapi, groq_client = initialize_api_clients()
+SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
+if not SCRAPER_API_KEY:
+    app.logger.warning("SCRAPER_API_KEY missing. Article content fetching may fail.")
 
 # ==============================================================================
 # --- 4. Database Models ---
@@ -152,6 +123,7 @@ class User(db.Model):
     name = db.Column(db.String(120), nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     articles = db.relationship('CommunityArticle', backref='author', lazy='dynamic', cascade="all, delete-orphan")
+    # comments relationship: author of comments is eager loaded when user.comments is accessed
     comments = db.relationship('Comment', backref=db.backref('author', lazy='joined'), lazy='dynamic', cascade="all, delete-orphan")
     comment_votes = db.relationship('CommentVote', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
@@ -163,23 +135,23 @@ class CommunityArticle(db.Model):
     full_text = db.Column(db.Text, nullable=False)
     source_name = db.Column(db.String(100), nullable=False)
     image_url = db.Column(db.String(500), nullable=True)
-    published_at = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
+    published_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     groq_summary = db.Column(db.Text, nullable=True)
     groq_takeaways = db.Column(db.Text, nullable=True)
-    comments = db.relationship('Comment', backref=db.backref('community_article', lazy='joined'), lazy='dynamic', 
-                              foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
+    # comments relationship: community_article for comments is eager loaded when article.comments is accessed
+    comments = db.relationship('Comment', backref=db.backref('community_article', lazy='joined'), lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # Author of the comment
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id'), nullable=True)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
-    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
-    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic', 
-                             cascade="all, delete-orphan")
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True) # For replies
+    # [MODIFIED] Changed lazy loading for replies to 'selectin' for better performance with joinedload
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='selectin', cascade="all, delete-orphan")
     votes = db.relationship('CommentVote', backref='comment', lazy='dynamic', cascade="all, delete-orphan")
 
 class CommentVote(db.Model):
@@ -192,96 +164,60 @@ class CommentVote(db.Model):
 class Subscriber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    subscribed_at = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp())
+    subscribed_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 def init_db():
-    """Initialize database with proper error handling"""
     with app.app_context():
-        try:
-            app.logger.info("Creating database tables...")
-            db.create_all()
-            app.logger.info("Database tables created.")
-        except Exception as e:
-            app.logger.critical(f"Database initialization failed: {e}")
-            sys.exit("Database initialization failed. Exiting.")
+        app.logger.info("Attempting to create database tables...")
+        db.create_all()
+        app.logger.info("Database tables should be ready.")
 
 # ==============================================================================
 # --- 5. Helper Functions ---
 # ==============================================================================
-MASTER_ARTICLE_STORE = {}
-API_CACHE = {}
+MASTER_ARTICLE_STORE, API_CACHE = {}, {}
 INDIAN_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
-def generate_article_id(url_or_title):
-    """Generate consistent article ID from content"""
-    return hashlib.md5(url_or_title.encode('utf-8')).hexdigest()
+def generate_article_id(url_or_title): return hashlib.md5(url_or_title.encode('utf-8')).hexdigest()
 
 def jinja_truncate_filter(s, length=120, killwords=False, end='...'):
-    """Custom Jinja filter for smart text truncation"""
-    if not s: 
-        return ''
-    if len(s) <= length: 
-        return s
-        
-    if killwords:
-        return s[:length - len(end)] + end
-        
+    if not s: return ''
+    if len(s) <= length: return s
+    if killwords: return s[:length - len(end)] + end
     words = s.split()
-    result = []
+    result_words = []
     current_length = 0
-    
     for word in words:
-        word_length = len(word) + (1 if result else 0)
-        if current_length + word_length > length - len(end):
-            break
-        result.append(word)
-        current_length += word_length
-        
-    return ' '.join(result) + end
-
+        if current_length + len(word) + (1 if result_words else 0) > length - len(end): break
+        result_words.append(word)
+        current_length += len(word) + (1 if len(result_words) > 1 else 0)
+    if not result_words: return s[:length - len(end)] + end
+    return ' '.join(result_words) + end
 app.jinja_env.filters['truncate'] = jinja_truncate_filter
 
 def to_ist_filter(utc_dt):
-    """Convert UTC datetime to Indian Standard Time"""
-    if not utc_dt:
-        return "N/A"
-    
-    try:
-        # Handle string inputs
-        if isinstance(utc_dt, str):
-            utc_dt = datetime.fromisoformat(utc_dt.replace('Z', '+00:00'))
-            
-        # Ensure datetime is timezone-aware
-        if utc_dt.tzinfo is None:
-            utc_dt = pytz.utc.localize(utc_dt)
-        else:
-            utc_dt = utc_dt.astimezone(pytz.utc)
-            
-        # Convert to IST
-        ist_dt = utc_dt.astimezone(INDIAN_TIMEZONE)
-        return ist_dt.strftime('%b %d, %Y at %I:%M %p %Z')
-    except (ValueError, TypeError) as e:
-        app.logger.error(f"Date conversion error: {e}")
-        return "Invalid date"
-
+    if not utc_dt: return "N/A"
+    if isinstance(utc_dt, str):
+        try: utc_dt = datetime.fromisoformat(utc_dt.replace('Z', '+00:00'))
+        except ValueError: return "Invalid date"
+    if utc_dt.tzinfo is None: utc_dt = pytz.utc.localize(utc_dt)
+    else: utc_dt = utc_dt.astimezone(pytz.utc)
+    ist_dt = utc_dt.astimezone(INDIAN_TIMEZONE)
+    return ist_dt.strftime('%b %d, %Y at %I:%M %p %Z')
 app.jinja_env.filters['to_ist'] = to_ist_filter
 
 def simple_cache(expiry_seconds_default=None):
-    """Decorator for simple function caching"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             expiry = expiry_seconds_default or app.config['CACHE_EXPIRY_SECONDS']
             key_parts = [func.__name__] + list(map(str, args)) + sorted(kwargs.items())
             cache_key = hashlib.md5(str(key_parts).encode('utf-8')).hexdigest()
-            
-            # Check cache
             cached_entry = API_CACHE.get(cache_key)
             if cached_entry and (time.time() - cached_entry[1] < expiry):
                 app.logger.debug(f"Cache HIT for {func.__name__}")
                 return cached_entry[0]
-                
-            app.logger.debug(f"Cache MISS for {func.__name__}")
+            app.logger.debug(f"Cache MISS for {func.__name__}. Calling function.")
             result = func(*args, **kwargs)
             API_CACHE[cache_key] = (result, time.time())
             return result
@@ -289,7 +225,6 @@ def simple_cache(expiry_seconds_default=None):
     return decorator
 
 def login_required(f):
-    """Decorator to ensure user is logged in"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
@@ -300,51 +235,26 @@ def login_required(f):
 
 @simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
-    """Get article analysis from Groq API with enhanced error handling"""
-    if not groq_client:
-        app.logger.error("Groq client not available for analysis")
-        return {"error": "AI analysis service not available."}
-    
-    if not article_text or not article_text.strip():
-        app.logger.warning("Empty article text provided for analysis")
-        return {"error": "No text provided for AI analysis."}
-    
+    if not groq_client: return {"error": "AI analysis service not available."}
+    if not article_text or not article_text.strip(): return {"error": "No text provided for AI analysis."}
+    app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
+    system_prompt = ("You are an expert news analyst. Analyze the following article. "
+        "1. Provide a concise, neutral summary (3-4 paragraphs). "
+        "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
+        "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
     try:
-        app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
-        
-        # Prepare prompts
-        system_prompt = (
-            "You are an expert news analyst. Analyze the following article. "
-            "1. Provide a concise, neutral summary (3-4 paragraphs). "
-            "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
-            "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings)."
-        )
-        
-        # Truncate text to avoid exceeding token limits
-        human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:15000]}"
-        
-        # Get response
         json_model = groq_client.bind(response_format={"type": "json_object"})
-        ai_response = json_model.invoke([
-            SystemMessage(content=system_prompt), 
-            HumanMessage(content=human_prompt)
-        ])
-        
-        # Parse response
+        ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
         analysis = json.loads(ai_response.content)
         if 'summary' in analysis and 'takeaways' in analysis:
-            return {
-                "groq_summary": analysis.get("summary"),
-                "groq_takeaways": analysis.get("takeaways"),
-                "error": None
-            }
-        raise ValueError("Missing 'summary' or 'takeaways' key in Groq response")
-        
+            return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
+        raise ValueError("Missing 'summary' or 'takeaways' key in Groq JSON.")
     except (json.JSONDecodeError, ValueError, LangChainException) as e:
-        app.logger.error(f"Groq analysis failed: {e}")
+        app.logger.error(f"Groq analysis failed for '{article_title[:50]}': {e}")
         return {"error": f"AI analysis failed: {str(e)}"}
     except Exception as e:
-        app.logger.error(f"Unexpected error during Groq analysis: {e}", exc_info=True)
+        app.logger.error(f"Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
 
 # ==============================================================================
@@ -352,169 +262,107 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api():
-    """Fetch news from NewsAPI with robust error handling and diagnostics"""
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
 
+    from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+    to_date_utc = datetime.now(timezone.utc)
+    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+
+
+    all_raw_articles = []
+
     try:
-        # Calculate date range
-        from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-        to_date_utc = datetime.now(timezone.utc)
-        from_date_str = from_date_utc.strftime('%Y-%m-%d')
-        to_date_str = to_date_utc.strftime('%Y-%m-%d')
-        
-        all_raw_articles = []
-        app.logger.info("Starting news fetch process...")
-        
-        # Strategy 1: Top Headlines (India)
-        try:
-            app.logger.info("Fetching top headlines (India)...")
-            top_headlines = newsapi.get_top_headlines(
-                country='in',
-                language='en',
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-            if top_headlines.get('status') == 'ok':
-                all_raw_articles.extend(top_headlines['articles'])
-                app.logger.info(f"Added {len(top_headlines['articles'])} top headlines")
-        except NewsAPIException as e:
-            app.logger.error(f"Top headlines fetch failed: {e.get_message() if hasattr(e, 'get_message') else str(e)}")
-        
-        # Strategy 2: Everything query
-        try:
-            app.logger.info(f"Fetching everything with query: {app.config['NEWS_API_QUERY']}")
-            everything = newsapi.get_everything(
-                q=app.config['NEWS_API_QUERY'],
-                from_param=from_date_str,
-                to=to_date_str,
-                language='en',
-                sort_by=app.config['NEWS_API_SORT_BY'],
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-            if everything.get('status') == 'ok':
-                all_raw_articles.extend(everything['articles'])
-                app.logger.info(f"Added {len(everything['articles'])} everything results")
-        except NewsAPIException as e:
-            app.logger.error(f"Everything query failed: {e.get_message() if hasattr(e, 'get_message') else str(e)}")
-        
-        # Strategy 3: Domain-specific fallback
-        if not all_raw_articles:
-            try:
-                app.logger.info("No articles found. Trying domain-specific fallback...")
-                domains = app.config['NEWS_API_DOMAINS'].split(',')
-                fallback = newsapi.get_everything(
-                    domains=app.config['NEWS_API_DOMAINS'],
-                    from_param=from_date_str,
-                    to=to_date_str,
-                    language='en',
-                    sort_by=app.config['NEWS_API_SORT_BY'],
-                    page_size=app.config['NEWS_API_PAGE_SIZE']
-                )
-                if fallback.get('status') == 'ok':
-                    all_raw_articles.extend(fallback['articles'])
-                    app.logger.info(f"Added {len(fallback['articles'])} fallback results")
-            except NewsAPIException as e:
-                app.logger.error(f"Domain fallback failed: {e.get_message() if hasattr(e, 'get_message') else str(e)}")
-        
-        # Process and deduplicate articles
-        processed_articles = []
-        unique_urls = set()
-        
-        app.logger.info(f"Processing {len(all_raw_articles)} raw articles...")
-        for art in all_raw_articles:
-            url = art.get('url')
-            title = art.get('title', '')
-            
-            # Validate article
-            if not url or not title or title == '[Removed]' or url in unique_urls:
-                continue
-                
-            # Generate ID and store
-            article_id = generate_article_id(url)
-            source_name = art.get('source', {}).get('name', 'Unknown Source')
-            placeholder = urllib.parse.quote_plus(source_name[:20])
-            
-            processed = {
-                'id': article_id,
-                'title': title,
-                'description': art.get('description', ''),
-                'url': url,
-                'urlToImage': art.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder}',
-                'publishedAt': art.get('publishedAt'),
-                'source': {'name': source_name},
-                'is_community_article': False
-            }
-            
-            unique_urls.add(url)
-            MASTER_ARTICLE_STORE[article_id] = processed
-            processed_articles.append(processed)
-        
-        # Sort by publication date
-        processed_articles.sort(
-            key=lambda x: x.get('publishedAt') or '', 
-            reverse=True
+        app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
+        top_headlines_response = newsapi.get_top_headlines(
+            country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE']
         )
-        app.logger.info(f"Returning {len(processed_articles)} processed articles")
-        return processed_articles
-        
-    except Exception as e:
-        app.logger.critical(f"News fetch process failed: {e}", exc_info=True)
-        return []
+        status = top_headlines_response.get('status')
+        total_results = top_headlines_response.get('totalResults', 0)
+        app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
+        if status == 'ok' and total_results > 0: all_raw_articles.extend(top_headlines_response['articles'])
+        elif status == 'error': app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
+    except Exception as e: app.logger.error(f"Exception (Top-Headlines): {e}", exc_info=True)
+
+    try:
+        app.logger.info(f"Attempt 2: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_str} to {to_date_str}")
+        everything_response = newsapi.get_everything(
+            q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
+            language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
+        )
+        status = everything_response.get('status')
+        total_results = everything_response.get('totalResults', 0)
+        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
+        if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
+        elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
+    except Exception as e: app.logger.error(f"Exception (Everything): {e}", exc_info=True)
+
+    if not all_raw_articles:
+        try:
+            app.logger.warning("No articles from primary calls. Trying Fallback with domains.")
+            domains_to_check = app.config['NEWS_API_DOMAINS']
+            app.logger.info(f"Attempt 3 (Fallback): Fetching from domains: {domains_to_check} from {from_date_str} to {to_date_str}")
+            fallback_response = newsapi.get_everything(
+                domains=domains_to_check, from_param=from_date_str, to=to_date_str,
+                language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
+            )
+            status = fallback_response.get('status')
+            total_results = fallback_response.get('totalResults', 0)
+            app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
+            if status == 'ok' and total_results > 0: all_raw_articles.extend(fallback_response['articles'])
+            elif status == 'error': app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
+        except Exception as e: app.logger.error(f"Exception (Fallback): {e}", exc_info=True)
+
+    processed_articles, unique_urls = [], set()
+    app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
+    for art_data in all_raw_articles:
+        url = art_data.get('url')
+        if not url or url in unique_urls: continue
+        title = art_data.get('title')
+        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip(): continue
+        unique_urls.add(url)
+        article_id = generate_article_id(url)
+        source_name = art_data['source'].get('name', 'Unknown Source')
+        placeholder_text = urllib.parse.quote_plus(source_name[:20])
+        standardized_article = {
+            'id': article_id, 'title': title, 'description': art_data.get('description', ''),
+            'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
+            'publishedAt': art_data.get('publishedAt'), 'source': {'name': source_name}, 'is_community_article': False
+        }
+        MASTER_ARTICLE_STORE[article_id] = standardized_article
+        processed_articles.append(standardized_article)
+    processed_articles.sort(key=lambda x: x.get('publishedAt', '') or '', reverse=True)
+    app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
+    return processed_articles
 
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
-    """Fetch and parse article content with robust error handling"""
-    app.logger.info(f"Fetching content for article: {article_hash_id}")
-    
-    if not SCRAPER_API_KEY:
-        app.logger.error("SCRAPER_API_KEY missing")
-        return {"error": "Content fetching service unavailable."}
-    
+    app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
+    if not SCRAPER_API_KEY: return {"error": "Content fetching service unavailable."}
+    params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
-        # Fetch content through proxy
-        params = {
-            'api_key': os.environ.get('SCRAPER_API_KEY'),
-            'url': url,
-            'render': 'true',
-            'timeout': 60
-        }
-        
-        response = requests.get(
-            'http://api.scraperapi.com', 
-            params=params, 
-            timeout=60
-        )
+        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
         response.raise_for_status()
-        
-        # Parse article
         config = Config()
         config.fetch_images = False
         config.memoize_articles = False
-        config.request_timeout = 30
-        
         article_scraper = Article(url, config=config)
         article_scraper.download(input_html=response.text)
         article_scraper.parse()
-        
-        if not article_scraper.text:
-            return {"error": "Could not extract text from the article."}
-        
-        # Get analysis
-        article_title = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', '')
+        if not article_scraper.text: return {"error": "Could not extract text from the article."}
+        article_title = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
         groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_title)
-        
         return {
-            "full_text": article_scraper.text,
-            "groq_analysis": groq_analysis,
+            "full_text": article_scraper.text, "groq_analysis": groq_analysis,
             "error": groq_analysis.get("error") if groq_analysis else "AI analysis unavailable."
         }
-        
     except requests.exceptions.RequestException as e:
-        app.logger.error(f"Request failed for {url}: {e}")
-        return {"error": f"Failed to fetch article content: {str(e)}"}
+        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
+        return {"error": f"Failed to fetch article content via proxy: {str(e)}"}
     except Exception as e:
-        app.logger.error(f"Failed to parse article {url}: {e}", exc_info=True)
+        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
         return {"error": f"Failed to parse article content: {str(e)}"}
 
 # ==============================================================================
@@ -522,43 +370,27 @@ def fetch_and_parse_article_content(article_hash_id, url):
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
-    """Inject global variables into templates"""
-    return {
-        'categories': app.config['CATEGORIES'],
-        'current_year': datetime.utcnow().year,
-        'session': session,
-        'request': request
-    }
+    return {'categories': app.config['CATEGORIES'], 'current_year': datetime.utcnow().year, 'session': session, 'request': request}
 
 def get_paginated_articles(articles, page, per_page):
-    """Paginate articles list efficiently"""
     total = len(articles)
     start = (page - 1) * per_page
-    end = min(start + per_page, total)
+    end = start + per_page
     paginated_items = articles[start:end]
     total_pages = (total + per_page - 1) // per_page
     return paginated_items, total_pages
 
 def get_sort_key(article):
-    """Get sort key for article with proper date handling"""
     date_val = None
-    
-    if isinstance(article, dict):
-        date_val = article.get('publishedAt')
-    elif hasattr(article, 'published_at'):
-        date_val = article.published_at
-    
-    if not date_val:
-        return datetime.min.replace(tzinfo=timezone.utc)
-    
-    try:
-        if isinstance(date_val, str):
-            return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
-        if isinstance(date_val, datetime):
-            return date_val
-    except ValueError:
-        app.logger.warning(f"Invalid date format: {date_val}")
-    
+    if isinstance(article, dict): date_val = article.get('publishedAt')
+    elif hasattr(article, 'published_at'): date_val = article.published_at
+    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
+    if isinstance(date_val, str):
+        try: return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+        except ValueError:
+            app.logger.warning(f"Could not parse date string: {date_val}")
+            return datetime.min.replace(tzinfo=timezone.utc)
+    if isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
 
 @app.route('/')
@@ -566,215 +398,103 @@ def get_sort_key(article):
 @app.route('/category/<category_name>')
 @app.route('/category/<category_name>/page/<int:page>')
 def index(page=1, category_name='All Articles'):
-    """Main index view with pagination and category filtering"""
     session['previous_list_page'] = request.full_path
     per_page = app.config['PER_PAGE']
     all_display_articles = []
-    
-    # Fetch articles based on category
     if category_name == 'Community Hub':
-        try:
-            db_articles = CommunityArticle.query.options(
-                joinedload(CommunityArticle.author)
-            ).order_by(CommunityArticle.published_at.desc()).all()
-            
-            for art in db_articles:
-                art.is_community_article = True
-                all_display_articles.append(art)
-                
-        except Exception as e:
-            app.logger.error(f"Database query failed: {e}")
-            flash("Error loading community articles", "danger")
+        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
+        for art in db_articles:
+            art.is_community_article = True
+            all_display_articles.append(art)
     else:
-        try:
-            api_articles = fetch_news_from_api()
-            for art_dict in api_articles:
-                art_dict['is_community_article'] = False
-                all_display_articles.append(art_dict)
-        except Exception as e:
-            app.logger.error(f"News fetch failed: {e}")
-            flash("Error loading news articles", "danger")
-    
-    # Sort and paginate
+        api_articles = fetch_news_from_api()
+        for art_dict in api_articles:
+            art_dict['is_community_article'] = False
+            all_display_articles.append(art_dict)
     all_display_articles.sort(key=get_sort_key, reverse=True)
-    paginated_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
-    
-    # Determine if we should show featured article
-    featured_article_on_this_page = (
-        page == 1 and 
-        category_name == 'All Articles' and 
-        not request.args.get('query') and 
-        paginated_articles
-    )
-    
-    return render_template(
-        "INDEX_HTML_TEMPLATE",
-        articles=paginated_articles,
-        selected_category=category_name,
-        current_page=page,
-        total_pages=total_pages,
-        featured_article_on_this_page=featured_article_on_this_page
-    )
+    paginated_display_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
+    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and paginated_display_articles)
+    return render_template("INDEX_HTML_TEMPLATE", articles=paginated_display_articles, selected_category=category_name, current_page=page, total_pages=total_pages, featured_article_on_this_page=featured_article_on_this_page)
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
-    """Search view with pagination"""
     session['previous_list_page'] = request.full_path
     query_str = request.args.get('query', '').strip()
-    
-    if not query_str:
-        return redirect(url_for('index'))
-        
-    app.logger.info(f"Search query: '{query_str}'")
     per_page = app.config['PER_PAGE']
-    all_search_results = []
-    
-    try:
-        # Search API articles
-        for art_id, art_data in MASTER_ARTICLE_STORE.items():
-            if (query_str.lower() in art_data.get('title', '').lower() or 
-                query_str.lower() in art_data.get('description', '').lower()):
-                art_copy = art_data.copy()
-                art_copy['is_community_article'] = False
-                all_search_results.append(art_copy)
-        
-        # Search community articles
-        community_articles = CommunityArticle.query.options(
-            joinedload(CommunityArticle.author)
-        ).filter(
-            db.or_(
-                CommunityArticle.title.ilike(f'%{query_str}%'),
-                CommunityArticle.description.ilike(f'%{query_str}%')
-            )
-        ).order_by(CommunityArticle.published_at.desc()).all()
-        
-        for art in community_articles:
-            art.is_community_article = True
-            all_search_results.append(art)
-            
-    except Exception as e:
-        app.logger.error(f"Search failed: {e}")
-        flash("Error performing search", "danger")
-    
-    # Sort and paginate
+    if not query_str: return redirect(url_for('index'))
+    app.logger.info(f"Search query: '{query_str}'")
+    api_results = []
+    for art_id, art_data in MASTER_ARTICLE_STORE.items():
+        if query_str.lower() in art_data.get('title', '').lower() or query_str.lower() in art_data.get('description', '').lower():
+            art_copy = art_data.copy()
+            art_copy['is_community_article'] = False
+            api_results.append(art_copy)
+    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
+        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))
+    ).order_by(CommunityArticle.published_at.desc())
+    community_db_articles = []
+    for art in community_db_articles_query.all():
+        art.is_community_article = True
+        community_db_articles.append(art)
+    all_search_results = api_results + community_db_articles
     all_search_results.sort(key=get_sort_key, reverse=True)
-    paginated_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
-    
-    return render_template(
-        "INDEX_HTML_TEMPLATE",
-        articles=paginated_articles,
-        selected_category=f"Search: {query_str}",
-        current_page=page,
-        total_pages=total_pages,
-        featured_article_on_this_page=False,
-        query=query_str
-    )
+    paginated_search_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
+    return render_template("INDEX_HTML_TEMPLATE", articles=paginated_search_articles, selected_category=f"Search: {query_str}", current_page=page, total_pages=total_pages, featured_article_on_this_page=False, query=query_str)
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
-    """Article detail view with comments"""
+    article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
     previous_list_page = session.get('previous_list_page', url_for('index'))
-    article_data = None
-    is_community_article = False
-    comments = []
-    comment_data = {}
-    
-    try:
-        # Try to find community article
-        article_db = CommunityArticle.query.options(
-            joinedload(CommunityArticle.author)
-        ).filter_by(article_hash_id=article_hash_id).first()
+
+    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
+
+    if article_db:
+        article_data = article_db
+        is_community_article = True
+        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
+        except json.JSONDecodeError:
+            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
+            article_data.parsed_takeaways = []
         
-        if article_db:
-            article_data = article_db
-            is_community_article = True
-            
-            # Parse takeaways
-            if article_db.groq_takeaways:
-                try:
-                    article_data.parsed_takeaways = json.loads(article_db.groq_takeaways)
-                except json.JSONDecodeError:
-                    app.logger.error(f"Failed to parse takeaways for article {article_hash_id}")
-                    article_data.parsed_takeaways = []
-            else:
-                article_data.parsed_takeaways = []
-            
-            # Get comments
-            all_comments = Comment.query.options(
+        # Query for comments related to this community article
+        all_article_comments_list = Comment.query.options(
+            joinedload(Comment.author), 
+            joinedload(Comment.replies).options(joinedload(Comment.author)) # Eager load authors of replies
+        ).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
+        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+    else:
+        article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
+        if article_api_dict:
+            article_data = article_api_dict.copy() # Make a copy for modification
+            is_community_article = False
+            all_article_comments_list = Comment.query.options(
                 joinedload(Comment.author),
-                joinedload(Comment.replies).joinedload(Comment.author)
-            ).filter_by(community_article_id=article_db.id).all()
-            
-            comments = [c for c in all_comments if c.parent_id is None]
-            
+                joinedload(Comment.replies).options(joinedload(Comment.author))
+            ).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
+            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
         else:
-            # Try API article
-            article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
-            if article_api_dict:
-                article_data = article_api_dict
-                is_community_article = False
-                
-                # Get comments
-                all_comments = Comment.query.options(
-                    joinedload(Comment.author),
-                    joinedload(Comment.replies).joinedload(Comment.author)
-                ).filter_by(api_article_hash_id=article_hash_id).all()
-                
-                comments = [c for c in all_comments if c.parent_id is None]
-            else:
-                flash("Article not found.", "danger")
-                return redirect(url_for('index'))
-                
-    except Exception as e:
-        app.logger.error(f"Article load failed: {e}")
-        flash("Error loading article", "danger")
-        return redirect(url_for('index'))
-    
-    # Process votes if we have comments
-    if comments:
-        comment_ids = [c.id for c in all_comments]
-        
-        # Initialize comment data
-        for c_id in comment_ids:
-            comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
-        
-        # Get vote counts
-        try:
-            vote_counts = db.session.query(
-                CommentVote.comment_id,
-                func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'),
-                func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')
-            ).filter(CommentVote.comment_id.in_(comment_ids)
-            ).group_by(CommentVote.comment_id).all()
-            
-            for c_id, likes, dislikes in vote_counts:
-                if c_id in comment_data:
-                    comment_data[c_id]['likes'] = likes
-                    comment_data[c_id]['dislikes'] = dislikes
-                    
-            # Get user votes if logged in
-            if 'user_id' in session:
-                user_votes = CommentVote.query.filter(
-                    CommentVote.comment_id.in_(comment_ids),
-                    CommentVote.user_id == session['user_id']
-                ).all()
-                
-                for vote in user_votes:
-                    if vote.comment_id in comment_data:
-                        comment_data[vote.comment_id]['user_vote'] = vote.vote_type
-                        
-        except Exception as e:
-            app.logger.error(f"Vote processing failed: {e}")
-    
-    return render_template(
-        "ARTICLE_HTML_TEMPLATE",
-        article=article_data,
-        is_community_article=is_community_article,
-        comments=comments,
-        comment_data=comment_data,
-        previous_list_page=previous_list_page
-    )
+            flash("Article not found.", "danger"); return redirect(url_for('index'))
+
+    if all_article_comments_list:
+        comment_ids = [c.id for c in all_article_comments_list]
+        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
+        vote_counts_query = db.session.query(
+            CommentVote.comment_id,
+            func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'),
+            func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')
+        ).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
+        for c_id, likes, dislikes in vote_counts_query:
+            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
+        if 'user_id' in session:
+            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
+            for vote in user_votes:
+                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
+
+    if isinstance(article_data, dict): article_data['is_community_article'] = False
+    elif article_data: article_data.is_community_article = True
+
+    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
@@ -1916,12 +1636,11 @@ template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 # ==============================================================================
 # --- 9. App Context & Main Execution Block ---
 # ==============================================================================
-if __name__ == '__main__':
+with app.app_context():
     init_db()
-    
+
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
-    
-    app.logger.info(f"Starting app in {'debug' if debug_mode else 'production'} mode on port {port}")
+    app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production'} mode on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
-
