@@ -1831,7 +1831,7 @@ template_storage['PRIVACY_POLICY_HTML_TEMPLATE'] = PRIVACY_POLICY_HTML_TEMPLATE
 template_storage['404_TEMPLATE'] = ERROR_404_TEMPLATE
 template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 
-# ==============================================================================
+==============================================================================
 # --- 9. App Context & Main Execution Block ---
 # ==============================================================================
 with app.app_context():
@@ -1841,4 +1841,4 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production'} mode on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=debug_mo
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
