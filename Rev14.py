@@ -19,7 +19,7 @@ import requests
 from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, case
-from sqlalchemy.orm import joinedload # Import joinedload
+from sqlalchemy.orm import joinedload 
 from jinja2 import DictLoader
 from newsapi import NewsApiClient
 from newsapi.newsapi_exception import NewsAPIException
@@ -67,8 +67,7 @@ app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
 app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com'
-# [MODIFIED] Widened the window to 2 days for more consistent results
-app.config['NEWS_API_DAYS_AGO'] = 2
+app.config['NEWS_API_DAYS_AGO'] = 2 # Fetch news from the last 2 days
 app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt'
 app.config['CACHE_EXPIRY_SECONDS'] = 1800 # 30 minutes
@@ -124,7 +123,7 @@ class User(db.Model):
     name = db.Column(db.String(120), nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     articles = db.relationship('CommunityArticle', backref='author', lazy='dynamic', cascade="all, delete-orphan")
-    comments = db.relationship('Comment', backref='author', lazy='dynamic', cascade="all, delete-orphan")
+    comments = db.relationship('Comment', backref=db.backref('author', lazy='joined'), lazy='dynamic', cascade="all, delete-orphan") # Eager load author for comments
     comment_votes = db.relationship('CommentVote', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
 class CommunityArticle(db.Model):
@@ -139,7 +138,7 @@ class CommunityArticle(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     groq_summary = db.Column(db.Text, nullable=True)
     groq_takeaways = db.Column(db.Text, nullable=True)
-    comments = db.relationship('Comment', backref='community_article', lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
+    comments = db.relationship('Comment', backref=db.backref('community_article', lazy='joined'), lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -149,7 +148,7 @@ class Comment(db.Model):
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id'), nullable=True)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
-    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic', cascade="all, delete-orphan")
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic', cascade="all, delete-orphan") # Replies can be lazy loaded if needed, or use joinedload in queries
     votes = db.relationship('CommentVote', backref='comment', lazy='dynamic', cascade="all, delete-orphan")
 
 class CommentVote(db.Model):
@@ -265,9 +264,9 @@ def fetch_news_from_api():
         return []
 
     from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S') # Correct format
     to_date_utc = datetime.now(timezone.utc)
-    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S') # Correct format
 
 
     all_raw_articles = []
@@ -316,7 +315,7 @@ def fetch_news_from_api():
 
     except NewsAPIException as e:
         app.logger.error(f"NewsAPI Exception (Everything): {e}")
-    except ValueError as e: 
+    except ValueError as e:
         app.logger.error(f"NewsAPI ValueError (Everything - likely date format): {e}")
     except Exception as e:
         app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
@@ -346,7 +345,7 @@ def fetch_news_from_api():
 
         except NewsAPIException as e:
             app.logger.error(f"NewsAPI Exception (Fallback): {e}")
-        except ValueError as e: 
+        except ValueError as e:
             app.logger.error(f"NewsAPI ValueError (Fallback - likely date format): {e}")
         except Exception as e:
             app.logger.error(f"Generic Exception (Fallback): {e}", exc_info=True)
@@ -455,11 +454,14 @@ def get_sort_key(article):
 @app.route('/category/<category_name>')
 @app.route('/category/<category_name>/page/<int:page>')
 def index(page=1, category_name='All Articles'):
+    # [MODIFIED] Store previous page for back button
+    session['previous_list_page'] = request.full_path 
+
     per_page = app.config['PER_PAGE']
     all_display_articles = []
 
     if category_name == 'Community Hub':
-        db_articles = CommunityArticle.query.order_by(CommunityArticle.published_at.desc()).all()
+        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
         for art in db_articles:
             art.is_community_article = True
             all_display_articles.append(art)
@@ -484,6 +486,9 @@ def index(page=1, category_name='All Articles'):
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
+    # [MODIFIED] Store previous page for back button
+    session['previous_list_page'] = request.full_path
+
     query_str = request.args.get('query', '').strip()
     per_page = app.config['PER_PAGE']
     if not query_str: return redirect(url_for('index'))
@@ -497,7 +502,7 @@ def search_results(page=1):
             art_copy['is_community_article'] = False
             api_results.append(art_copy)
 
-    community_db_articles_query = CommunityArticle.query.filter(
+    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
         db.or_(CommunityArticle.title.ilike(f'%{query_str}%'),
                CommunityArticle.description.ilike(f'%{query_str}%'))
     ).order_by(CommunityArticle.published_at.desc())
@@ -526,27 +531,37 @@ def article_detail(article_hash_id):
     comments_for_template = []
     all_article_comments_list = []
     comment_data = {}
+    previous_list_page = session.get('previous_list_page', url_for('index')) # For back button
 
-    article_db = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+    # [MODIFIED] Eager load author for CommunityArticle
+    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
 
     if article_db:
         article_data = article_db
         is_community_article = True
-        article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
-        all_article_comments_list = article_db.comments.options(
-            joinedload(Comment.author),
-            joinedload(Comment.replies).joinedload(Comment.author)
-        ).all()
+        try:
+            article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
+        except json.JSONDecodeError:
+            app.logger.error(f"Failed to parse groq_takeaways for community article {article_hash_id}")
+            article_data.parsed_takeaways = [] # Default to empty list on error
+
+        # [MODIFIED] Eagerly load authors and replies with their authors
+        all_article_comments_list = Comment.query.options(
+            joinedload(Comment.author), # Eager load comment author
+            joinedload(Comment.replies).joinedload(Comment.author) # Eager load replies and their authors
+        ).filter_by(community_article_id=article_db.id).all()
+        
         comments_for_template = sorted([c for c in all_article_comments_list if c.parent_id is None], key=lambda c: c.timestamp)
     else:
         article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
         if article_api_dict:
             article_data = article_api_dict
             is_community_article = False
-            all_article_comments_list = Comment.query.filter_by(api_article_hash_id=article_hash_id).options(
+            # [MODIFIED] Eagerly load authors and replies for API article comments
+            all_article_comments_list = Comment.query.options(
                 joinedload(Comment.author),
                 joinedload(Comment.replies).joinedload(Comment.author)
-            ).all()
+            ).filter_by(api_article_hash_id=article_hash_id).all()
             comments_for_template = sorted([c for c in all_article_comments_list if c.parent_id is None], key=lambda c: c.timestamp)
         else:
             flash("Article not found.", "danger")
@@ -580,7 +595,7 @@ def article_detail(article_hash_id):
 
     if isinstance(article_data, dict):
         article_data['is_community_article'] = False
-    elif article_data:
+    elif article_data: # Is a CommunityArticle instance
         article_data.is_community_article = True
 
 
@@ -588,7 +603,8 @@ def article_detail(article_hash_id):
                            article=article_data,
                            is_community_article=is_community_article,
                            comments=comments_for_template,
-                           comment_data=comment_data)
+                           comment_data=comment_data,
+                           previous_list_page=previous_list_page) # Pass back button URL
 
 
 @app.route('/get_article_content/<article_hash_id>')
@@ -617,8 +633,10 @@ def add_comment(article_hash_id):
     parent_id = request.json.get('parent_id')
 
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
-    user = User.query.get(session['user_id'])
-    if not user: return jsonify({"error": "User not found."}), 401
+    user = User.query.get(session['user_id']) # User should exist due to @login_required
+    if not user: 
+        app.logger.error(f"User not found in add_comment despite @login_required for user_id {session.get('user_id')}")
+        return jsonify({"error": "User not found."}), 401 
 
     new_comment = None
     community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
@@ -630,9 +648,12 @@ def add_comment(article_hash_id):
         return jsonify({"error": "Article not found."}), 404
 
     db.session.add(new_comment)
-    db.session.commit()
+    db.session.commit() # Commit to get new_comment.id and load relationships
 
-    db.session.refresh(new_comment)
+    # Ensure author is loaded for the new comment before sending response
+    # Accessing new_comment.author will trigger the load if lazy='joined' is set on the relationship
+    author_name = new_comment.author.name if new_comment.author else "Anonymous"
+
 
     return jsonify({
         "success": True,
@@ -640,7 +661,7 @@ def add_comment(article_hash_id):
             "id": new_comment.id,
             "content": new_comment.content,
             "timestamp": new_comment.timestamp.isoformat(),
-            "author": {"name": new_comment.author.name},
+            "author": {"name": author_name},
             "parent_id": new_comment.parent_id
         }
     }), 201
@@ -708,7 +729,7 @@ def post_article():
         groq_takeaways=groq_takeaways_json_str
     )
     db.session.add(new_article)
-    db.session.commit()
+    db.session.commit() # Commit before redirecting
     flash("Your article has been posted!", "success")
     return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
@@ -744,6 +765,8 @@ def login():
             session['user_name'] = user.name
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
+            # [MODIFIED] Clear previous_list_page on login to avoid stale back links
+            session.pop('previous_list_page', None) 
             return redirect(next_url or url_for('index'))
         else:
             flash('Invalid username or password.', 'danger')
@@ -1269,6 +1292,11 @@ ARTICLE_HTML_TEMPLATE = """
     <div class="alert alert-danger text-center my-5 p-4"><h4><i class="fas fa-exclamation-triangle me-2"></i>Article Not Found</h4><p>The article you are looking for could not be found.</p><a href="{{ url_for('index') }}" class="btn btn-primary mt-2">Go to Homepage</a></div>
 {% else %}
 <article class="article-full-content-wrapper animate-fade-in">
+    {# [MODIFIED] Back Button #}
+    <div class="mb-3">
+        <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
+    </div>
+
     <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
     <div class="article-meta-detailed">
         <span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article and article.author else article.source.name }}</span>
@@ -1813,7 +1841,4 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production'} mode on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
-
-
-
+    app.run(host='0.0.0.0', port=port, debug=debug_mo
