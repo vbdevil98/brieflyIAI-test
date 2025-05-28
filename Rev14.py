@@ -266,7 +266,7 @@ def fetch_news_from_api():
 
     # Fetch news from the last X days up to now.
     from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ') # Use Z for UTC
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S') # Use Z for UTC
     to_date_utc = datetime.now(timezone.utc)
     to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
