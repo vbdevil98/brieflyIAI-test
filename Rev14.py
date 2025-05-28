@@ -1,4 +1,4 @@
-# Rev14.py - MODIFIED FOR MORE ROBUST AND DIAGNOSTIC NEWS FETCHING
+# Rev14.py - MODIFIED FOR MORE ROBUST AND DIAGNOSTIC NEWS FETCHING, AND NEW COMMENT FEATURES
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -18,6 +18,7 @@ import nltk
 import requests
 from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, case
 from jinja2 import DictLoader
 from newsapi import NewsApiClient
 from newsapi.newsapi_exception import NewsAPIException
@@ -63,7 +64,6 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'YOUR_FALLBACK_FLASK_SECRET_
 app.config['PER_PAGE'] = 9
 app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
-# ## MODIFIED ##: News fetching configuration with domain fallback
 app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com' # Fallback domains
 app.config['NEWS_API_DAYS_AGO'] = 3
@@ -123,6 +123,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     articles = db.relationship('CommunityArticle', backref='author', lazy='dynamic', cascade="all, delete-orphan")
     comments = db.relationship('Comment', backref='author', lazy='dynamic', cascade="all, delete-orphan")
+    comment_votes = db.relationship('CommentVote', backref='user', lazy='dynamic', cascade="all, delete-orphan")
 
 class CommunityArticle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -145,6 +146,16 @@ class Comment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id'), nullable=True)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic', cascade="all, delete-orphan")
+    votes = db.relationship('CommentVote', backref='comment', lazy='dynamic', cascade="all, delete-orphan")
+
+class CommentVote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"), nullable=False)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comment.id', ondelete="CASCADE"), nullable=False)
+    vote_type = db.Column(db.SmallInteger, nullable=False)
+    __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', name='_user_comment_uc'),)
 
 class Subscriber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -247,7 +258,7 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api():
-    if not newsapi: 
+    if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
 
@@ -263,11 +274,10 @@ def fetch_news_from_api():
             language='en',
             page_size=app.config['NEWS_API_PAGE_SIZE']
         )
-        # **DIAGNOSTIC LOGGING**
         status = top_headlines_response.get('status')
         total_results = top_headlines_response.get('totalResults', 0)
         app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
-        
+
         if status == 'ok' and total_results > 0:
             all_raw_articles.extend(top_headlines_response['articles'])
         elif status == 'error':
@@ -288,7 +298,6 @@ def fetch_news_from_api():
             sort_by=app.config['NEWS_API_SORT_BY'],
             page_size=app.config['NEWS_API_PAGE_SIZE']
         )
-        # **DIAGNOSTIC LOGGING**
         status = everything_response.get('status')
         total_results = everything_response.get('totalResults', 0)
         app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
@@ -316,7 +325,6 @@ def fetch_news_from_api():
                 sort_by=app.config['NEWS_API_SORT_BY'],
                 page_size=app.config['NEWS_API_PAGE_SIZE']
             )
-            # **DIAGNOSTIC LOGGING**
             status = fallback_response.get('status')
             total_results = fallback_response.get('totalResults', 0)
             app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
@@ -325,7 +333,7 @@ def fetch_news_from_api():
                 all_raw_articles.extend(fallback_response['articles'])
             elif status == 'error':
                  app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
-        
+
         except NewsAPIException as e:
             app.logger.error(f"NewsAPI Exception (Fallback): {e}")
         except Exception as e:
@@ -340,16 +348,16 @@ def fetch_news_from_api():
         url = art_data.get('url')
         if not url or url in unique_urls:
             continue
-        
+
         title = art_data.get('title')
         if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
             continue
-        
+
         unique_urls.add(url)
         article_id = generate_article_id(url)
         source_name = art_data['source'].get('name', 'Unknown Source')
         placeholder_text = urllib.parse.quote_plus(source_name[:20])
-        
+
         standardized_article = {
             'id': article_id, 'title': title, 'description': art_data.get('description', ''),
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
@@ -358,7 +366,7 @@ def fetch_news_from_api():
         }
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
-    
+
     processed_articles.sort(key=lambda x: x.get('publishedAt', '') or '', reverse=True)
     app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
     return processed_articles
@@ -379,13 +387,13 @@ def fetch_and_parse_article_content(article_hash_id, url):
         article_scraper.download(input_html=response.text)
         article_scraper.parse()
         if not article_scraper.text: return {"error": "Could not extract text from the article."}
-        
+
         article_title = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
         groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_title)
-        
+
         return {
             "full_text": article_scraper.text,
-            "groq_analysis": groq_analysis, 
+            "groq_analysis": groq_analysis,
             "error": groq_analysis.get("error") if groq_analysis else "AI analysis unavailable."
         }
     except requests.exceptions.RequestException as e:
@@ -394,7 +402,7 @@ def fetch_and_parse_article_content(article_hash_id, url):
         return {"error": f"Failed to parse article content: {str(e)}"}
 
 # ==============================================================================
-# --- 6. Flask Routes (No changes needed below this line) ---
+# --- 6. Flask Routes ---
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
@@ -430,27 +438,27 @@ def get_sort_key(article):
 def index(page=1, category_name='All Articles'):
     per_page = app.config['PER_PAGE']
     all_display_articles = []
-    
+
     if category_name == 'Community Hub':
         db_articles = CommunityArticle.query.order_by(CommunityArticle.published_at.desc()).all()
         for art in db_articles:
             art.is_community_article = True
             all_display_articles.append(art)
-    else: 
-        api_articles = fetch_news_from_api() 
+    else:
+        api_articles = fetch_news_from_api()
         for art_dict in api_articles:
             art_dict['is_community_article'] = False
             all_display_articles.append(art_dict)
-            
+
     all_display_articles.sort(key=get_sort_key, reverse=True)
     paginated_display_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
     featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and paginated_display_articles)
 
-    return render_template("INDEX_HTML_TEMPLATE", 
-                           articles=paginated_display_articles, 
+    return render_template("INDEX_HTML_TEMPLATE",
+                           articles=paginated_display_articles,
                            selected_category=category_name,
-                           current_page=page, 
-                           total_pages=total_pages, 
+                           current_page=page,
+                           total_pages=total_pages,
                            featured_article_on_this_page=featured_article_on_this_page)
 
 @app.route('/search')
@@ -460,7 +468,7 @@ def search_results(page=1):
     per_page = app.config['PER_PAGE']
     if not query_str: return redirect(url_for('index'))
     app.logger.info(f"Search query: '{query_str}'")
-    
+
     api_results = [
         art_data.copy() for art_id, art_data in MASTER_ARTICLE_STORE.items()
         if query_str.lower() in art_data.get('title', '').lower() or \
@@ -469,44 +477,69 @@ def search_results(page=1):
     for art in api_results: art['is_community_article'] = False
 
     community_db_articles = CommunityArticle.query.filter(
-        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), 
+        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'),
                CommunityArticle.description.ilike(f'%{query_str}%'))
     ).order_by(CommunityArticle.published_at.desc()).all()
     for art in community_db_articles: art.is_community_article = True
-            
+
     all_search_results = api_results + community_db_articles
     all_search_results.sort(key=get_sort_key, reverse=True)
     paginated_search_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
-    
-    return render_template("INDEX_HTML_TEMPLATE", 
-                           articles=paginated_search_articles, 
+
+    return render_template("INDEX_HTML_TEMPLATE",
+                           articles=paginated_search_articles,
                            selected_category=f"Search: {query_str}",
-                           current_page=page, 
-                           total_pages=total_pages, 
-                           featured_article_on_this_page=False, 
+                           current_page=page,
+                           total_pages=total_pages,
+                           featured_article_on_this_page=False,
                            query=query_str)
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
     article_data, comments, is_community_article = None, [], False
+    comment_data = {}
+    all_article_comments = []
+
     article_db = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
     if article_db:
         article_data, is_community_article = article_db, True
-        comments = article_data.comments.order_by(Comment.timestamp.asc()).all()
+        comments = article_data.comments.filter_by(parent_id=None).order_by(Comment.timestamp.asc()).all()
         article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
+        all_article_comments = article_data.comments.all()
     else:
         article_api = MASTER_ARTICLE_STORE.get(article_hash_id)
         if article_api:
             article_data, is_community_article = article_api, False
-            comments = Comment.query.filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
+            comments = Comment.query.filter_by(api_article_hash_id=article_hash_id, parent_id=None).order_by(Comment.timestamp.asc()).all()
+            all_article_comments = Comment.query.filter_by(api_article_hash_id=article_hash_id).all()
         else:
             flash("Article not found.", "danger")
             return redirect(url_for('index'))
-    
+
+    if all_article_comments:
+        comment_ids = [c.id for c in all_article_comments]
+        vote_counts_query = db.session.query(
+            CommentVote.comment_id,
+            func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'),
+            func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')
+        ).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
+
+        for c_id, likes, dislikes in vote_counts_query:
+            comment_data[c_id] = {'likes': likes, 'dislikes': dislikes}
+
+        if 'user_id' in session:
+            user_votes = CommentVote.query.filter(
+                CommentVote.comment_id.in_(comment_ids),
+                CommentVote.user_id == session['user_id']
+            ).all()
+            for vote in user_votes:
+                if vote.comment_id in comment_data:
+                    comment_data[vote.comment_id]['user_vote'] = vote.vote_type
+
     if isinstance(article_data, dict): article_data['is_community_article'] = False
     else: article_data.is_community_article = True
-            
-    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments)
+
+    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments, comment_data=comment_data)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
@@ -522,21 +555,59 @@ def get_article_content_json(article_hash_id):
 @login_required
 def add_comment(article_hash_id):
     content = request.json.get('content', '').strip()
+    parent_id = request.json.get('parent_id')
+
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
     user = User.query.get(session['user_id'])
     if not user: return jsonify({"error": "User not found."}), 401
-    
+
     community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
     if community_article:
-        new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id)
+        new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
     elif article_hash_id in MASTER_ARTICLE_STORE:
-        new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id)
+        new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
     else:
         return jsonify({"error": "Article not found."}), 404
 
     db.session.add(new_comment)
     db.session.commit()
-    return jsonify({"success": True, "comment": {"content": new_comment.content, "timestamp": new_comment.timestamp.isoformat(), "author": {"name": user.name}}}), 201
+    return jsonify({
+        "success": True,
+        "comment": {
+            "id": new_comment.id,
+            "content": new_comment.content,
+            "timestamp": new_comment.timestamp.isoformat(),
+            "author": {"name": user.name},
+            "parent_id": new_comment.parent_id
+        }
+    }), 201
+
+@app.route('/vote_comment/<int:comment_id>', methods=['POST'])
+@login_required
+def vote_comment(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    vote_type = request.json.get('vote_type')
+
+    if vote_type not in [1, -1]:
+        return jsonify({"error": "Invalid vote type."}), 400
+
+    existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
+
+    if existing_vote:
+        if existing_vote.vote_type == vote_type:
+            db.session.delete(existing_vote)
+        else:
+            existing_vote.vote_type = vote_type
+    else:
+        new_vote = CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type)
+        db.session.add(new_vote)
+
+    db.session.commit()
+
+    likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
+    dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
+
+    return jsonify({"success": True, "likes": likes, "dislikes": dislikes}), 200
 
 @app.route('/post_article', methods=['POST'])
 @login_required
@@ -545,7 +616,7 @@ def post_article():
     source_name, image_url = request.form.get('sourceName', 'Community Post'), request.form.get('imageUrl')
     if not all([title, description, content, source_name]):
         flash("Title, Description, Content, and Source Name are required.", "danger")
-        return redirect(url_for('index')) 
+        return redirect(url_for('index'))
 
     article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
     groq_analysis_result = get_article_analysis_with_groq(content, title)
@@ -555,7 +626,7 @@ def post_article():
         takeaways_list = groq_analysis_result.get('groq_takeaways')
         if takeaways_list and isinstance(takeaways_list, list):
              groq_takeaways_json = json.dumps(takeaways_list)
-            
+
     new_article = CommunityArticle(
         article_hash_id=article_hash_id, title=title, description=description, full_text=content, source_name=source_name,
         image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
@@ -639,6 +710,7 @@ def internal_server_error(e):
     app.logger.error(f"500 error at {request.url}: {e}", exc_info=True)
     return render_template("500_TEMPLATE"), 500
 
+
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
@@ -675,7 +747,7 @@ BASE_HTML_TEMPLATE = """
         body.dark-mode .category-link:hover:not(.active) { background: #2C2C2C !important; color: var(--secondary-color) !important; }
         body.dark-mode .article-card, body.dark-mode .featured-article, body.dark-mode .article-full-content-wrapper, body.dark-mode .auth-container, body.dark-mode .static-content-wrapper { background-color: var(--white-bg); border-color: var(--card-border-color); }
         body.dark-mode .article-title a, body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, body.dark-mode h4, body.dark-mode h5, body.dark-mode .auth-title { color: var(--text-color) !important; }
-        body.dark-mode .article-description, body.dark-mode .meta-item, body.dark-mode .content-text p, body.dark-mode .article-meta-detailed, body.dark-mode .comment-card, body.dark-mode .comment-date { color: var(--text-muted-color) !important; }
+        body.dark-mode .article-description, body.dark-mode .meta-item, body.dark-mode .content-text p, body.dark-mode .article-meta-detailed, body.dark-mode .comment-content, body.dark-mode .comment-date { color: var(--text-muted-color) !important; }
         body.dark-mode .read-more { background: var(--secondary-color); color: #000 !important; }
         body.dark-mode .read-more:hover { background: var(--secondary-light); }
         body.dark-mode .btn-outline-primary { color: var(--secondary-color); border-color: var(--secondary-color); }
@@ -697,9 +769,9 @@ BASE_HTML_TEMPLATE = """
         body.dark-mode .content-text a:hover {color: var(--accent-color);}
         body.dark-mode .loader { border-top-color: var(--secondary-color); }
         .navbar-main { background: var(--primary-gradient); padding: 0.8rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-bottom: 2px solid rgba(255,255,255,0.15); transition: background 0.3s ease, border-bottom 0.3s ease; height: 95px; display: flex; align-items: center; }
-        .navbar-brand-custom { color: white !important; font-weight: 800; font-size: 2.2rem; letter-spacing: 0.5px; font-family: 'Poppins', sans-serif; margin-bottom: 0; display: flex; align-items: center; gap: 12px; text-decoration: none !important; /* Remove underline */ }
+        .navbar-brand-custom { color: white !important; font-weight: 800; font-size: 2.2rem; letter-spacing: 0.5px; font-family: 'Poppins', sans-serif; margin-bottom: 0; display: flex; align-items: center; gap: 12px; text-decoration: none !important; }
         .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.5rem; }
-        .navbar-brand-custom:hover { text-decoration: none !important; /* Ensure no underline on hover */ }
+        .navbar-brand-custom:hover { text-decoration: none !important; }
         .search-form-container { flex-grow: 1; display: flex; justify-content: center; padding: 0 1rem; }
         .search-container { position: relative; width: 100%; max-width: 550px; }
         .navbar-search { border-radius: 25px; padding: 0.7rem 1.25rem 0.7rem 2.8rem; border: 1px solid rgba(255,255,255,0.2); font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.1); color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
@@ -784,7 +856,6 @@ BASE_HTML_TEMPLATE = """
         .static-content-wrapper { padding: 2rem; margin-top: 1rem; }
         .static-content-wrapper h1, .static-content-wrapper h2 { color: var(--primary-color); font-family: 'Poppins', sans-serif; }
         body.dark-mode .static-content-wrapper h1, body.dark-mode .static-content-wrapper h2 { color: var(--secondary-color); }
-
         @media (max-width: 991.98px) {
             body { padding-top: 180px; }
             .navbar-main { padding-bottom: 0.5rem; height: auto;}
@@ -809,12 +880,34 @@ BASE_HTML_TEMPLATE = """
         .auth-container { max-width: 450px; margin: 3rem auto; padding: 2rem; }
         .auth-title { text-align: center; color: var(--primary-color); margin-bottom: 1.5rem; font-weight: 700;}
         body.dark-mode .auth-title { color: var(--secondary-color); }
+
+        /* [NEW] Comment Section Styles */
         .comment-section { margin-top: 3rem; }
-        .comment-card { border-bottom: 1px solid var(--card-border-color); padding-bottom: 1rem; margin-bottom: 1rem; }
-        .comment-card:last-child { border-bottom: none; margin-bottom: 0; }
+        .comment-container { margin-bottom: 1.5rem; } /* Added margin for spacing between top-level comments */
+        .comment-card { display: flex; gap: 1rem; }
+        .comment-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+        body.dark-mode .comment-avatar { background: var(--primary-color); }
+        .comment-body { flex-grow: 1; border-bottom: 1px solid var(--card-border-color); padding-bottom: 1rem; }
+        .comment-container:last-child > .comment-card > .comment-body { border-bottom: none; } /* Remove border for last top-level comment */
+        .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
         .comment-author { font-weight: 600; color: var(--primary-color); }
         body.dark-mode .comment-author { color: var(--secondary-light); }
         .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
+        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; } /* Added pre-wrap */
+        .comment-actions { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+        .comment-actions button { background: none; border: none; padding: 0.2rem 0.4rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; transition: color 0.2s ease, background-color 0.2s ease; border-radius: 4px; }
+        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
+        body.dark-mode .comment-actions button:hover { color: var(--secondary-light); background-color: rgba(var(--secondary-color-rgb),0.2); }
+        .comment-actions button.active { color: var(--primary-color); font-weight: 600; }
+        body.dark-mode .comment-actions button.active { color: var(--secondary-color); }
+        .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--primary-color); } /* Active like icon color */
+        .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); } /* Active dislike icon color */
+        body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--secondary-color); }
+        body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); }
+        .comment-actions .vote-count { font-weight: 500; min-width: 12px; text-align: center;}
+        .comment-replies { margin-left: 30px; padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); margin-top: 1rem; } /* Added margin-top */
+        .reply-form-container { display: none; margin-top: 0.75rem; padding: 0.75rem; background-color: rgba(var(--primary-color-rgb), 0.03); border-radius: 6px;}
+        body.dark-mode .reply-form-container { background-color: rgba(var(--secondary-color-rgb), 0.05); }
         .add-comment-form textarea { min-height: 100px; }
     </style>
     {% block head_extra %}{% endblock %}
@@ -961,7 +1054,7 @@ BASE_HTML_TEMPLATE = """
             document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
         }
         if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
-        
+
         let storedTheme = localStorage.getItem('darkMode');
         if (!storedTheme) {
              const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
@@ -980,7 +1073,7 @@ BASE_HTML_TEMPLATE = """
             if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
             addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
         }
-        
+
         const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
         flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
     });
@@ -1086,13 +1179,14 @@ ARTICLE_HTML_TEMPLATE = """
     .takeaways-box ul li { margin-bottom: 0.6rem; font-size:0.95rem; line-height:1.6; }
     .loader-container { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; padding: 2rem; font-size: 1rem; color: var(--text-muted-color); }
     .loader { border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
-    .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; }
+    .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; color: var(--text-color); } /* Ensure text color is set */
+    body.dark-mode .content-text { color: var(--text-muted-color); } /* Dark mode text color */
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 {% endblock %}
 {% block content %}
 {% if not article %}
-    <div class="alert alert-danger text-center my-5 p-4"><h4><i class="fas fa-exclamation-triangle me-2"></i>Article Not Found</h4><p>The article you are looking for could not be found or is no longer available.</p><a href="{{ url_for('index') }}" class="btn btn-primary mt-2">Go to Homepage</a></div>
+    <div class="alert alert-danger text-center my-5 p-4"><h4><i class="fas fa-exclamation-triangle me-2"></i>Article Not Found</h4><p>The article you are looking for could not be found.</p><a href="{{ url_for('index') }}" class="btn btn-primary mt-2">Go to Homepage</a></div>
 {% else %}
 <article class="article-full-content-wrapper animate-fade-in">
     <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
@@ -1104,7 +1198,7 @@ ARTICLE_HTML_TEMPLATE = """
     {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
 
     <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary...</div></div>
-    
+
     <div id="articleAnalysisContainer">
     {% if is_community_article %}
         {% if article.groq_summary %}
@@ -1120,19 +1214,86 @@ ARTICLE_HTML_TEMPLATE = """
         {% elif not article.groq_takeaways %}
             <div class="alert alert-secondary small p-3 mt-3">AI Takeaways not available for this community article.</div>
         {% endif %}
-        <hr><h5 class="mt-4">Full Content</h5><p class="content-text">{{ article.full_text }}</p>
+        <hr class="my-4">
+        <h4 class="mb-3">Full Article Content</h4>
+        <div class="content-text">{{ article.full_text }}</div>
     {% else %}
         <div id="apiArticleContent"></div>
     {% endif %}
     </div>
 
+    {# [MODIFIED] New Comment Section #}
     <section class="comment-section" id="comment-section">
-        <h3 class="mb-4">Community Discussion ({{ comments|length }})</h3>
+        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ comments|length }}</span>)</h3>
+
+        {# Macro to recursively render comments and their replies #}
+        {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %}
+            <div class="comment-container" id="comment-{{ comment.id }}">
+                <div class="comment-card">
+                    <div class="comment-avatar" title="{{ comment.author.name }}">
+                        {{ comment.author.name[0]|upper }}
+                    </div>
+                    <div class="comment-body">
+                        <div class="comment-header">
+                            <span class="comment-author">{{ comment.author.name }}</span>
+                            <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
+                        </div>
+                        <p class="comment-content mb-2">{{ comment.content }}</p>
+                        {% if is_logged_in %}
+                        <div class="comment-actions">
+                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == 1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="1" title="Like">
+                                <i class="fas fa-thumbs-up"></i>
+                                <span class="vote-count" id="likes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('likes', 0) }}</span>
+                            </button>
+                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == -1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="-1" title="Dislike">
+                                <i class="fas fa-thumbs-down"></i>
+                                <span class="vote-count" id="dislikes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('dislikes', 0) }}</span>
+                            </button>
+                            <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply">
+                                <i class="fas fa-reply"></i> Reply
+                            </button>
+                        </div>
+                        <div class="reply-form-container" id="reply-form-container-{{ comment.id }}">
+                            <form class="reply-form mt-2">
+                                <input type="hidden" name="article_hash_id" value="{{ article_hash_id_for_js }}">
+                                <input type="hidden" name="parent_id" value="{{ comment.id }}">
+                                <div class="mb-2">
+                                    <textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="comment-replies" id="replies-of-{{ comment.id }}">
+                    {% for reply in comment.replies.order_by(Comment.timestamp.asc()) %}
+                        {{ render_comment_with_replies(reply, comment_data, is_logged_in, article_hash_id_for_js) }}
+                    {% endfor %}
+                </div>
+            </div>
+        {% endmacro %}
+
         <div id="comments-list">
-            {% for comment in comments %}<div class="comment-card" id="comment-{{comment.id}}"><div class="d-flex justify-content-between"><span class="comment-author">{{ comment.author.name }}</span><span class="comment-date">{{ comment.timestamp | to_ist }}</span></div><p class="mt-2 mb-0">{{ comment.content }}</p></div>{% else %}<p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>{% endfor %}
+            {% for comment in comments %}
+                {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }}
+            {% else %}
+                <p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>
+            {% endfor %}
         </div>
+
         {% if session.user_id %}
-            <div class="add-comment-form mt-4 pt-3 border-top"><h5 class="mb-3">Leave a Comment</h5><form id="comment-form"><div class="mb-3"><textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea></div><button type="submit" class="btn btn-primary-modal">Post Comment</button></form></div>
+            <div class="add-comment-form mt-4 pt-4 border-top">
+                <h5 class="mb-3">Leave a Comment</h5>
+                <form id="comment-form">
+                    <input type="hidden" name="article_hash_id" value="{{ article.article_hash_id if is_community_article else article.id }}">
+                    <div class="mb-3">
+                        <textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary-modal">Post Comment</button>
+                </form>
+            </div>
         {% else %}
             <div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to join the discussion.</div>
         {% endif %}
@@ -1144,7 +1305,8 @@ ARTICLE_HTML_TEMPLATE = """
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const isCommunityArticle = {{ is_community_article | tojson }};
-    const articleHashId = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
+    const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
+    const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
 
     function convertUTCToIST(utcIsoString) {
         if (!utcIsoString) return "N/A";
@@ -1156,11 +1318,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }).format(date);
     }
 
-    if (!isCommunityArticle && articleHashId) {
+    if (!isCommunityArticle && articleHashIdGlobal) {
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContent = document.getElementById('apiArticleContent');
-        
-        fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId))
+
+        fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
             .then(response => {
                 if (!response.ok) { throw new Error('Network response error'); }
                 return response.json();
@@ -1173,7 +1335,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     apiArticleContent.innerHTML = `<div class="alert alert-warning small p-3 mt-3">Could not load full analysis: ${data.error}</div>`;
                     return;
                 }
-                
+
                 let html = '';
                 const analysis = data.groq_analysis;
 
@@ -1183,12 +1345,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (analysis && analysis.groq_takeaways && analysis.groq_takeaways.length > 0 && !analysis.error) {
                     html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5><ul>${analysis.groq_takeaways.map(t => `<li>${t}</li>`).join('')}</ul></div>`;
                 }
-                if (html === '') {
-                    html = `<div class="alert alert-secondary small p-3 mt-3">AI analysis is not available for this article.</div>`;
+                if (html === '') { // If no summary or takeaways, show the original description or a message
+                    html = `<div class="alert alert-secondary small p-3 mt-3">AI analysis is not available for this article. You can read the original article below.</div>`;
                 }
-                
-                html += `<a href="${'{{ article.url }}'}" class="btn btn-outline-primary mt-3" target="_blank" rel="noopener noreferrer">Read Original at ${'{{ article.source.name }}'} <i class="fas fa-external-link-alt ms-1"></i></a>`;
 
+                html += `<hr class="my-4"><a href="${'{{ article.url if article else "" }}'}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original at ${'{{ article.source.name if article and article.source else "Source" }}'} <i class="fas fa-external-link-alt ms-1"></i></a>`;
                 apiArticleContent.innerHTML = html;
             })
             .catch(error => {
@@ -1197,40 +1358,180 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
-    const commentForm = document.getElementById('comment-form');
-    if (commentForm && articleHashId) {
-        commentForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const content = document.getElementById('comment-content').value;
-            if (!content.trim()) { return; }
-            const submitButton = this.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
+    // --- Comment Interaction Logic ---
+    const commentSection = document.getElementById('comment-section');
 
-            fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if(data.success) {
+    function createCommentHTML(comment, articleHashIdForJs) {
+        const commentDate = convertUTCToIST(comment.timestamp);
+        const userInitial = comment.author.name[0].toUpperCase();
+
+        let actionsHTML = '';
+        if (isUserLoggedIn) {
+            actionsHTML = `
+            <div class="comment-actions">
+                <button class="vote-btn" data-comment-id="${comment.id}" data-vote-type="1" title="Like">
+                    <i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-${comment.id}">0</span>
+                </button>
+                <button class="vote-btn" data-comment-id="${comment.id}" data-vote-type="-1" title="Dislike">
+                    <i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-${comment.id}">0</span>
+                </button>
+                <button class="reply-btn" data-comment-id="${comment.id}" title="Reply">
+                    <i class="fas fa-reply"></i> Reply
+                </button>
+            </div>
+            <div class="reply-form-container" id="reply-form-container-${comment.id}">
+                <form class="reply-form mt-2">
+                    <input type="hidden" name="article_hash_id" value="${articleHashIdForJs}">
+                    <input type="hidden" name="parent_id" value="${comment.id}">
+                    <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
+                    <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
+                </form>
+            </div>`;
+        }
+
+        return `
+        <div class="comment-container" id="comment-${comment.id}">
+            <div class="comment-card">
+                <div class="comment-avatar" title="${comment.author.name}">${userInitial}</div>
+                <div class="comment-body">
+                    <div class="comment-header">
+                        <span class="comment-author">${comment.author.name}</span>
+                        <span class="comment-date">${commentDate}</span>
+                    </div>
+                    <p class="comment-content mb-2">${comment.content}</p>
+                    ${actionsHTML}
+                </div>
+            </div>
+            <div class="comment-replies" id="replies-of-${comment.id}"></div>
+        </div>`;
+    }
+
+    function handleCommentSubmit(form, articleHashId, parentId = null) {
+        const content = form.querySelector('textarea[name="content"]').value;
+        if (!content.trim()) return;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        const originalButtonText = submitButton.innerHTML;
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
+
+        fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content, parent_id: parentId })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const newCommentHTML = createCommentHTML(data.comment, articleHashId);
+                const commentElement = document.createElement('div'); // Create a temporary div to parse the HTML
+                commentElement.innerHTML = newCommentHTML.trim(); // Trim whitespace
+
+                if (parentId) {
+                    document.getElementById(`replies-of-${parentId}`).appendChild(commentElement.firstChild);
+                    form.closest('.reply-form-container').style.display = 'none';
+                } else {
                     const list = document.getElementById('comments-list');
                     const noCommentsMsg = document.getElementById('no-comments-msg');
                     if (noCommentsMsg) noCommentsMsg.remove();
-                    
-                    const newEl = document.createElement('div');
-                    newEl.className = 'comment-card';
-                    const commentDate = convertUTCToIST(data.comment.timestamp);
-                    newEl.innerHTML = `<div class="d-flex justify-content-between"><span class="comment-author">${data.comment.author.name}</span><span class="comment-date">${commentDate}</span></div><p class="mt-2 mb-0">${data.comment.content}</p>`;
-                    list.prepend(newEl);
-                    document.getElementById('comment-content').value = '';
+                    list.appendChild(commentElement.firstChild); // Append the actual comment-container div
 
-                    const countEl = document.querySelector('.comment-section h3');
-                    const currentCount = parseInt(countEl.textContent.match(/\\((\\d+)\\)/)[1]);
-                    countEl.textContent = `Community Discussion (${currentCount + 1})`;
-                } else { alert('Error: ' + (data.error || 'Unknown')); }
-            })
-            .catch(err => { alert("Could not submit comment due to a network error."); })
-            .finally(() => { submitButton.disabled = false; submitButton.innerHTML = 'Post Comment'; });
+                    const countEl = document.getElementById('comment-count');
+                    countEl.textContent = parseInt(countEl.textContent) + 1;
+                }
+                form.reset();
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error posting comment.'));
+            }
+        })
+        .catch(err => {
+            console.error("Comment submission error:", err);
+            alert("Could not submit comment due to a network error.");
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalButtonText;
+        });
+    }
+
+    const mainCommentForm = document.getElementById('comment-form');
+    if (mainCommentForm) {
+        mainCommentForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const articleHashIdFromForm = this.querySelector('input[name="article_hash_id"]').value;
+            handleCommentSubmit(this, articleHashIdFromForm);
+        });
+    }
+
+    if (commentSection) {
+        commentSection.addEventListener('click', function(e) {
+            const voteBtn = e.target.closest('.vote-btn');
+            if (voteBtn && isUserLoggedIn) {
+                const commentId = voteBtn.dataset.commentId;
+                const voteType = parseInt(voteBtn.dataset.voteType);
+
+                fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vote_type: voteType })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if(data.success) {
+                        document.getElementById(`likes-count-${commentId}`).textContent = data.likes;
+                        document.getElementById(`dislikes-count-${commentId}`).textContent = data.dislikes;
+
+                        const allVoteButtonsOnComment = document.querySelectorAll(`.vote-btn[data-comment-id="${commentId}"]`);
+                        const currentLikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`);
+                        const currentDislikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`);
+
+                        // If user clicked the same button they already activated, deactivate it
+                        if ((voteType === 1 && currentLikeBtn.classList.contains('active')) || (voteType === -1 && currentDislikeBtn.classList.contains('active'))) {
+                             if (voteType === 1) currentLikeBtn.classList.remove('active');
+                             if (voteType === -1) currentDislikeBtn.classList.remove('active');
+                        } else { // Otherwise, deactivate all, then activate the clicked one
+                            allVoteButtonsOnComment.forEach(btn => btn.classList.remove('active'));
+                            if (voteType === 1) currentLikeBtn.classList.add('active');
+                            if (voteType === -1) currentDislikeBtn.classList.add('active');
+                        }
+                    } else {
+                        alert('Error voting: ' + (data.error || 'Unknown error.'));
+                    }
+                }).catch(err => {
+                    console.error("Vote error:", err);
+                    alert("Could not process vote due to a network error.");
+                });
+            }
+
+            const replyBtn = e.target.closest('.reply-btn');
+            if (replyBtn && isUserLoggedIn) {
+                const commentId = replyBtn.dataset.commentId;
+                const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                if (formContainer) {
+                    formContainer.style.display = formContainer.style.display === 'none' || formContainer.style.display === '' ? 'block' : 'none';
+                    if(formContainer.style.display === 'block') {
+                        formContainer.querySelector('textarea').focus();
+                    }
+                }
+            }
+
+            const cancelReplyBtn = e.target.closest('.cancel-reply-btn');
+            if (cancelReplyBtn) {
+                const formContainer = cancelReplyBtn.closest('.reply-form-container');
+                formContainer.style.display = 'none';
+                formContainer.querySelector('form').reset();
+            }
+        });
+
+        commentSection.addEventListener('submit', function(e) {
+            const replyForm = e.target.closest('.reply-form');
+            if (replyForm) {
+                e.preventDefault();
+                const articleHashIdFromForm = replyForm.querySelector('input[name="article_hash_id"]').value;
+                const parentId = replyForm.querySelector('input[name="parent_id"]').value;
+                handleCommentSubmit(replyForm, articleHashIdFromForm, parentId);
+            }
         });
     }
 });
@@ -1293,13 +1594,13 @@ ABOUT_US_HTML_TEMPLATE = """
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">About Briefly</h1>
     <p class="lead">Briefly is your premier destination for the latest news from India and around the world, delivered in a concise and easy-to-digest format. We leverage the power of cutting-edge AI to summarize complex news articles into key takeaways, saving you time while keeping you informed.</p>
-    
+
     <h2 class="mt-5 mb-3">Our Mission</h2>
     <p>In a world of information overload, our mission is to provide clarity and efficiency. We believe that everyone deserves access to accurate, unbiased news without spending hours sifting through lengthy articles. Briefly cuts through the noise, offering insightful summaries that matter.</p>
-    
+
     <h2 class="mt-5 mb-3">Community Hub</h2>
     <p>Beyond AI-driven news, Briefly is a platform for discussion and community engagement. Our Community Hub allows users to post their own articles, share perspectives, and engage in meaningful conversations about the topics that shape our world. We are committed to fostering a respectful and intelligent environment for all our members.</p>
-    
+
     <h2 class="mt-5 mb-3">Our Technology</h2>
     <p>We use state-of-the-art Natural Language Processing (NLP) models to analyze and summarize news content from trusted sources. Our system is designed to identify the most crucial points of an article, presenting them as a quick summary and a list of key takeaways.</p>
 </div>
@@ -1313,20 +1614,20 @@ CONTACT_HTML_TEMPLATE = """
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">Contact Us</h1>
     <p class="lead">We'd love to hear from you! Whether you have a question, feedback, or a news tip, feel free to reach out.</p>
-    
+
     <div class="row mt-5">
         <div class="col-md-6">
             <h2 class="h4">General Inquiries</h2>
             <p>For general questions, feedback, or support, please email us at:</p>
-            <p><i class="fas fa-envelope me-2"></i><a href="mailto:contact@briefly-news-app.onrender.com">contact@briefly-news-app.onrender.com</a></p>
+            <p><i class="fas fa-envelope me-2"></i><a href="mailto:contact@brieflyai.in">contact@brieflyai.in</a></p>
         </div>
         <div class="col-md-6">
             <h2 class="h4">Partnerships & Media</h2>
             <p>For partnership opportunities or media inquiries, please contact:</p>
-            <p><i class="fas fa-envelope me-2"></i><a href="mailto:partners@briefly-news-app.onrender.com">partners@briefly-news-app.onrender.com</a></p>
+            <p><i class="fas fa-envelope me-2"></i><a href="mailto:partners@brieflyai.in">partners@brieflyai.in</a></p>
         </div>
     </div>
-    
+
     <div class="mt-5">
         <h2 class="h4">Follow Us</h2>
         <p>Stay connected with us on social media:</p>
@@ -1347,10 +1648,10 @@ PRIVACY_POLICY_HTML_TEMPLATE = """
 {% block content %}
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">Privacy Policy</h1>
-    <p class="text-muted">Last updated: May 26, 2024</p>
-    
-    <p>Briefly ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website <a href="https://briefly-news-app.onrender.com/">briefly-news-app.onrender.com</a>.</p>
-    
+    <p class="text-muted">Last updated: May 28, 2024</p>
+
+    <p>Briefly ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website.</p>
+
     <h2 class="mt-5 mb-3">1. Information We Collect</h2>
     <p>We may collect personal information that you voluntarily provide to us when you register on the website, post articles or comments, or subscribe to our newsletter. This information may include your name, username, and email address.</p>
 
