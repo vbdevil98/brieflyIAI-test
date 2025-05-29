@@ -15,3 +15,4 @@ pytz
 celery
 redis
 lxml # newspaper3k can use lxml for better parsing
+lxml_html_clean
