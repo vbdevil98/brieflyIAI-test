@@ -12,6 +12,7 @@ import logging
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+import re
 
 # Third-party imports
 import nltk
@@ -293,29 +294,40 @@ def login_required(f):
 @celery_app.task(bind=True)
 def get_article_analysis_with_groq(self, article_text, article_title=""):
     """
-    This is now a Celery task. It runs in the background.
-    When called, it returns a task ID immediately. The actual processing happens
-    on a Celery worker. The result is stored in the Celery backend (Redis).
+    Celery task to get AI analysis. Now with input sanitization.
     """
     if not groq_client: return {"error": "AI analysis service not available."}
     if not article_text or not article_text.strip(): return {"error": "No text provided for AI analysis."}
+    
+    # --- NEW: Sanitize the input text to remove leftover HTML tags ---
+    clean_text = re.sub(r'<.*?>', '', article_text)
+    
     app.logger.info(f"CELERY TASK [{self.request.id}]: Requesting Groq analysis for: {article_title[:50]}...")
     system_prompt = ("You are an expert news analyst. Analyze the following article. "
                      "1. Provide a concise, neutral summary (3-4 paragraphs). "
                      "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
                      "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
+                     
+    # --- MODIFIED: Use the sanitized 'clean_text' for the prompt ---
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{clean_text[:20000]}"
+    
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
         ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
-        analysis = json.loads(ai_response.content)
-        if 'summary' in analysis and 'takeaways' in analysis:
-            app.logger.info(f"CELERY TASK [{self.request.id}]: Groq analysis successful.")
-            return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
-        raise ValueError("Missing 'summary' or 'takeaways' key in Groq JSON.")
+        
+        # --- MODIFIED: More robust check for valid JSON content ---
+        if ai_response.content and ai_response.content.strip().startswith('{'):
+            analysis = json.loads(ai_response.content)
+            if 'summary' in analysis and 'takeaways' in analysis:
+                app.logger.info(f"CELERY TASK [{self.request.id}]: Groq analysis successful.")
+                return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
+        
+        # If we reach here, the response was not valid JSON
+        raise ValueError("Response from AI was not valid JSON.")
+        
     except (json.JSONDecodeError, ValueError, LangChainException) as e:
-        app.logger.error(f"CELERY TASK [{self.request.id}]: Groq analysis failed for '{article_title[:50]}': {e}")
-        return {"error": f"AI analysis failed: {str(e)}"}
+        app.logger.error(f"CELERY TASK [{self.request.id}]: Groq analysis failed for '{article_title[:50]}'. Error: {e}. Response content was: {ai_response.content[:200]}")
+        return {"error": f"AI analysis failed: The AI returned an invalid response. This can happen with articles that are difficult to parse."}
     except Exception as e:
         app.logger.error(f"CELERY TASK [{self.request.id}]: Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
@@ -329,46 +341,60 @@ def fetch_news_from_api(target_date_str=None):
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
 
-    # --- NEW: Logic to handle day-wise fetching ---
-    try:
-        if target_date_str:
-            target_date = datetime.strptime(target_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-            app.logger.info(f"Fetching news for a specific date: {target_date_str}")
-        else:
-            # Default to the last 2 days if no date is specified
-            target_date = datetime.now(timezone.utc) - timedelta(days=app.config.get('NEWS_API_DAYS_AGO',2))
-            app.logger.info(f"Fetching news for the default period (last {app.config['NEWS_API_DAYS_AGO']} days).")
-    except (ValueError, TypeError):
-        app.logger.warning(f"Invalid date format '{target_date_str}'. Falling back to default.")
-        target_date = datetime.now(timezone.utc) - timedelta(days=app.config.get('NEWS_API_DAYS_AGO',2))
-
-    # For a specific day, we fetch from the start to the end of that day.
-    if target_date_str:
-        from_date_utc = target_date
-        to_date_utc = target_date + timedelta(days=1, seconds=-1)
-    else: # Default behavior
-        from_date_utc = target_date
-        to_date_utc = datetime.now(timezone.utc)
-
-    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
-    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
-
     all_raw_articles = []
 
-    # The rest of the fetching logic remains the same, but now uses the calculated from/to dates.
-    try:
-        app.logger.info(f"Attempt 1: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_str} to {to_date_str}")
-        everything_response = newsapi.get_everything(
-            q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
-            language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
-        )
-        status = everything_response.get('status')
-        total_results = everything_response.get('totalResults', 0)
-        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
-        if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
-        elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
-    except Exception as e: app.logger.error(f"Exception (Everything): {e}", exc_info=True)
+    # --- NEW, REFINED LOGIC ---
+    if target_date_str:
+        # --- BEHAVIOR FOR A SPECIFIC DATE ---
+        # Only use the 'get_everything' endpoint which respects date ranges.
+        app.logger.info(f"Fetching news for specific date: {target_date_str}")
+        try:
+            target_date = datetime.strptime(target_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            from_date_str = target_date.strftime('%Y-%m-%dT00:00:00')
+            to_date_str = target_date.strftime('%Y-%m-%dT23:59:59')
 
+            everything_response = newsapi.get_everything(
+                q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
+                language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
+            )
+            status = everything_response.get('status')
+            total_results = everything_response.get('totalResults', 0)
+            app.logger.info(f"Everything API (Specific Date) Response -> Status: {status}, TotalResults: {total_results}")
+            if status == 'ok':
+                all_raw_articles.extend(everything_response['articles'])
+        except Exception as e:
+            app.logger.error(f"Exception during specific date fetch for {target_date_str}: {e}", exc_info=True)
+
+    else:
+        # --- DEFAULT BEHAVIOR (LATEST NEWS / "ALL ARTICLES") ---
+        # Fetch a mix of top headlines and recent news for the best "latest" view.
+        app.logger.info("Fetching latest news (default behavior).")
+        to_date_utc = datetime.now(timezone.utc)
+        from_date_utc = to_date_utc - timedelta(days=app.config.get('NEWS_API_DAYS_AGO', 2))
+        
+        # Call 1: Get top headlines (not date-specific, always latest)
+        try:
+            top_headlines_response = newsapi.get_top_headlines(
+                country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE']
+            )
+            if top_headlines_response.get('status') == 'ok':
+                all_raw_articles.extend(top_headlines_response['articles'])
+        except Exception as e:
+            app.logger.error(f"Exception (Top-Headlines): {e}", exc_info=True)
+            
+        # Call 2: Get everything from the last 2 days
+        try:
+            everything_response = newsapi.get_everything(
+                q=app.config['NEWS_API_QUERY'], from_param=from_date_utc.strftime('%Y-%m-%dT%H:%M:%S'),
+                to=to_date_utc.strftime('%Y-%m-%dT%H:%M:%S'), language='en',
+                sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
+            )
+            if everything_response.get('status') == 'ok':
+                all_raw_articles.extend(everything_response['articles'])
+        except Exception as e:
+            app.logger.error(f"Exception (Everything): {e}", exc_info=True)
+
+    # --- DEDUPLICATION LOGIC (remains the same) ---
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
     for art_data in all_raw_articles:
@@ -387,6 +413,7 @@ def fetch_news_from_api(target_date_str=None):
         }
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
+    
     processed_articles.sort(key=lambda x: x.get('publishedAt', '') or '', reverse=True)
     app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
     return processed_articles
