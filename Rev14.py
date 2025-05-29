@@ -267,20 +267,26 @@ def simple_cache(expiry_seconds_default=None):
         @wraps(func)
         def wrapper(*args, **kwargs):
             expiry = expiry_seconds_default or app.config['CACHE_EXPIRY_SECONDS']
-            # --- MODIFIED: Include date in cache key for day-wise filtering ---
-            key_parts = [func.__name__] + list(map(str, args)) + sorted(kwargs.items()) + [request.args.get('date')]
+            
+            # --- CORRECTED CACHE KEY LOGIC ---
+            # The key is now built from the function name and its specific arguments for this call.
+            # This correctly separates the cache for fetch_news_from_api(target_date_str=None) 
+            # from fetch_news_from_api(target_date_str='2025-05-27').
+            key_parts = [func.__name__] + list(map(str, args)) + sorted(kwargs.items())
             cache_key = hashlib.md5(str(key_parts).encode('utf-8')).hexdigest()
+            
             cached_entry = API_CACHE.get(cache_key)
             if cached_entry and (time.time() - cached_entry[1] < expiry):
                 app.logger.debug(f"Cache HIT for {func.__name__} with key {cache_key}")
                 return cached_entry[0]
+                
             app.logger.debug(f"Cache MISS for {func.__name__} with key {cache_key}. Calling function.")
             result = func(*args, **kwargs)
             API_CACHE[cache_key] = (result, time.time())
             return result
         return wrapper
     return decorator
-
+    
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
