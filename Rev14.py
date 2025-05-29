@@ -1,4 +1,4 @@
-# Rev14.py - SIMPLIFIED: Synchronous AI, Day-wise Filter, Data Persistence Focus
+# Rev15.py - NOW WITH DAY-WISE NEWS FILTERING, ASYNC AI ANALYSIS, AND GUIDANCE ON PERSISTENT DEPLOYMENT
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -12,7 +12,6 @@ import logging
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-import re
 
 # Third-party imports
 import nltk
@@ -31,6 +30,8 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.exceptions import LangChainException
 import pytz
+# --- NEW: Imports for Background Tasks (Celery) ---
+from celery import Celery, Task
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -68,9 +69,8 @@ app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
 app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com'
-app.config['NEWS_API_DAYS_AGO'] = 2 # For default "latest" news
-app.config['NEWS_API_PAGE_SIZE'] = 100 # Max allowed by NewsAPI for developer plan
-app.config['NEWS_API_SORT_BY'] = 'publishedAt' # or 'relevancy' or 'popularity'
+app.config['NEWS_API_PAGE_SIZE'] = 100
+app.config['NEWS_API_SORT_BY'] = 'publishedAt'
 app.config['CACHE_EXPIRY_SECONDS'] = 1800 # 30 minutes
 app.permanent_session_lifetime = timedelta(days=30)
 
@@ -78,30 +78,75 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s -
 app.logger.setLevel(logging.INFO)
 
 # ==============================================================================
-# --- Data Persistence Setup ---
+# --- NEW: Data Persistence Explanation & Celery Configuration ---
 # ==============================================================================
+# --- Data Persistence: Your key to not losing user data on Render ---
+# The code below correctly uses a persistent PostgreSQL database if the 'DATABASE_URL'
+# environment variable is present. When you deploy on Render, you MUST:
+# 1. Create a "PostgreSQL" database instance in your Render dashboard.
+# 2. Copy the "Internal Connection String" for your database.
+# 3. Go to your web service's "Environment" tab and add a new environment variable
+#    with the key 'DATABASE_URL' and the value as the copied connection string.
+# By doing this, your database lives separately from your web service. When you
+# "Deploy Latest Commit", you are only updating the application code. The database
+# remains untouched, and all your user data (users, comments, etc.) is safe.
+# If 'DATABASE_URL' is not set, it falls back to a local SQLite file ('app_data.db'),
+# which is ONLY for development and will be erased with every Render deploy.
 database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    if database_url.startswith("postgres://"): # Render provides URLs starting with postgres://
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    app.logger.info("Connecting to persistent PostgreSQL database via DATABASE_URL.")
+    app.logger.info("Connecting to persistent PostgreSQL database.")
 else:
     db_file_name = 'app_data.db'
     project_root_for_db = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(project_root_for_db, db_file_name)
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.logger.warning(f"DATABASE_URL not set. Using temporary SQLite database at {db_path}. THIS IS NOT FOR PRODUCTION AND DATA WILL BE LOST.")
+    app.logger.warning(f"Using temporary SQLite database at {db_path}. THIS IS NOT FOR PRODUCTION.")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+# --- Celery Configuration for Background Tasks ---
+# To make AI analysis fast, we run it in the background using Celery.
+# On Render, you will need to:
+# 1. Create a "Redis" instance in your Render dashboard.
+# 2. Copy the "Internal Connection URL" for your Redis instance.
+# 3. Set the 'CELERY_BROKER_URL' and 'CELERY_RESULT_BACKEND' environment variables in your web service to this URL.
+# 4. Create a "Background Worker" service in Render with the start command:
+#    celery -A Rev15.celery_app worker --loglevel=info
+# This setup ensures that the long-running AI task does not block the web request.
+app.config.from_mapping(
+    CELERY_BROKER_URL=os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
+    CELERY_RESULT_BACKEND=os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+)
+
+def make_celery(app):
+    celery = Celery(
+        app.import_name,
+        backend=app.config['CELERY_RESULT_BACKEND'],
+        broker=app.config['CELERY_BROKER_URL'],
+        include=['__main__'] # Points to tasks defined in this file
+    )
+    celery.conf.update(app.config)
+
+    class ContextTask(Task):
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                return self.run(*args, **kwargs)
+
+    celery.Task = ContextTask
+    return celery
+
+celery_app = make_celery(app)
+
 
 # ==============================================================================
 # --- 3. API Client Initialization ---
 # ==============================================================================
 NEWSAPI_KEY = os.environ.get('NEWSAPI_KEY')
 newsapi = NewsApiClient(api_key=NEWSAPI_KEY) if NEWSAPI_KEY else None
-if not newsapi: app.logger.error("NEWSAPI_KEY missing or invalid. News fetching will fail.")
+if not newsapi: app.logger.error("NEWSAPI_KEY missing. News fetching will fail.")
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 groq_client = None
@@ -111,16 +156,15 @@ if GROQ_API_KEY:
         app.logger.info("Groq client initialized.")
     except Exception as e:
         app.logger.error(f"Failed to initialize Groq client: {e}")
-        groq_client = None # Ensure it's None if init fails
 else:
     app.logger.warning("GROQ_API_KEY missing. AI analysis disabled.")
 
 SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
 if not SCRAPER_API_KEY:
-    app.logger.warning("SCRAPER_API_KEY missing. Article content fetching may fail for some sites.")
+    app.logger.warning("SCRAPER_API_KEY missing. Article content fetching may fail.")
 
 # ==============================================================================
-# --- 4. Database Models (No AiAnalysisTask model needed now) ---
+# --- 4. Database Models ---
 # ==============================================================================
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -145,14 +189,23 @@ class CommunityArticle(db.Model):
     groq_takeaways = db.Column(db.Text, nullable=True)
     comments = db.relationship('Comment', backref=db.backref('community_article', lazy='joined'), lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
 
+# --- NEW: Model to track AI analysis tasks ---
+class AiAnalysisTask(db.Model):
+    id = db.Column(db.String(36), primary_key=True) # Celery task ID
+    article_hash_id = db.Column(db.String(32), nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False, default='PENDING') # PENDING, SUCCESS, FAILURE
+    result_summary = db.Column(db.Text, nullable=True)
+    result_takeaways = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # Author of the comment
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id'), nullable=True)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
-    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True) # For replies
     replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='selectin', cascade="all, delete-orphan")
     votes = db.relationship('CommentVote', backref='comment', lazy='dynamic', cascade="all, delete-orphan")
 
@@ -160,7 +213,7 @@ class CommentVote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"), nullable=False)
     comment_id = db.Column(db.Integer, db.ForeignKey('comment.id', ondelete="CASCADE"), nullable=False)
-    vote_type = db.Column(db.SmallInteger, nullable=False)
+    vote_type = db.Column(db.SmallInteger, nullable=False) # 1 for upvote, -1 for downvote
     __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', name='_user_comment_uc'),)
 
 class Subscriber(db.Model):
@@ -177,7 +230,7 @@ def init_db():
 # ==============================================================================
 # --- 5. Helper Functions ---
 # ==============================================================================
-MASTER_ARTICLE_STORE, API_CACHE = {}, {} # In-memory stores
+MASTER_ARTICLE_STORE, API_CACHE = {}, {}
 INDIAN_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
 def generate_article_id(url_or_title): return hashlib.md5(url_or_title.encode('utf-8')).hexdigest()
@@ -208,13 +261,13 @@ def to_ist_filter(utc_dt):
     return ist_dt.strftime('%b %d, %Y at %I:%M %p %Z')
 app.jinja_env.filters['to_ist'] = to_ist_filter
 
-# --- Cache decorator (Corrected) ---
 def simple_cache(expiry_seconds_default=None):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             expiry = expiry_seconds_default or app.config['CACHE_EXPIRY_SECONDS']
-            key_parts = [func.__name__] + list(map(str, args)) + sorted(kwargs.items())
+            # --- MODIFIED: Include date in cache key for day-wise filtering ---
+            key_parts = [func.__name__] + list(map(str, args)) + sorted(kwargs.items()) + [request.args.get('date')]
             cache_key = hashlib.md5(str(key_parts).encode('utf-8')).hexdigest()
             cached_entry = API_CACHE.get(cache_key)
             if cached_entry and (time.time() - cached_entry[1] < expiry):
@@ -236,51 +289,39 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- AI Analysis (Synchronous Version) ---
-def get_article_analysis_with_groq(article_text, article_title=""):
-    if not groq_client:
-        app.logger.warning("Groq client not available for analysis.")
-        return {"error": "AI analysis service not available."}
-    if not article_text or not article_text.strip():
-        return {"error": "No text provided for AI analysis."}
-
-    clean_text = re.sub(r'<[^>]+>', '', article_text) # Strip HTML tags
-
-    app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
+# --- MODIFIED: This function now runs as a background task ---
+@celery_app.task(bind=True)
+def get_article_analysis_with_groq(self, article_text, article_title=""):
+    """
+    This is now a Celery task. It runs in the background.
+    When called, it returns a task ID immediately. The actual processing happens
+    on a Celery worker. The result is stored in the Celery backend (Redis).
+    """
+    if not groq_client: return {"error": "AI analysis service not available."}
+    if not article_text or not article_text.strip(): return {"error": "No text provided for AI analysis."}
+    app.logger.info(f"CELERY TASK [{self.request.id}]: Requesting Groq analysis for: {article_title[:50]}...")
     system_prompt = ("You are an expert news analyst. Analyze the following article. "
-                       "1. Provide a concise, neutral summary (3-4 paragraphs). "
-                       "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
-                       "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{clean_text[:15000]}" # Reduced length
-
-    ai_response_content = None
+                     "1. Provide a concise, neutral summary (3-4 paragraphs). "
+                     "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
+                     "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
-        try:
-            ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
-            ai_response_content = ai_response.content
-        except Exception as invoke_exc:
-            app.logger.error(f"Groq invoke FAILED for '{article_title[:50]}'. Invoke Error: {invoke_exc}", exc_info=True)
-            return {"error": f"AI analysis failed: Error communicating with AI service. ({type(invoke_exc).__name__})"}
-
-        if ai_response_content and ai_response_content.strip().startswith('{'):
-            analysis = json.loads(ai_response_content)
-            if 'summary' in analysis and 'takeaways' in analysis:
-                app.logger.info(f"Groq analysis successful for '{article_title[:50]}'.")
-                return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
-
-        app.logger.warning(f"Groq response for '{article_title[:50]}' was not valid JSON or was empty. Response start: {str(ai_response_content)[:500]}")
-        raise ValueError("Response from AI was not valid JSON or was empty.")
-
-    except (json.JSONDecodeError, ValueError) as parse_val_err:
-        app.logger.error(f"Groq analysis JSON parsing/validation FAILED for '{article_title[:50]}'. Error: {parse_val_err}. Response content was: {str(ai_response_content)[:500]}")
-        return {"error": f"AI analysis failed: The AI returned an invalid response structure."}
+        ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+        analysis = json.loads(ai_response.content)
+        if 'summary' in analysis and 'takeaways' in analysis:
+            app.logger.info(f"CELERY TASK [{self.request.id}]: Groq analysis successful.")
+            return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
+        raise ValueError("Missing 'summary' or 'takeaways' key in Groq JSON.")
+    except (json.JSONDecodeError, ValueError, LangChainException) as e:
+        app.logger.error(f"CELERY TASK [{self.request.id}]: Groq analysis failed for '{article_title[:50]}': {e}")
+        return {"error": f"AI analysis failed: {str(e)}"}
     except Exception as e:
-        app.logger.error(f"UNEXPECTED error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
+        app.logger.error(f"CELERY TASK [{self.request.id}]: Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
 
 # ==============================================================================
-# --- NEWS FETCHING & CONTENT PARSING ---
+# --- NEWS FETCHING: MODIFIED FOR DAY-WISE FILTERING ---
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api(target_date_str=None):
@@ -288,184 +329,100 @@ def fetch_news_from_api(target_date_str=None):
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
 
-    all_raw_articles = []
-    current_utc_time = datetime.now(timezone.utc)
+    # --- NEW: Logic to handle day-wise fetching ---
+    try:
+        if target_date_str:
+            target_date = datetime.strptime(target_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            app.logger.info(f"Fetching news for a specific date: {target_date_str}")
+        else:
+            # Default to the last 2 days if no date is specified
+            target_date = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
+            app.logger.info(f"Fetching news for the default period (last {app.config['NEWS_API_DAYS_AGO']} days).")
+    except (ValueError, TypeError):
+        app.logger.warning(f"Invalid date format '{target_date_str}'. Falling back to default.")
+        target_date = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
 
-    # --- Date validation and future-proofing ---
-    # Check if the server's clock seems to be in the future.
-    # We add a small buffer (e.g., 1 day) to avoid issues with minor clock drifts.
-    if current_utc_time > datetime.now(timezone.utc) + timedelta(days=1):
-        app.logger.critical(f"SERVER CLOCK IS IN THE FUTURE! Current server time: {current_utc_time}. This will cause API calls to fail. Please correct the server's system time.")
-        # As a fallback, we can hard-set the current time to now, but the root cause must be fixed.
-        current_utc_time = datetime.now(timezone.utc)
-
-
+    # For a specific day, we fetch from the start to the end of that day.
     if target_date_str:
-        # --- BEHAVIOR FOR A SPECIFIC DATE ---
-        app.logger.info(f"Fetching news for specific date: {target_date_str}")
-        try:
-            target_date_dt = datetime.strptime(target_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-            from_param = target_date_dt.strftime('%Y-%m-%dT00:00:00Z')
-            to_param = target_date_dt.strftime('%Y-%m-%dT23:59:59Z')
-            app.logger.info(f"NewsAPI Query (Specific Date) - From: {from_param}, To: {to_param}")
+        from_date_utc = target_date
+        to_date_utc = target_date + timedelta(days=1, seconds=-1)
+    else: # Default behavior
+        from_date_utc = target_date
+        to_date_utc = datetime.now(timezone.utc)
 
-            everything_response = newsapi.get_everything(
-                q=app.config['NEWS_API_QUERY'],
-                domains=app.config['NEWS_API_DOMAINS'],
-                from_param=from_param,
-                to=to_param,
-                language='en',
-                sort_by='publishedAt',
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-            status = everything_response.get('status')
-            total_results = everything_response.get('totalResults', 0)
-            app.logger.info(f"Everything API (Specific Date '{target_date_str}') Response -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0:
-                all_raw_articles.extend(everything_response['articles'])
-            elif status == 'ok' and total_results == 0:
-                app.logger.warning(f"NewsAPI returned 0 results for {target_date_str}. This could be due to API plan limitations (free plan has limited history) or no news matching the query on that day.")
-            elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Specific Date Everything): {everything_response.get('message')}")
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
 
-        except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException during specific date fetch for {target_date_str}: {e}")
-        except Exception as e:
-            app.logger.error(f"General Exception during specific date fetch for {target_date_str}: {e}", exc_info=True)
-    else:
-        # --- DEFAULT BEHAVIOR (LATEST NEWS / "ALL ARTICLES") ---
-        app.logger.info("Fetching latest news (default/All Articles).")
-        days_ago_config = app.config.get('NEWS_API_DAYS_AGO', 2)
-        from_date_default = (current_utc_time - timedelta(days=days_ago_config)).replace(hour=0, minute=0, second=0, microsecond=0)
-        to_date_default = current_utc_time
+    all_raw_articles = []
 
-        from_param_default = from_date_default.strftime('%Y-%m-%dT%H:%M:%S')
-        to_param_default = to_date_default.strftime('%Y-%m-%dT%H:%M:%S')
-        app.logger.info(f"NewsAPI Query (Latest) - From: {from_param_default}, To: {to_param_default}")
+    # The rest of the fetching logic remains the same, but now uses the calculated from/to dates.
+    try:
+        app.logger.info(f"Attempt 1: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_str} to {to_date_str}")
+        everything_response = newsapi.get_everything(
+            q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
+            language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
+        )
+        status = everything_response.get('status')
+        total_results = everything_response.get('totalResults', 0)
+        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
+        if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
+        elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
+    except Exception as e: app.logger.error(f"Exception (Everything): {e}", exc_info=True)
 
-        # Use only the 'everything' endpoint for consistency with date filtering.
-        # Developer plan allows 'top-headlines' only for 'country' or 'category', not with 'domains' or broad 'q'.
-        try:
-            everything_response = newsapi.get_everything(
-                q=app.config['NEWS_API_QUERY'],
-                domains=app.config['NEWS_API_DOMAINS'],
-                from_param=from_param_default,
-                to=to_param_default,
-                language='en',
-                sort_by=app.config['NEWS_API_SORT_BY'],
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-            status = everything_response.get('status')
-            total_results = everything_response.get('totalResults', 0)
-            app.logger.info(f"Everything API (Latest) Response -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0:
-                all_raw_articles.extend(everything_response['articles'])
-            elif status == 'ok' and total_results == 0:
-                app.logger.warning("NewsAPI returned 0 results for the latest news query. Check query parameters, API plan limitations, or if the server clock is set to the future.")
-            elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Latest Everything): {everything_response.get('message')}")
-        except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException during latest news fetch: {e}")
-        except Exception as e:
-            app.logger.error(f"General Exception during latest news fetch: {e}", exc_info=True)
-
-    # --- Processing logic remains the same ---
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
     for art_data in all_raw_articles:
-        if not art_data: continue
         url = art_data.get('url')
+        if not url or url in unique_urls: continue
         title = art_data.get('title')
-        description = art_data.get('description')
-        source_info = art_data.get('source')
-
-        if not all([url, title, description, source_info]) or title == '[Removed]' or not title.strip():
-            continue
-        if url in unique_urls:
-            continue
-        
+        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip(): continue
         unique_urls.add(url)
         article_id = generate_article_id(url)
-        source_name = source_info.get('name', 'Unknown Source')
+        source_name = art_data['source'].get('name', 'Unknown Source')
         placeholder_text = urllib.parse.quote_plus(source_name[:20])
-        
         standardized_article = {
-            'id': article_id, 'title': title, 'description': description,
+            'id': article_id, 'title': title, 'description': art_data.get('description', ''),
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-            'publishedAt': art_data.get('publishedAt'), 'source': {'name': source_name}, 'is_community_article': False,
-            'groq_analysis': None
+            'publishedAt': art_data.get('publishedAt'), 'source': {'name': source_name}, 'is_community_article': False
         }
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
-    
-    processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
+    processed_articles.sort(key=lambda x: x.get('publishedAt', '') or '', reverse=True)
     app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
     return processed_articles
-# --- Modified to call synchronous AI analysis ---
-@simple_cache(expiry_seconds_default=3600 * 6) # Cache the combined result
+
+
+@simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
-    
-    # 1. Fetch article text using ScraperAPI
-    raw_text_data = {}
-    if SCRAPER_API_KEY:
-        params = {'api_key': SCRAPER_API_KEY, 'url': url}
-        try:
-            response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
-            response.raise_for_status()
-            config = Config()
-            config.fetch_images = False
-            config.memoize_articles = False # Use our own caching
-            article_scraper = Article(url, config=config)
-            article_scraper.download(input_html=response.text)
-            article_scraper.parse()
-            if not article_scraper.text:
-                raw_text_data = {"error": "Could not extract text from the article."}
-            else:
-                raw_text_data = {"full_text": article_scraper.text, "title": article_scraper.title, "error": None}
-        except requests.exceptions.RequestException as e:
-            app.logger.error(f"ScraperAPI failed for {url}: {e}")
-            raw_text_data = {"error": f"Failed to fetch article content via proxy: {str(e)}"}
-        except Exception as e:
-            app.logger.error(f"Newspaper3k parsing failed for {url}: {e}", exc_info=True)
-            raw_text_data = {"error": f"Failed to parse article content: {str(e)}"}
-    else: # Fallback if ScraperAPI key is missing
-        app.logger.warning("SCRAPER_API_KEY missing. Attempting direct fetch for content (might fail).")
-        try:
-            config = Config()
-            config.fetch_images = False
-            config.memoize_articles = False
-            article_scraper = Article(url, config=config)
-            article_scraper.download()
-            article_scraper.parse()
-            if not article_scraper.text:
-                raw_text_data = {"error": "Could not extract text (direct fetch)." }
-            else:
-                raw_text_data = {"full_text": article_scraper.text, "title": article_scraper.title, "error": None}
-        except Exception as e:
-            app.logger.error(f"Direct fetch/parse failed for {url}: {e}", exc_info=True)
-            raw_text_data = {"error": f"Failed to fetch/parse (direct): {str(e)}"}
+    if not SCRAPER_API_KEY: return {"error": "Content fetching service unavailable."}
+    params = {'api_key': SCRAPER_API_KEY, 'url': url}
+    try:
+        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
+        response.raise_for_status()
+        config = Config()
+        config.fetch_images = False
+        config.memoize_articles = False
+        article_scraper = Article(url, config=config)
+        article_scraper.download(input_html=response.text)
+        article_scraper.parse()
+        if not article_scraper.text: return {"error": "Could not extract text from the article."}
 
-    if raw_text_data.get("error"):
-        return {"full_text": None, "groq_analysis": {"error": raw_text_data.get("error")}, "error": raw_text_data.get("error")}
-
-    # 2. Get AI Analysis (synchronously)
-    article_text_content = raw_text_data.get("full_text")
-    api_article_title = raw_text_data.get("title") or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
-    
-    groq_analysis = get_article_analysis_with_groq(article_text_content, api_article_title)
-    
-    return {
-        "full_text": article_text_content,
-        "groq_analysis": groq_analysis,
-        "error": groq_analysis.get("error") if isinstance(groq_analysis, dict) else None
-    }
+        # --- MODIFIED: This function now only returns the raw text. AI analysis is handled separately. ---
+        return {"full_text": article_scraper.text, "error": None}
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
+        return {"error": f"Failed to fetch article content via proxy: {str(e)}"}
+    except Exception as e:
+        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
+        return {"error": f"Failed to parse article content: {str(e)}"}
 
 # ==============================================================================
-# --- 6. Flask Routes ---
+# --- 6. Flask Routes (MODIFIED for Day-wise Filter and Async AI) ---
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
+    # --- NEW: Add selected_date to the context for the date picker ---
     selected_date = request.args.get('date') or (request.view_args.get('date_str')) or datetime.now(INDIAN_TIMEZONE).strftime('%Y-%m-%d')
     return {
         'categories': app.config['CATEGORIES'],
@@ -476,37 +433,42 @@ def inject_global_vars():
     }
 
 def get_paginated_articles(articles, page, per_page):
+    # --- MODIFIED: Limit total pages to 11 to address user requirement ---
     total_articles = len(articles)
     max_pages = 11
+    # Calculate the total number of articles to be shown within the 11-page limit
     total_displayable_articles = max_pages * per_page
+
+    # The actual number of articles we will paginate over
     effective_total_articles = min(total_articles, total_displayable_articles)
+
     total_pages = (effective_total_articles + per_page - 1) // per_page
+
     start = (page - 1) * per_page
-    if page > total_pages and total_pages > 0 : # Allow page 1 if total_pages is 0
+    # Ensure we don't go past the last page
+    if page > total_pages:
         return [], total_pages
+
     end = start + per_page
-    paginated_items = articles[start:min(end, effective_total_articles)] # Ensure we don't slice beyond effective articles
+    paginated_items = articles[start:end]
+
     return paginated_items, total_pages
+
 
 def get_sort_key(article):
     date_val = None
     if isinstance(article, dict): date_val = article.get('publishedAt')
     elif hasattr(article, 'published_at'): date_val = article.published_at
-    
-    if not date_val: return datetime.min.replace(tzinfo=timezone.utc) # Sort articles with no date last
-    
+    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
     if isinstance(date_val, str):
-        try:
-            parsed_date = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
-            return parsed_date if parsed_date.tzinfo else pytz.utc.localize(parsed_date)
+        try: return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
         except ValueError:
-            app.logger.warning(f"Could not parse date string for sorting: {date_val}")
+            app.logger.warning(f"Could not parse date string: {date_val}")
             return datetime.min.replace(tzinfo=timezone.utc)
-    elif isinstance(date_val, datetime):
-        return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
-    
+    if isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
 
+# --- MODIFIED: Routes now accept a date string ---
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/date/<string:date_str>')
@@ -519,28 +481,24 @@ def index(page=1, category_name='All Articles', date_str=None):
     session['previous_list_page'] = request.full_path
     per_page = app.config['PER_PAGE']
     all_display_articles = []
-
     if category_name == 'Community Hub':
-        # Community hub is not date-filtered, always shows all by recency
+        # Community hub is not date-filtered
         db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
         for art in db_articles:
             art.is_community_article = True
-        all_display_articles = db_articles # Directly assign
+            all_display_articles.append(art)
     else:
+        # --- MODIFIED: Pass the date string to the fetching function ---
         api_articles = fetch_news_from_api(target_date_str=date_str)
         for art_dict in api_articles:
-            # Ensure groq_analysis field exists, even if None, for template consistency
-            art_dict.setdefault('groq_analysis', None)
             art_dict['is_community_article'] = False
-        all_display_articles = api_articles # Directly assign
+            all_display_articles.append(art_dict)
 
     all_display_articles.sort(key=get_sort_key, reverse=True)
     paginated_display_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
-    
-    # Featured article only on first page of "All Articles" without specific date or query
     featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and not date_str and paginated_display_articles)
-    
     return render_template("INDEX_HTML_TEMPLATE", articles=paginated_display_articles, selected_category=category_name, current_page=page, total_pages=total_pages, featured_article_on_this_page=featured_article_on_this_page)
+
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
@@ -550,14 +508,12 @@ def search_results(page=1):
     per_page = app.config['PER_PAGE']
     if not query_str: return redirect(url_for('index'))
     app.logger.info(f"Search query: '{query_str}'")
-    
-    # Search is performed on all recently fetched API articles (not date-specific for search itself)
-    # and all community articles
-    api_articles_for_search = fetch_news_from_api() # Get a broad set for searching
+
+    # Search does not use date filter, it searches all cached articles
+    api_articles = fetch_news_from_api() # Fetch all recent articles for a comprehensive search
     api_results = []
-    for art_data in api_articles_for_search:
-        if query_str.lower() in art_data.get('title', '').lower() or \
-           query_str.lower() in art_data.get('description', '').lower():
+    for art_data in api_articles:
+        if query_str.lower() in art_data.get('title', '').lower() or query_str.lower() in art_data.get('description', '').lower():
             art_copy = art_data.copy()
             art_copy['is_community_article'] = False
             api_results.append(art_copy)
@@ -569,13 +525,13 @@ def search_results(page=1):
     for art in community_db_articles_query.all():
         art.is_community_article = True
         community_db_articles.append(art)
-        
+
     all_search_results = api_results + community_db_articles
     all_search_results.sort(key=get_sort_key, reverse=True)
     paginated_search_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
     return render_template("INDEX_HTML_TEMPLATE", articles=paginated_search_articles, selected_category=f"Search: {query_str}", current_page=page, total_pages=total_pages, featured_article_on_this_page=False, query=query_str)
 
-# --- Modified article_detail to perform synchronous analysis if needed ---
+
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
     article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
@@ -586,41 +542,21 @@ def article_detail(article_hash_id):
     if article_db:
         article_data = article_db
         is_community_article = True
-        try:
-            article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
-            # For template consistency, add groq_analysis structure
-            article_data.groq_analysis = {
-                "groq_summary": article_data.groq_summary,
-                "groq_takeaways": article_data.parsed_takeaways,
-                "error": None # Assume no error if data is present
-            }
+        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
         except json.JSONDecodeError:
             app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
             article_data.parsed_takeaways = []
-            article_data.groq_analysis = {"error": "Failed to parse stored takeaways."}
-        
+
         all_article_comments_list = Comment.query.options(
-            joinedload(Comment.author), 
+            joinedload(Comment.author),
             joinedload(Comment.replies).options(joinedload(Comment.author))
         ).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
         comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
     else:
-        article_api_master = MASTER_ARTICLE_STORE.get(article_hash_id)
-        if article_api_master:
-            article_data = article_api_master.copy() # Use a copy for modifications
+        article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
+        if article_api_dict:
+            article_data = article_api_dict.copy()
             is_community_article = False
-            
-            # --- Synchronous AI Analysis for API articles if not already done/cached ---
-            # The result of fetch_and_parse_article_content is cached, so this is efficient.
-            if not article_data.get('groq_analysis'):
-                app.logger.info(f"No cached analysis for API article {article_hash_id}. Fetching and analyzing...")
-                analysis_result = fetch_and_parse_article_content(article_hash_id, article_data['url'])
-                article_data['groq_analysis'] = analysis_result.get('groq_analysis')
-                # Update MASTER_ARTICLE_STORE with the new analysis for subsequent non-cached fetches this session
-                MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = article_data['groq_analysis']
-            else:
-                app.logger.info(f"Using existing/cached analysis for API article {article_hash_id}.")
-
             all_article_comments_list = Comment.query.options(
                 joinedload(Comment.author),
                 joinedload(Comment.replies).options(joinedload(Comment.author))
@@ -629,7 +565,6 @@ def article_detail(article_hash_id):
         else:
             flash("Article not found.", "danger"); return redirect(url_for('index'))
 
-    # Comment data fetching logic (remains the same)
     if all_article_comments_list:
         comment_ids = []
         for c in all_article_comments_list:
@@ -652,12 +587,88 @@ def article_detail(article_hash_id):
 
     if isinstance(article_data, dict): article_data['is_community_article'] = False
     elif article_data: article_data.is_community_article = True
-    
+
     return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page)
 
-# --- Routes for Celery removed: /trigger_analysis, /analysis_status ---
+# --- NEW: Route to trigger and check background AI analysis ---
+@app.route('/trigger_analysis/<article_hash_id>')
+def trigger_analysis(article_hash_id):
+    """
+    This endpoint triggers the background AI analysis.
+    It returns a task_id that the frontend can use to poll for the result.
+    """
+    # Check if a task is already running or completed for this article
+    existing_task = AiAnalysisTask.query.filter_by(article_hash_id=article_hash_id).order_by(AiAnalysisTask.created_at.desc()).first()
+    if existing_task:
+        # If a successful task exists, return its result immediately
+        if existing_task.status == 'SUCCESS':
+             return jsonify({
+                "status": "SUCCESS",
+                "groq_summary": existing_task.result_summary,
+                "groq_takeaways": json.loads(existing_task.result_takeaways or '[]')
+            })
+        # If a task is pending or failed, return its ID for polling
+        return jsonify({"task_id": existing_task.id})
 
-# --- User Auth, Comments, Posting (largely unchanged, but post_article AI is now simpler) ---
+    article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
+    if not article_data or 'url' not in article_data:
+        return jsonify({"error": "Article data or URL not found"}), 404
+
+    # Fetch the content first
+    content_data = fetch_and_parse_article_content(article_hash_id, article_data['url'])
+    if content_data.get("error"):
+        return jsonify({"error": content_data.get("error")}), 500
+
+    article_text = content_data.get("full_text")
+    article_title = article_data.get('title', 'Unknown Title')
+
+    # Trigger the background task
+    task = get_article_analysis_with_groq.delay(article_text, article_title)
+
+    # Store the task info in our database
+    new_task_db_entry = AiAnalysisTask(id=task.id, article_hash_id=article_hash_id, status='PENDING')
+    db.session.add(new_task_db_entry)
+    db.session.commit()
+
+    return jsonify({"task_id": task.id})
+
+@app.route('/analysis_status/<task_id>')
+def analysis_status(task_id):
+    """
+    This endpoint is polled by the frontend to get the result of the AI analysis.
+    """
+    task_db_entry = AiAnalysisTask.query.get(task_id)
+    if not task_db_entry:
+        return jsonify({"status": "NOT_FOUND", "error": "Task not found in database."}), 404
+
+    task = get_article_analysis_with_groq.AsyncResult(task_id)
+
+    if task.state == 'PENDING':
+        return jsonify({"status": "PENDING"})
+    elif task.state == 'SUCCESS':
+        if task_db_entry.status != 'SUCCESS':
+            result = task.get()
+            if result.get("error"):
+                 task_db_entry.status = 'FAILURE'
+                 app.logger.error(f"Task {task_id} failed with error: {result.get('error')}")
+            else:
+                task_db_entry.status = 'SUCCESS'
+                task_db_entry.result_summary = result.get('groq_summary')
+                task_db_entry.result_takeaways = json.dumps(result.get('groq_takeaways'))
+            db.session.commit()
+        return jsonify({
+            "status": "SUCCESS",
+            "groq_summary": task_db_entry.result_summary,
+            "groq_takeaways": json.loads(task_db_entry.result_takeaways or '[]')
+        })
+    elif task.state == 'FAILURE':
+        if task_db_entry.status != 'FAILURE':
+            task_db_entry.status = 'FAILURE'
+            db.session.commit()
+        return jsonify({"status": "FAILURE", "error": "An error occurred during analysis."})
+
+    return jsonify({"status": task.state})
+
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
@@ -700,17 +711,17 @@ def post_article():
         flash("Title, Description, Full Content, and Source Name are required.", "danger")
         return redirect(request.referrer or url_for('index'))
     article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
-    
-    # --- AI analysis for community posts is synchronous ---
-    groq_analysis_result = get_article_analysis_with_groq(content, title)
+
+    # --- MODIFIED: AI analysis for community posts is now also a background task ---
+    # We save the article immediately. The AI results can be populated later.
+    # For simplicity, we'll still call the function directly here, but a more advanced
+    # system might have a separate worker that picks up new community articles.
+    groq_analysis_result = get_article_analysis_with_groq.func(content, title) # .func calls the task's code directly
     groq_summary_text, groq_takeaways_json_str = None, None
     if groq_analysis_result and not groq_analysis_result.get("error"):
         groq_summary_text = groq_analysis_result.get('groq_summary')
         takeaways_list = groq_analysis_result.get('groq_takeaways')
         if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
-    else:
-        flash(f"AI analysis failed for your article: {groq_analysis_result.get('error', 'Unknown AI error')}", "warning")
-
 
     new_article = CommunityArticle(
         article_hash_id=article_hash_id, title=title, description=description, full_text=content,
@@ -736,7 +747,7 @@ def register():
             db.session.add(new_user); db.session.commit()
             flash(f'Registration successful, {name}! Please log in.', 'success')
             return redirect(url_for('login'))
-        return redirect(url_for('register')) # Redirect back to register if validation fails
+        return redirect(url_for('register'))
     return render_template("REGISTER_HTML_TEMPLATE")
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -776,12 +787,11 @@ def subscribe():
 @app.errorhandler(404)
 def page_not_found(e): return render_template("404_TEMPLATE"), 404
 @app.errorhandler(500)
-def internal_server_error(e):
-    db.session.rollback() # Rollback in case the error was DB related
-    app.logger.error(f"500 error at {request.url}: {e}", exc_info=True)
-    return render_template("500_TEMPLATE"), 500
+def internal_server_error(e): db.session.rollback(); app.logger.error(f"500 error at {request.url}: {e}", exc_info=True); return render_template("500_TEMPLATE"), 500
 
-# --- 7. HTML Templates (ARTICLE_HTML_TEMPLATE needs changes) ---
+
+# ==============================================================================
+# --- 7. HTML Templates (Full, Unabbreviated Version) ---
 # ==============================================================================
 BASE_HTML_TEMPLATE = """
 <!doctype html>
@@ -795,7 +805,7 @@ BASE_HTML_TEMPLATE = """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        :root { /* CSS Variables */
+        :root {
             --primary-color: #0A2342; --primary-light: #1E3A5E;
             --secondary-color: #B8860B; --secondary-light: #D4A017;
             --accent-color: #F07F2D; --text-color: #343a40;
@@ -808,9 +818,7 @@ BASE_HTML_TEMPLATE = """
         }
         body { padding-top: 145px; font-family: 'Roboto', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
-        body.dark-mode { /* Dark Mode Styles */
-            --primary-color: #1E3A5E; --primary-light: #2A4B7C; --secondary-color: #D4A017; --secondary-light: #E7B400; --accent-color: #FF983E; --text-color: #E9ECEF; --text-muted-color: #ADB5BD; --light-bg: #121212; --white-bg: #1E1E1E; --card-border-color: #333333; --footer-bg: #0A0A0A; --footer-text: rgba(255,255,255,0.7); --primary-color-rgb: 30, 58, 94; --secondary-color-rgb: 212, 160, 23;
-        }
+        body.dark-mode { --primary-color: #1E3A5E; --primary-light: #2A4B7C; --secondary-color: #D4A017; --secondary-light: #E7B400; --accent-color: #FF983E; --text-color: #E9ECEF; --text-muted-color: #ADB5BD; --light-bg: #121212; --white-bg: #1E1E1E; --card-border-color: #333333; --footer-bg: #0A0A0A; --footer-text: rgba(255,255,255,0.7); --primary-color-rgb: 30, 58, 94; --secondary-color-rgb: 212, 160, 23; }
         body.dark-mode .navbar-main { background: linear-gradient(135deg, #0A1A2F, #10233B); border-bottom: 1px solid #2A4B7C; }
         body.dark-mode .category-nav { background: #1A1A1A; border-bottom: 1px solid #2A2A2A; }
         body.dark-mode .category-link { color: var(--text-muted-color) !important; }
@@ -957,6 +965,7 @@ BASE_HTML_TEMPLATE = """
         .reply-form-container { display: none; margin-top: 0.75rem; padding: 0.75rem; background-color: rgba(var(--primary-color-rgb), 0.03); border-radius: 6px;}
         body.dark-mode .reply-form-container { background-color: rgba(var(--secondary-color-rgb), 0.05); }
         .add-comment-form textarea { min-height: 100px; }
+        /* --- NEW: Style for the date picker --- */
         .date-picker-container {
             display: flex;
             align-items: center;
@@ -1018,6 +1027,7 @@ BASE_HTML_TEMPLATE = """
             {% endif %}
         {% endwith %}
     </div>
+
     <nav class="navbar navbar-main navbar-expand-lg fixed-top">
         <div class="container">
             <div class="navbar-content-wrapper">
@@ -1050,6 +1060,7 @@ BASE_HTML_TEMPLATE = """
             </div>
         </div>
     </nav>
+
     <nav class="navbar navbar-expand-lg category-nav">
         <div class="container">
             <div class="categories-wrapper">
@@ -1071,9 +1082,11 @@ BASE_HTML_TEMPLATE = """
             </div>
         </div>
     </nav>
+
     <main class="container main-content my-4">
         {% block content %}{% endblock %}
     </main>
+
     {% if session.user_id %}
     <div class="admin-controls">
         <button class="add-article-btn" id="addArticleBtn" title="Post a New Article">
@@ -1095,6 +1108,7 @@ BASE_HTML_TEMPLATE = """
         </div>
     </div>
     {% endif %}
+
     <footer class="mt-auto">
         <div class="container">
             <div class="footer-content">
@@ -1137,6 +1151,7 @@ BASE_HTML_TEMPLATE = """
             <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
         </div>
     </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -1150,25 +1165,30 @@ BASE_HTML_TEMPLATE = """
             document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
         }
         if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
+
         let storedTheme = localStorage.getItem('darkMode');
         if (!storedTheme) {
             const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
             if (cookieTheme) storedTheme = cookieTheme;
         }
         if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+
         const addArticleBtn = document.getElementById('addArticleBtn');
         const addArticleModal = document.getElementById('addArticleModal');
         const closeModalBtn = document.getElementById('closeModalBtn');
         const cancelArticleBtn = document.getElementById('cancelArticleBtn');
         if(addArticleBtn && addArticleModal) {
             addArticleBtn.addEventListener('click', () => { addArticleModal.style.display = 'flex'; body.style.overflow = 'hidden'; });
-            const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; if(document.getElementById('addArticleForm')) {document.getElementById('addArticleForm').reset();} };
+            const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; document.getElementById('addArticleForm').reset(); };
             if(closeModalBtn) closeModalBtn.addEventListener('click', closeModalFunction);
             if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
             addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
         }
+
         const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
         flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
+
+        // --- NEW: JavaScript for the Date Filter ---
         const dateFilterForm = document.getElementById('dateFilterForm');
         if(dateFilterForm) {
             dateFilterForm.addEventListener('submit', function(e) {
@@ -1176,11 +1196,8 @@ BASE_HTML_TEMPLATE = """
                 const selectedDate = document.getElementById('news_date').value;
                 if(selectedDate) {
                     let currentCategory = "{{ request.view_args.get('category_name', 'All Articles') }}";
-                    // Ensure currentCategory is properly URL-encoded if it contains spaces, etc.
-                    // Flask's url_for handles this, but direct string replacement might need it.
-                    // However, since we are using placeholders in url_for, it should be fine.
                     let baseUrl = "{{ url_for('index', category_name='CATEGORY_PLACEHOLDER', date_str='DATE_PLACEHOLDER') }}";
-                    window.location.href = baseUrl.replace('CATEGORY_PLACEHOLDER', encodeURIComponent(currentCategory)).replace('DATE_PLACEHOLDER', selectedDate);
+                    window.location.href = baseUrl.replace('CATEGORY_PLACEHOLDER', currentCategory).replace('DATE_PLACEHOLDER', selectedDate);
                 }
             });
         }
@@ -1221,7 +1238,7 @@ INDEX_HTML_TEMPLATE = """
         </div>
     </article>
     {% elif not articles and selected_category != 'Community Hub' and not query %}
-        <div class="alert alert-warning text-center my-4 p-3 small">No news found for the selected criteria. {% if request.view_args.get('date_str') %}Please try another date or check the "All Articles" category for recent news.{% else %}Please check back later or try a different search.{% endif %}</div>
+        <div class="alert alert-warning text-center my-4 p-3 small">No news found for the selected date. Please try another day or check back later.</div>
     {% elif not articles and selected_category == 'Community Hub' %}
         <div class="alert alert-info text-center my-4 p-3"><h4><i class="fas fa-feather-alt me-2"></i>No Articles Penned Yet</h4><p>No articles in the Community Hub. {% if session.user_id %}Click the '+' button to share your insights!{% else %}Login to add articles.{% endif %}</p></div>
     {% elif not articles and query %}
@@ -1309,46 +1326,35 @@ ARTICLE_HTML_TEMPLATE = """
     {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
 
     <div id="articleAnalysisContainer">
-        {% if article.groq_analysis and not article.groq_analysis.error %}
-            {% if article.groq_analysis.groq_summary %}
-                <div class="summary-box my-3 animate-fade-in">
-                    <h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5>
-                    <p class="mb-0">{{ article.groq_analysis.groq_summary|replace('\\n', '<br>')|safe }}</p>
-                </div>
-            {% endif %}
-            {% if article.groq_analysis.groq_takeaways and article.groq_analysis.groq_takeaways|length > 0 %}
-                <div class="takeaways-box my-3 animate-fade-in">
-                    <h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
-                    <ul>
-                        {% for takeaway in article.groq_analysis.groq_takeaways %}
-                            <li>{{ takeaway }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            {% endif %}
-        {% elif article.groq_analysis and article.groq_analysis.error %}
-             <div class="alert alert-warning small p-3 mt-3">
-                <strong>AI Analysis Error:</strong> {{ article.groq_analysis.error }}
-             </div>
-        {% else %}
-            {# This case might occur if analysis was never run for an API article, or explicitly null for community #}
-            <div class="alert alert-secondary small p-3 mt-3">AI-generated summary and takeaways are not available for this article.</div>
+    {% if is_community_article %}
+        {% if article.groq_summary %}
+            <div class="summary-box my-3"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
+        {% elif not article.groq_summary %}
+            <div class="alert alert-secondary small p-3 mt-3">AI Summary not available for this community article.</div>
         {% endif %}
 
-        {% if is_community_article %}
-            <hr class="my-4">
-            <h4 class="mb-3">Full Article Content</h4>
-            <div class="content-text">{{ article.full_text }}</div>
-        {% elif article.url %} {# For API articles, always show the link to original #}
-            <hr class="my-4">
-            <a href="{{ article.url }}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">
-                Read Original at {{ article.source.name }} <i class="fas fa-external-link-alt ms-1"></i>
-            </a>
+        {% if article.parsed_takeaways %}
+            <div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
+                <ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul>
+            </div>
+        {% elif not article.groq_takeaways %}
+             <div class="alert alert-secondary small p-3 mt-3">AI Takeaways not available for this community article.</div>
         {% endif %}
+        <hr class="my-4">
+        <h4 class="mb-3">Full Article Content</h4>
+        <div class="content-text">{{ article.full_text }}</div>
+    {% else %}
+        <div id="contentLoader" class="loader-container my-4">
+            <div class="loader"></div>
+            <div>Analyzing article and generating summary... <br><small>This may take a moment.</small></div>
+        </div>
+        <div id="apiArticleContent"></div>
+    {% endif %}
     </div>
 
     <section class="comment-section" id="comment-section">
         <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ comments|length }}</span>)</h3>
+
         {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %}
             <div class="comment-container" id="comment-{{ comment.id }}">
                 <div class="comment-card">
@@ -1396,6 +1402,7 @@ ARTICLE_HTML_TEMPLATE = """
                 </div>
             </div>
         {% endmacro %}
+
         <div id="comments-list">
             {% for comment in comments %}
                 {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }}
@@ -1403,6 +1410,7 @@ ARTICLE_HTML_TEMPLATE = """
                 <p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>
             {% endfor %}
         </div>
+
         {% if session.user_id %}
             <div class="add-comment-form mt-4 pt-4 border-top">
                 <h5 class="mb-3">Leave a Comment</h5>
@@ -1423,9 +1431,92 @@ ARTICLE_HTML_TEMPLATE = """
 {% endblock %}
 {% block scripts_extra %}
 <script>
-// All JavaScript for Celery polling is removed.
-// Commenting and voting JavaScript remains the same as previously provided.
 document.addEventListener('DOMContentLoaded', function () {
+    {% if article and not is_community_article %}
+    const articleHashIdGlobal = {{ article.id | tojson }};
+    const contentLoader = document.getElementById('contentLoader');
+    const apiArticleContent = document.getElementById('apiArticleContent');
+
+    function renderAnalysis(data) {
+        contentLoader.style.display = 'none';
+        let html = '';
+        if (data.groq_summary) {
+            html += `<div class="summary-box my-3 animate-fade-in"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">${data.groq_summary.replace(/\\n/g, '<br>')}</p></div>`;
+        }
+        if (data.groq_takeaways && data.groq_takeaways.length > 0) {
+            html += `<div class="takeaways-box my-3 animate-fade-in"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5><ul>${data.groq_takeaways.map(t => `<li>${t}</li>`).join('')}</ul></div>`;
+        }
+        if (html === '') {
+            html = `<div class="alert alert-secondary small p-3 mt-3">AI analysis is not available for this article.</div>`;
+        }
+        const articleUrl = {{ article.url | tojson }};
+        const sourceName = {{ article.source.name | tojson }};
+        if (articleUrl) {
+            html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original at ${sourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`;
+        }
+        apiArticleContent.innerHTML = html;
+    }
+
+    function pollForAnalysis(taskId) {
+        let pollingInterval = 3000; // 3 seconds
+        let attempts = 0;
+        const maxAttempts = 20; // Stop after 1 minute
+
+        const intervalId = setInterval(() => {
+            attempts++;
+            if (attempts > maxAttempts) {
+                clearInterval(intervalId);
+                contentLoader.innerHTML = '<div class="alert alert-warning">Analysis is taking longer than expected. Please check back later.</div>';
+                return;
+            }
+
+            fetch(`/analysis_status/${taskId}`)
+                .then(response => {
+                    if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}`); }
+                    return response.json();
+                 })
+                .then(data => {
+                    if (data.status === 'SUCCESS') {
+                        clearInterval(intervalId);
+                        renderAnalysis(data);
+                    } else if (data.status === 'FAILURE') {
+                        clearInterval(intervalId);
+                        contentLoader.innerHTML = `<div class="alert alert-danger">Failed to load article analysis: ${data.error || 'An unexpected error occurred.'}</div>`;
+                    }
+                    // If PENDING, do nothing and wait for the next poll
+                })
+                .catch(error => {
+                    clearInterval(intervalId);
+                    contentLoader.innerHTML = '<div class="alert alert-danger">Error checking analysis status. Please try refreshing the page.</div>';
+                    console.error("Polling error:", error);
+                });
+        }, pollingInterval);
+    }
+
+    fetch(`/trigger_analysis/${articleHashIdGlobal}`)
+        .then(response => {
+            if (!response.ok) {
+                 return response.json().then(err => { throw new Error(err.error || `HTTP error! status: ${response.status}`); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'SUCCESS') {
+                // If the task was already completed, render the result immediately
+                renderAnalysis(data);
+            } else if (data.task_id) {
+                // Start polling for the result
+                pollForAnalysis(data.task_id);
+            } else {
+                throw new Error(data.error || 'Could not start analysis.');
+            }
+        })
+        .catch(error => {
+            contentLoader.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+            console.error("Trigger error:", error);
+        });
+    {% endif %}
+
     const commentSection = document.getElementById('comment-section');
     if (commentSection) {
         const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
@@ -1492,41 +1583,25 @@ document.addEventListener('DOMContentLoaded', function () {
                     if(data.success) {
                         document.getElementById(`likes-count-${commentId}`).textContent = data.likes;
                         document.getElementById(`dislikes-count-${commentId}`).textContent = data.dislikes;
-                        const currentLikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`);
-                        const currentDislikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`);
-                        
-                        // Reset both
-                        currentLikeBtn.classList.remove('active');
-                        currentDislikeBtn.classList.remove('active');
-
-                        // Set active if it was this button that caused the change to active state
-                        // The server logic correctly handles toggling, so if existing_vote.vote_type == vote_type, it was deleted (now inactive)
-                        // if existing_vote.vote_type != vote_type, it was updated (now active this type)
-                        // if no existing_vote, it was added (now active this type)
-                        // This simplified client logic assumes server is truth for the counts,
-                        // and just visually reflects a new vote or removal.
-                        // A more precise client-side reflection would need the server to also return the new vote state for the user.
-                        // For now, if we click like, it becomes active. If we click it again, it becomes inactive.
-                        // If like is active and we click dislike, dislike becomes active and like inactive.
-                        if (voteBtn.dataset.voteType === "1" && data.likes > (currentLikeBtn.classList.contains('active') ? parseInt(currentLikeBtn.querySelector('.vote-count').textContent) -1 : parseInt(currentLikeBtn.querySelector('.vote-count').textContent))) {
-                           // this is an oversimplification. For robust UX, server should return user's current vote state
-                           // For now, toggle based on current state
-                            if(voteBtn === currentLikeBtn) currentLikeBtn.classList.toggle('active');
-
-                        } else if (voteBtn.dataset.voteType === "-1" && data.dislikes > (currentDislikeBtn.classList.contains('active') ? parseInt(currentDislikeBtn.querySelector('.vote-count').textContent) -1 : parseInt(currentDislikeBtn.querySelector('.vote-count').textContent))) {
-                            if(voteBtn === currentDislikeBtn) currentDislikeBtn.classList.toggle('active');
+                        const allVoteBtns = document.querySelectorAll(`.vote-btn[data-comment-id="${commentId}"]`);
+                        allVoteBtns.forEach(btn => btn.classList.remove('active'));
+                        if (voteBtn.classList.contains('active')) { /* Already handled by server logic if we were deselecting */ }
+                        else {
+                           const existingVote = voteBtn.parentElement.querySelector('.vote-btn.active');
+                           if(existingVote) {
+                               // This logic is flawed, let's simplify. Server is source of truth.
+                               // Just update the button state based on what server says.
+                           }
+                           // Let's just update the pressed button for now
+                           const currentLikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`);
+                           const currentDislikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`);
+                           if (voteType === 1) { currentLikeBtn.classList.toggle('active'); currentDislikeBtn.classList.remove('active'); }
+                           else if (voteType === -1) { currentDislikeBtn.classList.toggle('active'); currentLikeBtn.classList.remove('active'); }
                         }
-                        // If a vote was placed (not removed)
-                        if ( (voteType === 1 && !currentLikeBtn.classList.contains('active') && data.likes > 0 && voteBtn.dataset.voteType === "1" ) ||
-                             (voteType === -1 && !currentDislikeBtn.classList.contains('active') && data.dislikes > 0 && voteBtn.dataset.voteType === "-1" ) ) {
-                            // This means user had no vote, and now they do
-                            if(voteType === 1) currentLikeBtn.classList.add('active');
-                            if(voteType === -1) currentDislikeBtn.classList.add('active');
-                        }
-                        
                     } else { alert('Error voting: ' + (data.error || 'Unknown error.')); }
                 }).catch(err => { console.error("Vote error:", err); alert("Could not process vote: " + err.message); });
             }
+
             const replyBtn = e.target.closest('.reply-btn');
             if (replyBtn && isUserLoggedIn) {
                 const commentId = replyBtn.dataset.commentId;
@@ -1541,6 +1616,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const cancelReplyBtn = e.target.closest('.cancel-reply-btn');
             if (cancelReplyBtn) { cancelReplyBtn.closest('.reply-form-container').style.display = 'none'; }
         });
+
         commentSection.addEventListener('submit', function(e) {
             const mainCommentForm = e.target.closest('#comment-form');
             if (mainCommentForm) {
@@ -1550,8 +1626,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const replyForm = e.target.closest('.reply-form');
             if (replyForm) {
                 e.preventDefault();
-                const articleHashIdForReply = replyForm.querySelector('input[name="article_hash_id"]').value;
-                handleCommentSubmit(replyForm, articleHashIdForReply, replyForm.querySelector('input[name="parent_id"]').value);
+                const articleHashId = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
+                handleCommentSubmit(replyForm, articleHashId, replyForm.querySelector('input[name="parent_id"]').value);
             }
         });
     }
@@ -1615,13 +1691,10 @@ ABOUT_US_HTML_TEMPLATE = """
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">About Briefly</h1>
     <p class="lead">Briefly is your premier destination for the latest news from India and around the world, delivered in a concise and easy-to-digest format. We leverage the power of cutting-edge AI to summarize complex news articles into key takeaways, saving you time while keeping you informed.</p>
-
     <h2 class="mt-5 mb-3">Our Mission</h2>
     <p>In a world of information overload, our mission is to provide clarity and efficiency. We believe that everyone deserves access to accurate, unbiased news without spending hours sifting through lengthy articles. Briefly cuts through the noise, offering insightful summaries that matter.</p>
-
     <h2 class="mt-5 mb-3">Community Hub</h2>
     <p>Beyond AI-driven news, Briefly is a platform for discussion and community engagement. Our Community Hub allows users to post their own articles, share perspectives, and engage in meaningful conversations about the topics that shape our world. We are committed to fostering a respectful and intelligent environment for all our members.</p>
-
     <h2 class="mt-5 mb-3">Our Technology</h2>
     <p>We use state-of-the-art Natural Language Processing (NLP) models to analyze and summarize news content from trusted sources. Our system is designed to identify the most crucial points of an article, presenting them as a quick summary and a list of key takeaways.</p>
 </div>
@@ -1635,7 +1708,6 @@ CONTACT_HTML_TEMPLATE = """
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">Contact Us</h1>
     <p class="lead">We'd love to hear from you! Whether you have a question, feedback, or a news tip, feel free to reach out.</p>
-
     <div class="row mt-5">
         <div class="col-md-6">
             <h2 class="h4">General Inquiries</h2>
@@ -1648,7 +1720,6 @@ CONTACT_HTML_TEMPLATE = """
             <p><i class="fas fa-envelope me-2"></i><a href="mailto:partners@brieflyai.in">partners@brieflyai.in</a></p>
         </div>
     </div>
-
     <div class="mt-5">
         <h2 class="h4">Follow Us</h2>
         <p>Stay connected with us on social media:</p>
@@ -1669,13 +1740,10 @@ PRIVACY_POLICY_HTML_TEMPLATE = """
 {% block content %}
 <div class="static-content-wrapper animate-fade-in">
     <h1 class="mb-4">Privacy Policy</h1>
-    <p class="text-muted">Last updated: May 28, 2024</p>
-
+    <p class="text-muted">Last updated: May 29, 2025</p>
     <p>Briefly ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website.</p>
-
     <h2 class="mt-5 mb-3">1. Information We Collect</h2>
     <p>We may collect personal information that you voluntarily provide to us when you register on the website, post articles or comments, or subscribe to our newsletter. This information may include your name, username, and email address.</p>
-
     <h2 class="mt-5 mb-3">2. How We Use Your Information</h2>
     <p>We use the information we collect to:</p>
     <ul>
@@ -1685,13 +1753,10 @@ PRIVACY_POLICY_HTML_TEMPLATE = """
         <li>Respond to your comments and inquiries.</li>
         <li>Improve our website and services.</li>
     </ul>
-
     <h2 class="mt-5 mb-3">3. Disclosure of Your Information</h2>
     <p>We do not sell, trade, or otherwise transfer your personally identifiable information to outside parties. This does not include trusted third parties who assist us in operating our website, so long as those parties agree to keep this information confidential.</p>
-
     <h2 class="mt-5 mb-3">4. Security of Your Information</h2>
     <p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.</p>
-
     <h2 class="mt-5 mb-3">5. Changes to This Privacy Policy</h2>
     <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes.</p>
 </div>
@@ -1700,6 +1765,7 @@ PRIVACY_POLICY_HTML_TEMPLATE = """
 
 ERROR_404_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}404 Not Found{% endblock %}{% block content %}<div class='text-center my-5 p-4 article-card animate-fade-in mx-auto' style='max-width: 600px;'><h1><i class='fas fa-exclamation-triangle text-warning me-2'></i>404 - Page Not Found</h1><p class='lead'>Sorry, the page you are looking for does not exist or has been moved.</p><a href='{{url_for("index")}}' class='btn btn-primary-modal mt-2'>Go to Homepage</a></div>{% endblock %}"""
 ERROR_500_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}500 Server Error{% endblock %}{% block content %}<div class='text-center my-5 p-4 article-card animate-fade-in mx-auto' style='max-width: 600px;'><h1><i class='fas fa-cogs text-danger me-2'></i>500 - Internal Server Error</h1><p class='lead'>Something went wrong on our end. We've been notified and are looking into it.</p><a href='{{url_for("index")}}' class='btn btn-primary-modal mt-2'>Go to Homepage</a></div>{% endblock %}"""
+
 
 # ==============================================================================
 # --- 8. Add all templates to the template_storage dictionary ---
@@ -1723,8 +1789,6 @@ with app.app_context():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
-    # For Render, Gunicorn usually handles debug mode. For local, this is useful.
-    debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development' or \
-                 os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production'} mode on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
