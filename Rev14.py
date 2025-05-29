@@ -315,7 +315,7 @@ def get_article_analysis_with_groq(self, article_text, article_title=""):
                      "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
                      
     # --- MODIFIED: Use the sanitized 'clean_text' for the prompt ---
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{clean_text[:20000]}"
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{clean_text[:10000]}"
     
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
