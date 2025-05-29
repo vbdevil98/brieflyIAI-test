@@ -328,8 +328,8 @@ def fetch_news_from_api(target_date_str=None):
         from_date_default = (current_utc - timedelta(days=days_ago_config)).replace(hour=0, minute=0, second=0, microsecond=0)
         to_date_default = current_utc
 
-        from_param_default = from_date_default.strftime('%Y-%m-%dT%H:%M:%SZ')
-        to_param_default = to_date_default.strftime('%Y-%m-%dT%H:%M:%SZ')
+        from_param_default = from_date_default.strftime('%Y-%m-%dT%H:%M:%S')
+        to_param_default = to_date_default.strftime('%Y-%m-%dT%H:%M:%S')
         app.logger.info(f"NewsAPI Query (Latest) - From: {from_param_default}, To: {to_param_default}")
 
         # Attempt 1: Top headlines (for very latest, less date-strict)
