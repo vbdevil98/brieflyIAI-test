@@ -248,9 +248,9 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 
     app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
     system_prompt = ("You are an expert news analyst. Analyze the following article. "
-                     "1. Provide a concise, neutral summary (3-4 paragraphs). "
-                     "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
-                     "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
+                       "1. Provide a concise, neutral summary (3-4 paragraphs). "
+                       "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
+                       "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
     human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{clean_text[:15000]}" # Reduced length
 
     ai_response_content = None
@@ -780,7 +780,6 @@ def internal_server_error(e):
     app.logger.error(f"500 error at {request.url}: {e}", exc_info=True)
     return render_template("500_TEMPLATE"), 500
 
-# ==============================================================================
 # --- 7. HTML Templates (ARTICLE_HTML_TEMPLATE needs changes) ---
 # ==============================================================================
 BASE_HTML_TEMPLATE = """
@@ -1514,7 +1513,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             if(voteBtn === currentLikeBtn) currentLikeBtn.classList.toggle('active');
 
                         } else if (voteBtn.dataset.voteType === "-1" && data.dislikes > (currentDislikeBtn.classList.contains('active') ? parseInt(currentDislikeBtn.querySelector('.vote-count').textContent) -1 : parseInt(currentDislikeBtn.querySelector('.vote-count').textContent))) {
-                           if(voteBtn === currentDislikeBtn) currentDislikeBtn.classList.toggle('active');
+                            if(voteBtn === currentDislikeBtn) currentDislikeBtn.classList.toggle('active');
                         }
                         // If a vote was placed (not removed)
                         if ( (voteType === 1 && !currentLikeBtn.classList.contains('active') && data.likes > 0 && voteBtn.dataset.voteType === "1" ) ||
