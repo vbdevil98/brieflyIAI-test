@@ -287,25 +287,35 @@ def fetch_news_from_api(target_date_str=None):
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
+
     all_raw_articles = []
+    current_utc_time = datetime.now(timezone.utc)
+
+    # --- Date validation and future-proofing ---
+    # Check if the server's clock seems to be in the future.
+    # We add a small buffer (e.g., 1 day) to avoid issues with minor clock drifts.
+    if current_utc_time > datetime.now(timezone.utc) + timedelta(days=1):
+        app.logger.critical(f"SERVER CLOCK IS IN THE FUTURE! Current server time: {current_utc_time}. This will cause API calls to fail. Please correct the server's system time.")
+        # As a fallback, we can hard-set the current time to now, but the root cause must be fixed.
+        current_utc_time = datetime.now(timezone.utc)
+
 
     if target_date_str:
         # --- BEHAVIOR FOR A SPECIFIC DATE ---
         app.logger.info(f"Fetching news for specific date: {target_date_str}")
         try:
             target_date_dt = datetime.strptime(target_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-            # NewsAPI 'from' and 'to' define a window. For a single day, we set from=day_start, to=day_end.
             from_param = target_date_dt.strftime('%Y-%m-%dT00:00:00Z')
             to_param = target_date_dt.strftime('%Y-%m-%dT23:59:59Z')
             app.logger.info(f"NewsAPI Query (Specific Date) - From: {from_param}, To: {to_param}")
 
             everything_response = newsapi.get_everything(
                 q=app.config['NEWS_API_QUERY'],
-                domains=app.config['NEWS_API_DOMAINS'], # Use domains for more targeted results on specific dates
+                domains=app.config['NEWS_API_DOMAINS'],
                 from_param=from_param,
                 to=to_param,
                 language='en',
-                sort_by='publishedAt', # Most recent first within that day
+                sort_by='publishedAt',
                 page_size=app.config['NEWS_API_PAGE_SIZE']
             )
             status = everything_response.get('status')
@@ -313,8 +323,11 @@ def fetch_news_from_api(target_date_str=None):
             app.logger.info(f"Everything API (Specific Date '{target_date_str}') Response -> Status: {status}, TotalResults: {total_results}")
             if status == 'ok' and total_results > 0:
                 all_raw_articles.extend(everything_response['articles'])
+            elif status == 'ok' and total_results == 0:
+                app.logger.warning(f"NewsAPI returned 0 results for {target_date_str}. This could be due to API plan limitations (free plan has limited history) or no news matching the query on that day.")
             elif status == 'error':
                 app.logger.error(f"NewsAPI Error (Specific Date Everything): {everything_response.get('message')}")
+
         except NewsAPIException as e:
             app.logger.error(f"NewsAPIException during specific date fetch for {target_date_str}: {e}")
         except Exception as e:
@@ -322,30 +335,16 @@ def fetch_news_from_api(target_date_str=None):
     else:
         # --- DEFAULT BEHAVIOR (LATEST NEWS / "ALL ARTICLES") ---
         app.logger.info("Fetching latest news (default/All Articles).")
-        current_utc = datetime.now(timezone.utc)
         days_ago_config = app.config.get('NEWS_API_DAYS_AGO', 2)
-        # Fetch from the start of 'days_ago_config' days ago until the current moment.
-        from_date_default = (current_utc - timedelta(days=days_ago_config)).replace(hour=0, minute=0, second=0, microsecond=0)
-        to_date_default = current_utc
+        from_date_default = (current_utc_time - timedelta(days=days_ago_config)).replace(hour=0, minute=0, second=0, microsecond=0)
+        to_date_default = current_utc_time
 
         from_param_default = from_date_default.strftime('%Y-%m-%dT%H:%M:%S')
         to_param_default = to_date_default.strftime('%Y-%m-%dT%H:%M:%S')
         app.logger.info(f"NewsAPI Query (Latest) - From: {from_param_default}, To: {to_param_default}")
 
-        # Attempt 1: Top headlines (for very latest, less date-strict)
-        try:
-            top_headlines_response = newsapi.get_top_headlines(
-                country='in',
-                language='en',
-                page_size=50 # Fetch a decent number of top headlines
-            )
-            if top_headlines_response.get('status') == 'ok':
-                all_raw_articles.extend(top_headlines_response.get('articles', []))
-                app.logger.info(f"Top-Headlines API Response -> Fetched: {len(top_headlines_response.get('articles', []))}")
-        except Exception as e:
-            app.logger.error(f"Exception (Top-Headlines): {e}", exc_info=True)
-
-        # Attempt 2: 'Everything' for the last N days (more comprehensive)
+        # Use only the 'everything' endpoint for consistency with date filtering.
+        # Developer plan allows 'top-headlines' only for 'country' or 'category', not with 'domains' or broad 'q'.
         try:
             everything_response = newsapi.get_everything(
                 q=app.config['NEWS_API_QUERY'],
@@ -353,7 +352,7 @@ def fetch_news_from_api(target_date_str=None):
                 from_param=from_param_default,
                 to=to_param_default,
                 language='en',
-                sort_by='publishedAt',
+                sort_by=app.config['NEWS_API_SORT_BY'],
                 page_size=app.config['NEWS_API_PAGE_SIZE']
             )
             status = everything_response.get('status')
@@ -361,6 +360,8 @@ def fetch_news_from_api(target_date_str=None):
             app.logger.info(f"Everything API (Latest) Response -> Status: {status}, TotalResults: {total_results}")
             if status == 'ok' and total_results > 0:
                 all_raw_articles.extend(everything_response['articles'])
+            elif status == 'ok' and total_results == 0:
+                app.logger.warning("NewsAPI returned 0 results for the latest news query. Check query parameters, API plan limitations, or if the server clock is set to the future.")
             elif status == 'error':
                 app.logger.error(f"NewsAPI Error (Latest Everything): {everything_response.get('message')}")
         except NewsAPIException as e:
@@ -368,10 +369,11 @@ def fetch_news_from_api(target_date_str=None):
         except Exception as e:
             app.logger.error(f"General Exception during latest news fetch: {e}", exc_info=True)
 
+    # --- Processing logic remains the same ---
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
     for art_data in all_raw_articles:
-        if not art_data: continue # Skip if article data is None
+        if not art_data: continue
         url = art_data.get('url')
         title = art_data.get('title')
         description = art_data.get('description')
@@ -391,15 +393,14 @@ def fetch_news_from_api(target_date_str=None):
             'id': article_id, 'title': title, 'description': description,
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
             'publishedAt': art_data.get('publishedAt'), 'source': {'name': source_name}, 'is_community_article': False,
-            'groq_analysis': None # Will be populated on demand
+            'groq_analysis': None
         }
-        MASTER_ARTICLE_STORE[article_id] = standardized_article # Update master store
+        MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
     
     processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
     app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
     return processed_articles
-
 # --- Modified to call synchronous AI analysis ---
 @simple_cache(expiry_seconds_default=3600 * 6) # Cache the combined result
 def fetch_and_parse_article_content(article_hash_id, url):
