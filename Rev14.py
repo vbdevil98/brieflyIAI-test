@@ -8,7 +8,7 @@ import hashlib
 import time
 import logging
 import urllib.parse
-from datetime import datetime, timedelta, timezone # Keep timezone for direct UTC usage
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 # Third-party imports
@@ -41,14 +41,16 @@ try:
     if local_nltk_data_path not in nltk.data.path:
         nltk.data.path.insert(0, local_nltk_data_path)
     nltk.data.find('tokenizers/punkt', paths=[local_nltk_data_path])
-    print("NLTK 'punkt' tokenizer found.", file=sys.stderr)
+    app_logger = logging.getLogger(__name__) # Use a named logger
+    app_logger.info("NLTK 'punkt' tokenizer found.")
 except LookupError:
-    print("WARNING: NLTK 'punkt' tokenizer not found. Attempting to download...", file=sys.stderr)
+    app_logger = logging.getLogger(__name__)
+    app_logger.warning("NLTK 'punkt' tokenizer not found. Attempting to download...")
     try:
         nltk.download('punkt')
-        print("NLTK 'punkt' downloaded successfully.", file=sys.stderr)
+        app_logger.info("NLTK 'punkt' downloaded successfully.")
     except Exception as e:
-        print(f"FATAL: Failed to download 'punkt'. Error: {e}", file=sys.stderr)
+        app_logger.error(f"FATAL: Failed to download 'punkt'. Error: {e}")
         sys.exit("Exiting: Missing critical NLTK data.")
 
 # ==============================================================================
@@ -67,12 +69,13 @@ app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" O
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com'
 app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt'
-app.config['NEWS_API_DAYS_AGO'] = 7 # Default days to fetch if no specific date (as per user reference)
+app.config['NEWS_API_DAYS_AGO'] = 7
 app.config['CACHE_EXPIRY_SECONDS'] = 1800 # 30 minutes
 app.permanent_session_lifetime = timedelta(days=30)
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app.logger.setLevel(logging.INFO)
+# Ensure logging is configured after Flask app creation if using app.logger directly
+logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+app.logger.setLevel(logging.INFO) # Set level for Flask's default logger
 
 # ==============================================================================
 # --- Data Persistence Configuration ---
@@ -91,9 +94,6 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-# Removed Celery specific configuration as AI task is now synchronous.
-# If other Celery tasks are needed, the configuration should be added back.
 
 # ==============================================================================
 # --- 3. API Client Initialization ---
@@ -137,18 +137,16 @@ class CommunityArticle(db.Model):
     full_text = db.Column(db.Text, nullable=False)
     source_name = db.Column(db.String(100), nullable=False)
     image_url = db.Column(db.String(500), nullable=True)
-    published_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)) # Store as UTC
+    published_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     groq_summary = db.Column(db.Text, nullable=True)
     groq_takeaways = db.Column(db.Text, nullable=True)
     comments = db.relationship('Comment', backref=db.backref('community_article', lazy='joined'), lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
 
-# AiAnalysisTask model is removed as Celery is not used for this specific feature anymore.
-
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)) # Store as UTC
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id'), nullable=True)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
@@ -166,7 +164,7 @@ class CommentVote(db.Model):
 class Subscriber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    subscribed_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)) # Store as UTC
+    subscribed_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 def init_db():
     with app.app_context():
@@ -204,12 +202,13 @@ def to_ist_filter(utc_dt):
             utc_dt = datetime.fromisoformat(utc_dt.replace('Z', '+00:00'))
         except ValueError:
             try: 
-                utc_dt = datetime.strptime(utc_dt, '%Y-%m-%d %H:%M:%S')
+                utc_dt = datetime.strptime(utc_dt, '%Y-%m-%d %H:%M:%S') # Fallback for other formats if needed
             except ValueError:
-                return "Invalid date string"
-    if utc_dt.tzinfo is None:
+                app.logger.warning(f"Could not parse date string for IST conversion: {utc_dt}")
+                return "Invalid date"
+    if utc_dt.tzinfo is None: # Assume UTC if naive
         utc_dt = pytz.utc.localize(utc_dt) 
-    else:
+    else: # Convert to UTC if already timezone-aware but not UTC
         utc_dt = utc_dt.astimezone(pytz.utc) 
 
     ist_dt = utc_dt.astimezone(INDIAN_TIMEZONE)
@@ -222,17 +221,26 @@ def simple_cache(expiry_seconds_default=None):
         @wraps(func)
         def wrapper(*args, **kwargs):
             expiry = expiry_seconds_default or app.config['CACHE_EXPIRY_SECONDS']
+            # Create a cache key based on function name, args, and kwargs
+            # Ensure kwargs are sorted for consistent key generation
             key_parts = [func.__name__] + list(map(str, args)) + sorted(kwargs.items())
-            if 'target_date_str' in kwargs:
-                 key_parts.append(kwargs['target_date_str'])
-            elif request and request.args and 'date' in request.args : 
-                 key_parts.append(request.args.get('date'))
+            # Special handling for date filters if they are relevant to the cached function
+            if 'target_date_str' in kwargs: # For fetch_news_from_api
+                 key_parts.append(f"target_date_str:{kwargs['target_date_str']}")
+            elif request and request.args and 'date' in request.args : # For general routes using date query param
+                 key_parts.append(f"request_date:{request.args.get('date')}")
+            
+            # For functions taking article_hash_id as an arg (like fetch_and_parse_article_content)
+            # The article_hash_id is already in args if passed positionally.
+            # If passed as kwarg, it's in sorted(kwargs.items()).
 
             cache_key = hashlib.md5(str(key_parts).encode('utf-8')).hexdigest()
             cached_entry = API_CACHE.get(cache_key)
+            
             if cached_entry and (time.time() - cached_entry[1] < expiry):
                 app.logger.debug(f"Cache HIT for {func.__name__} with key {cache_key}")
                 return cached_entry[0]
+            
             app.logger.debug(f"Cache MISS for {func.__name__} with key {cache_key}. Calling function.")
             result = func(*args, **kwargs)
             API_CACHE[cache_key] = (result, time.time())
@@ -249,57 +257,63 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# MODIFIED: get_article_analysis_with_groq is now a synchronous, cached function
-@simple_cache(expiry_seconds_default=3600 * 12) # Cache AI analysis for 12 hours
+@simple_cache(expiry_seconds_default=3600 * 12) 
 def get_article_analysis_with_groq(article_text, article_title=""):
     if not groq_client:
         app.logger.warning("Groq client not available for AI analysis.")
-        return {"error": "AI analysis service not available."}
+        return {"error": "AI analysis service not available.", "groq_summary": None, "groq_takeaways": None}
     if not article_text or not article_text.strip():
-        return {"error": "No text provided for AI analysis."}
+        app.logger.warning(f"No text provided for AI analysis for title: {article_title[:50]}")
+        return {"error": "No text provided for AI analysis.", "groq_summary": None, "groq_takeaways": None}
     
-    app.logger.info(f"Requesting SYNC Groq analysis for: {article_title[:50]}...")
+    app.logger.info(f"Requesting SYNC Groq analysis for: {article_title[:50]}... Text length: {len(article_text)}")
+    if len(article_text) < 100: # Arbitrary threshold for "too short"
+        app.logger.warning(f"Article text too short for AI analysis (length: {len(article_text)}): {article_title[:50]}")
+        return {"error": "Article content is too short for meaningful AI analysis.", "groq_summary": None, "groq_takeaways": None}
+
     system_prompt = ("You are an expert news analyst. Analyze the following article. "
                      "1. Provide a concise, neutral summary (3-4 paragraphs). "
                      "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
                      "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings).")
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}" # Limiting input size
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
     
+    ai_response_content = None # Initialize to ensure it's defined for logging
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
         ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
-        analysis = json.loads(ai_response.content)
+        ai_response_content = ai_response.content # Store for logging
+        app.logger.info(f"Groq raw response content for '{article_title[:50]}': {ai_response_content[:500]}...") 
+        analysis = json.loads(ai_response_content)
         
         if 'summary' in analysis and 'takeaways' in analysis:
             app.logger.info(f"SYNC Groq analysis successful for: {article_title[:50]}.")
             return {"groq_summary": analysis.get("summary"), "groq_takeaways": analysis.get("takeaways"), "error": None}
         
-        app.logger.error(f"Groq JSON missing 'summary' or 'takeaways' for '{article_title[:50]}'. Response: {ai_response.content}")
-        # Do not raise error here, return it in the dict so it can be handled
+        app.logger.error(f"Groq JSON missing 'summary' or 'takeaways' for '{article_title[:50]}'. Response: {ai_response_content}")
         return {"error": "AI response missing 'summary' or 'takeaways'.", "groq_summary": None, "groq_takeaways": None}
         
     except json.JSONDecodeError as e:
-        app.logger.error(f"SYNC Groq analysis JSONDecodeError for '{article_title[:50]}': {e}. Response: {ai_response.content if 'ai_response' in locals() else 'N/A'}")
+        app.logger.error(f"SYNC Groq analysis JSONDecodeError for '{article_title[:50]}': {e}. Response: {ai_response_content}")
         return {"error": f"AI analysis response was not valid JSON: {str(e)}", "groq_summary": None, "groq_takeaways": None}
-    except LangChainException as e: # More specific LangChain errors
+    except LangChainException as e:
         app.logger.error(f"SYNC Groq LangChainException for '{article_title[:50]}': {e}")
         return {"error": f"AI analysis processing error: {str(e)}", "groq_summary": None, "groq_takeaways": None}
-    except Exception as e: # Catch-all for other unexpected errors
+    except Exception as e: 
         app.logger.error(f"SYNC Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis.", "groq_summary": None, "groq_takeaways": None}
 
 # ==============================================================================
-# --- NEWS FETCHING: MODIFIED FOR DAY-WISE FILTERING & CORRECT DATE FORMAT ---
+# --- NEWS FETCHING ---
 # ==============================================================================
 @simple_cache()
-def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-MM-DD' in IST
+def fetch_news_from_api(target_date_str=None):
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
 
     from_date_utc_api_str = None
     to_date_utc_api_str = None
-    days_ago_config = app.config.get('NEWS_API_DAYS_AGO', 7) # Use configured value or default to 7
+    days_ago_config = app.config.get('NEWS_API_DAYS_AGO', 7)
 
     try:
         if target_date_str:
@@ -307,38 +321,31 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
             selected_day_naive = datetime.strptime(target_date_str, '%Y-%m-%d')
             day_start_ist = INDIAN_TIMEZONE.localize(selected_day_naive)
             day_end_ist = day_start_ist + timedelta(days=1) - timedelta(seconds=1)
-
             from_date_utc = day_start_ist.astimezone(pytz.utc)
             to_date_utc = day_end_ist.astimezone(pytz.utc)
-
-            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S') # No 'Z'
-            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')   # No 'Z'
+            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
             app.logger.info(f"Querying NewsAPI from UTC: {from_date_utc_api_str} to UTC: {to_date_utc_api_str}")
         else:
             from_date_utc = datetime.now(timezone.utc) - timedelta(days=days_ago_config)
             to_date_utc = datetime.now(timezone.utc)
-            
-            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S') # No 'Z'
-            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')   # No 'Z'
+            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
             app.logger.info(f"Fetching news for default period (last {days_ago_config} days). Querying NewsAPI from UTC: {from_date_utc_api_str} to UTC: {to_date_utc_api_str}")
-
     except (ValueError, TypeError) as e:
         app.logger.warning(f"Invalid date format or processing error for '{target_date_str}': {e}. Falling back to default period.")
         from_date_utc = datetime.now(timezone.utc) - timedelta(days=days_ago_config)
         to_date_utc = datetime.now(timezone.utc)
-        from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S') # No 'Z'
-        to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')   # No 'Z'
+        from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+        to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
 
     all_raw_articles = []
     try:
         app.logger.info(f"Attempting to fetch 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_utc_api_str} to {to_date_utc_api_str}")
         everything_response = newsapi.get_everything(
             q=app.config['NEWS_API_QUERY'],
-            from_param=from_date_utc_api_str,
-            to=to_date_utc_api_str,
-            language='en',
-            sort_by=app.config['NEWS_API_SORT_BY'],
-            page_size=app.config['NEWS_API_PAGE_SIZE']
+            from_param=from_date_utc_api_str, to=to_date_utc_api_str,
+            language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE']
         )
         status = everything_response.get('status')
         total_results = everything_response.get('totalResults', 0)
@@ -347,12 +354,7 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
             all_raw_articles.extend(everything_response['articles'])
         elif status == 'error':
             app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
-    except NewsAPIException as e:
-        app.logger.error(f"NewsAPIException (Everything): {e}", exc_info=True)
-    except ValueError as e: 
-        app.logger.error(f"ValueError during NewsAPI call setup (Everything): {e}", exc_info=True)
-    except Exception as e: 
-        app.logger.error(f"General Exception during NewsAPI call (Everything): {e}", exc_info=True)
+    except Exception as e: app.logger.error(f"Exception during NewsAPI call (Everything): {e}", exc_info=True)
 
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
@@ -360,8 +362,7 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
         url = art_data.get('url')
         if not url or url in unique_urls: continue
         title = art_data.get('title')
-        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip():
-            continue
+        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip(): continue
         unique_urls.add(url)
         article_id = generate_article_id(url)
         source_name = art_data['source'].get('name', 'Unknown Source')
@@ -369,19 +370,16 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
         standardized_article = {
             'id': article_id, 'title': title, 'description': art_data.get('description', ''),
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-            'publishedAt': art_data.get('publishedAt'), 
-            'source': {'name': source_name}, 'is_community_article': False
+            'publishedAt': art_data.get('publishedAt'), 'source': {'name': source_name}, 'is_community_article': False
         }
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
-
     processed_articles.sort(key=lambda x: x.get('publishedAt', '') or '', reverse=True)
     app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
     return processed_articles
 
-# MODIFIED: fetch_and_parse_article_content now calls AI analysis synchronously
-@simple_cache(expiry_seconds_default=3600 * 6) # Cache for 6 hours
-def fetch_and_parse_article_content(article_hash_id, url): # url is the article's original URL
+@simple_cache(expiry_seconds_default=3600 * 6)
+def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
     if not SCRAPER_API_KEY:
         app.logger.warning("SCRAPER_API_KEY not found, cannot fetch article content.")
@@ -389,12 +387,12 @@ def fetch_and_parse_article_content(article_hash_id, url): # url is the article'
     
     params = {'api_key': SCRAPER_API_KEY, 'url': url}
     article_text = None
-    # Get title from MASTER_ARTICLE_STORE as a fallback or primary if scraper doesn't provide one
     article_title_for_ai = MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Article')
 
     try:
         response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
         response.raise_for_status()
+        app.logger.info(f"ScraperAPI response status: {response.status_code} for {url}")
 
         config = Config()
         config.fetch_images = False
@@ -406,14 +404,18 @@ def fetch_and_parse_article_content(article_hash_id, url): # url is the article'
         article_scraper.parse()
         
         article_text = article_scraper.text
-        if article_scraper.title: # Prefer title from scraped content if available
+        if article_scraper.title:
             article_title_for_ai = article_scraper.title
+            app.logger.info(f"Article title from scraper: {article_title_for_ai}")
+        else:
+            app.logger.warning(f"No title from scraper, using title from MASTER_ARTICLE_STORE: {article_title_for_ai}")
+
 
         if not article_text or not article_text.strip():
             app.logger.warning(f"Could not extract text from article URL: {url}")
             return {"error": "Could not extract text from the article.", "full_text": None, "groq_analysis": {"error": "Could not extract text from the article."}}
         
-        app.logger.info(f"Content parsed for {article_hash_id}. Requesting AI analysis for title: '{article_title_for_ai[:50]}'")
+        app.logger.info(f"Content parsed for {article_hash_id}. Length: {len(article_text)}. Requesting AI analysis for title: '{article_title_for_ai[:50]}'")
         groq_analysis_result = get_article_analysis_with_groq(article_text, article_title_for_ai)
         
         return {
@@ -421,7 +423,6 @@ def fetch_and_parse_article_content(article_hash_id, url): # url is the article'
             "groq_analysis": groq_analysis_result,
             "error": None 
         }
-
     except requests.exceptions.Timeout:
         app.logger.error(f"Timeout while fetching article content via proxy for {url}")
         return {"error": "Timeout while fetching article content.", "full_text": None, "groq_analysis": {"error": "Timeout fetching content."}}
@@ -429,9 +430,8 @@ def fetch_and_parse_article_content(article_hash_id, url): # url is the article'
         app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
         return {"error": f"Failed to fetch article content: {str(e)}", "full_text": None, "groq_analysis": {"error": f"Failed to fetch content: {str(e)}"}}
     except Exception as e: 
-        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
-        return {"error": f"Failed to parse article content: {str(e)}", "full_text": article_text, "groq_analysis": {"error": f"Failed to parse content: {str(e)}"}}
-
+        app.logger.error(f"Failed to parse or process article content for {url}: {e}", exc_info=True)
+        return {"error": f"Failed to parse/process article content: {str(e)}", "full_text": article_text, "groq_analysis": {"error": f"Failed to parse/process content: {str(e)}"}}
 
 # ==============================================================================
 # --- 6. Flask Routes ---
@@ -447,7 +447,7 @@ def inject_global_vars():
         'session': session,
         'request': request, 
         'selected_date': selected_date_val,
-        'GROQ_API_KEY': GROQ_API_KEY # Make available to template for conditional JS logic
+        'GROQ_API_KEY_PRESENT': bool(GROQ_API_KEY) # Pass boolean flag for template logic
     }
 
 def get_paginated_articles(articles, page, per_page):
@@ -463,14 +463,11 @@ def get_paginated_articles(articles, page, per_page):
     paginated_items = articles[start:end]
     return paginated_items, total_pages
 
-
 def get_sort_key(article):
     date_val = None
     if isinstance(article, dict): date_val = article.get('publishedAt') 
     elif hasattr(article, 'published_at'): date_val = article.published_at 
-    
     if not date_val: return datetime.min.replace(tzinfo=pytz.utc) 
-
     if isinstance(date_val, str):
         try:
             dt_obj = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
@@ -478,12 +475,9 @@ def get_sort_key(article):
         except ValueError:
             app.logger.warning(f"Could not parse date string for sorting: {date_val}")
             return datetime.min.replace(tzinfo=pytz.utc)
-            
     if isinstance(date_val, datetime):
         return date_val.astimezone(pytz.utc) if date_val.tzinfo else pytz.utc.localize(date_val)
-        
     return datetime.min.replace(tzinfo=pytz.utc)
-
 
 @app.route('/')
 @app.route('/page/<int:page>')
@@ -497,7 +491,6 @@ def index(page=1, category_name='All Articles', date_str=None):
     session['previous_list_page'] = request.full_path 
     per_page = app.config['PER_PAGE']
     all_display_articles = []
-
     if category_name == 'Community Hub':
         db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
         for art in db_articles:
@@ -508,24 +501,15 @@ def index(page=1, category_name='All Articles', date_str=None):
         for art_dict in api_articles:
             art_dict['is_community_article'] = False 
             all_display_articles.append(art_dict)
-
     all_display_articles.sort(key=get_sort_key, reverse=True)
     paginated_display_articles, total_pages = get_paginated_articles(all_display_articles, page, per_page)
-    
-    featured_article_on_this_page = (page == 1 and
-                                     category_name == 'All Articles' and
-                                     not request.args.get('query') and 
-                                     not date_str and 
-                                     paginated_display_articles)
-
+    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and not date_str and paginated_display_articles)
     return render_template("INDEX_HTML_TEMPLATE",
                            articles=paginated_display_articles,
                            selected_category=category_name,
                            current_page=page,
                            total_pages=total_pages,
-                           featured_article_on_this_page=featured_article_on_this_page,
-                           )
-
+                           featured_article_on_this_page=featured_article_on_this_page)
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
@@ -535,16 +519,14 @@ def search_results(page=1):
     per_page = app.config['PER_PAGE']
     if not query_str: return redirect(url_for('index'))
     app.logger.info(f"Search query: '{query_str}'")
-
     api_articles = fetch_news_from_api() 
     api_results = []
-    for art_data in api_articles:
+    for art_data in api_articles: # Search in all recently fetched API articles
         if query_str.lower() in art_data.get('title', '').lower() or \
            query_str.lower() in art_data.get('description', '').lower():
             art_copy = art_data.copy()
             art_copy['is_community_article'] = False
             api_results.append(art_copy)
-
     community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
         db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))
     ).order_by(CommunityArticle.published_at.desc())
@@ -552,11 +534,9 @@ def search_results(page=1):
     for art in community_db_articles_query.all():
         art.is_community_article = True
         community_db_articles.append(art)
-    
     all_search_results = api_results + community_db_articles
     all_search_results.sort(key=get_sort_key, reverse=True)
     paginated_search_articles, total_pages = get_paginated_articles(all_search_results, page, per_page)
-    
     return render_template("INDEX_HTML_TEMPLATE",
                            articles=paginated_search_articles,
                            selected_category=f"Search: {query_str}",
@@ -565,14 +545,11 @@ def search_results(page=1):
                            featured_article_on_this_page=False,
                            query=query_str)
 
-
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
     article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
     previous_list_page = session.get('previous_list_page', url_for('index'))
-
     article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
-
     if article_db:
         article_data = article_db
         is_community_article = True
@@ -582,10 +559,8 @@ def article_detail(article_hash_id):
         except json.JSONDecodeError:
             app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
             article_data.parsed_takeaways = []
-        
         all_article_comments_list = Comment.query.options(
-            joinedload(Comment.author),
-            joinedload(Comment.replies).options(joinedload(Comment.author)) 
+            joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author)) 
         ).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
         comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
     else:
@@ -594,42 +569,34 @@ def article_detail(article_hash_id):
             article_data = article_api_dict.copy() 
             is_community_article = False
             article_data['is_community_article'] = False 
-            
             all_article_comments_list = Comment.query.options(
-                joinedload(Comment.author),
-                joinedload(Comment.replies).options(joinedload(Comment.author))
+                joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))
             ).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
             comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
         else:
             flash("Article not found.", "danger")
             return redirect(previous_list_page) 
-
     if all_article_comments_list:
         comment_ids = []
-        for c_outer in all_article_comments_list: # Renamed to avoid conflict with inner 'c'
+        for c_outer in all_article_comments_list:
             comment_ids.append(c_outer.id)
             for r_outer in c_outer.replies: 
                 comment_ids.append(r_outer.id)
-        
         for c_id_vote in comment_ids: comment_data[c_id_vote] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
-        
         vote_counts_query = db.session.query(
             CommentVote.comment_id,
             func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'),
             func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')
         ).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
-        
         for c_id_vote_count, likes, dislikes in vote_counts_query:
             if c_id_vote_count in comment_data:
                 comment_data[c_id_vote_count]['likes'] = likes
                 comment_data[c_id_vote_count]['dislikes'] = dislikes
-        
         if 'user_id' in session:
             user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
             for vote in user_votes:
                 if vote.comment_id in comment_data:
                     comment_data[vote.comment_id]['user_vote'] = vote.vote_type
-    
     return render_template("ARTICLE_HTML_TEMPLATE",
                            article=article_data,
                            is_community_article=is_community_article,
@@ -637,32 +604,32 @@ def article_detail(article_hash_id):
                            comment_data=comment_data,
                            previous_list_page=previous_list_page)
 
-# NEW Endpoint for fetching API article content and AI analysis synchronously
 @app.route('/api_article_data/<article_hash_id>')
 def api_article_data_json(article_hash_id):
     app.logger.info(f"Request received for /api_article_data/{article_hash_id}")
     article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
-
     if not article_api_dict:
         app.logger.warning(f"Article {article_hash_id} not found in MASTER_ARTICLE_STORE for API data fetch.")
-        return jsonify({"error": "Article not found in local cache.", "groq_analysis": None}), 404
-
+        return jsonify({"error": "Article not found in local cache.", "groq_analysis": {"error": "Article not found in local cache."}}), 404
     article_url = article_api_dict.get('url')
     if not article_url:
         app.logger.error(f"URL missing for article {article_hash_id} in MASTER_ARTICLE_STORE.")
-        return jsonify({"error": "Article URL not found.", "groq_analysis": None}), 404
+        return jsonify({"error": "Article URL not found.", "groq_analysis": {"error": "Article URL not found."}}), 404
+    
+    # Check if analysis is already in MASTER_ARTICLE_STORE (in-memory short-term cache)
+    if 'groq_analysis' in article_api_dict and article_api_dict['groq_analysis'] is not None:
+        # Validate that it's not just an error structure from a previous failed attempt IF not using deeper caching for analysis
+        # If get_article_analysis_with_groq itself is cached, this check might be redundant or could serve stale errors
+        # For simplicity with the current @simple_cache on the analysis function, we'll trust the cached value.
+        app.logger.info(f"Returning pre-existing Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id}")
+        return jsonify({
+            "groq_analysis": article_api_dict['groq_analysis'],
+            "error": None # No fetch/parse error at this stage if analysis is already there
+        })
 
-    # fetch_and_parse_article_content is cached, and get_article_analysis_with_groq within it is also cached.
     processed_data = fetch_and_parse_article_content(article_hash_id, article_url)
     
-    # The 'error' key in processed_data is for fetch/parse errors.
-    # The AI specific error is within processed_data['groq_analysis']['error']
-    if processed_data.get("error") and not processed_data.get("groq_analysis"):
-        app.logger.error(f"Error processing article {article_hash_id} for API data: {processed_data.get('error')}")
-        return jsonify(processed_data), 500 
-
-    # Update MASTER_ARTICLE_STORE with the fetched analysis (for very short-term in-memory cache)
-    # This is mostly for consistency if the same article is requested again quickly before outer cache expires.
+    # Store analysis in MASTER_ARTICLE_STORE for subsequent direct views within app lifecycle
     if 'groq_analysis' in processed_data:
          MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = processed_data['groq_analysis']
     
@@ -672,47 +639,38 @@ def api_article_data_json(article_hash_id):
         "error": processed_data.get('error') 
     })
 
-
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
     content = request.json.get('content', '').strip()
     parent_id = request.json.get('parent_id') 
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
-    
     user = User.query.get(session['user_id'])
     if not user:
         app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}")
         return jsonify({"error": "User not found."}), 401
-
     new_comment_instance = None
     community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
-    
     if community_article:
         new_comment_instance = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
     elif article_hash_id in MASTER_ARTICLE_STORE: 
         new_comment_instance = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
     else:
         return jsonify({"error": "Article not found."}), 404
-        
     try:
         db.session.add(new_comment_instance)
         db.session.commit()
         author_name = user.name 
         comment_timestamp_ist_str = to_ist_filter(new_comment_instance.timestamp)
-
         return jsonify({
             "success": True,
             "comment": {
-                "id": new_comment_instance.id,
-                "content": new_comment_instance.content,
+                "id": new_comment_instance.id, "content": new_comment_instance.content,
                 "timestamp_iso": new_comment_instance.timestamp.isoformat(), 
                 "timestamp_display": comment_timestamp_ist_str, 
                 "author": {"name": author_name, "initial": author_name[0].upper() if author_name else "U"},
                 "parent_id": new_comment_instance.parent_id,
-                "likes": 0, 
-                "dislikes": 0,
-                "user_vote": 0 
+                "likes": 0, "dislikes": 0, "user_vote": 0 
             }
         }), 201
     except Exception as e:
@@ -720,20 +678,15 @@ def add_comment(article_hash_id):
         app.logger.error(f"Error adding comment: {e}", exc_info=True)
         return jsonify({"error": "Could not post comment due to a server error."}), 500
 
-
 @app.route('/vote_comment/<int:comment_id>', methods=['POST'])
 @login_required
 def vote_comment(comment_id):
     comment = Comment.query.get_or_404(comment_id)
     vote_type = request.json.get('vote_type') 
-    if vote_type not in [1, -1]:
-        return jsonify({"error": "Invalid vote type."}), 400
-
+    if vote_type not in [1, -1]: return jsonify({"error": "Invalid vote type."}), 400
     user_id = session['user_id']
     existing_vote = CommentVote.query.filter_by(user_id=user_id, comment_id=comment_id).first()
-    
     new_user_vote_status = 0 
-
     if existing_vote:
         if existing_vote.vote_type == vote_type: 
             db.session.delete(existing_vote)
@@ -744,23 +697,15 @@ def vote_comment(comment_id):
     else: 
         db.session.add(CommentVote(user_id=user_id, comment_id=comment_id, vote_type=vote_type))
         new_user_vote_status = vote_type
-    
     try:
         db.session.commit()
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error voting on comment {comment_id}: {e}", exc_info=True)
         return jsonify({"error": "Could not process vote due to server error."}), 500
-
     likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
     dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
-    
-    return jsonify({
-        "success": True,
-        "likes": likes,
-        "dislikes": dislikes,
-        "user_vote_status": new_user_vote_status 
-    }), 200
+    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote_status": new_user_vote_status }), 200
 
 @app.route('/post_article', methods=['POST'])
 @login_required
@@ -770,19 +715,15 @@ def post_article():
     content = request.form.get('content', '').strip()
     source_name = request.form.get('sourceName', '').strip() or 'Community Post' 
     image_url = request.form.get('imageUrl', '').strip()
-
     if not all([title, description, content]): 
         flash("Title, Description, and Full Content are required.", "danger")
         return redirect(request.referrer or url_for('index'))
-
     article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time())) 
-
     groq_summary_text, groq_takeaways_json_str = None, None
     if groq_client and content: 
         try:
             app.logger.info(f"Requesting SYNC Groq analysis for new community article: {title[:50]}...")
             analysis_result = get_article_analysis_with_groq(content, title) 
-
             if analysis_result and not analysis_result.get("error"):
                 groq_summary_text = analysis_result.get('groq_summary')
                 takeaways_list = analysis_result.get('groq_takeaways')
@@ -790,24 +731,14 @@ def post_article():
                     groq_takeaways_json_str = json.dumps(takeaways_list)
                 app.logger.info(f"SYNC Groq analysis successful for community post: {title[:50]}.")
             else:
-                app.logger.warning(f"SYNC Groq analysis failed or no result for {title[:50]}: {analysis_result.get('error') if analysis_result else 'No result'}")
+                app.logger.warning(f"SYNC Groq analysis failed for community post {title[:50]}: {analysis_result.get('error') if analysis_result else 'No result'}")
         except Exception as e:
             app.logger.error(f"Exception during SYNC Groq analysis for community post {title[:50]}: {e}", exc_info=True)
-
-
     new_article = CommunityArticle(
-        article_hash_id=article_hash_id,
-        title=title,
-        description=description,
-        full_text=content,
-        source_name=source_name,
-        image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
-        user_id=session['user_id'],
-        published_at=datetime.now(timezone.utc), 
-        groq_summary=groq_summary_text,
-        groq_takeaways=groq_takeaways_json_str
-    )
-    
+        article_hash_id=article_hash_id, title=title, description=description, full_text=content, 
+        source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}', 
+        user_id=session['user_id'], published_at=datetime.now(timezone.utc), 
+        groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str)
     try:
         db.session.add(new_article)
         db.session.commit()
@@ -819,7 +750,6 @@ def post_article():
         flash("Could not post article due to a server error.", "danger")
         return redirect(request.referrer or url_for('index'))
 
-
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if 'user_id' in session: return redirect(url_for('index'))
@@ -827,26 +757,19 @@ def register():
         name = request.form.get('name', '').strip()
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
-        
-        if not all([name, username, password]):
-            flash('All fields are required.', 'danger')
-        elif len(username) < 3:
-            flash('Username must be at least 3 characters.', 'warning')
-        elif len(password) < 6:
-            flash('Password must be at least 6 characters.', 'warning')
-        elif User.query.filter_by(username=username).first():
-            flash('Username already exists. Please choose a different one.', 'warning')
+        if not all([name, username, password]): flash('All fields are required.', 'danger')
+        elif len(username) < 3: flash('Username must be at least 3 characters.', 'warning')
+        elif len(password) < 6: flash('Password must be at least 6 characters.', 'warning')
+        elif User.query.filter_by(username=username).first(): flash('Username already exists.', 'warning')
         else:
             try:
                 new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
-                db.session.add(new_user)
-                db.session.commit()
+                db.session.add(new_user); db.session.commit()
                 flash(f'Registration successful, {name}! Please log in.', 'success')
                 return redirect(url_for('login'))
             except Exception as e:
-                db.session.rollback()
-                app.logger.error(f"Error during registration for {username}: {e}", exc_info=True)
-                flash('Registration failed due to a server error. Please try again.', 'danger')
+                db.session.rollback(); app.logger.error(f"Reg Error: {e}", exc_info=True)
+                flash('Registration failed. Server error.', 'danger')
     return render_template("REGISTER_HTML_TEMPLATE")
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -857,23 +780,16 @@ def login():
         password = request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
-            session.permanent = True 
-            session['user_id'] = user.id
-            session['user_name'] = user.name
+            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
             session.pop('previous_list_page', None) 
             return redirect(next_url or url_for('index'))
-        else:
-            flash('Invalid username or password.', 'danger')
+        else: flash('Invalid username or password.', 'danger')
     return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
-def logout():
-    session.clear()
-    flash("You have been successfully logged out.", "info")
-    return redirect(url_for('index'))
-
+def logout(): session.clear(); flash("Logged out successfully.", "info"); return redirect(url_for('index'))
 @app.route('/about')
 def about(): return render_template("ABOUT_US_HTML_TEMPLATE")
 @app.route('/contact')
@@ -884,24 +800,20 @@ def privacy(): return render_template("PRIVACY_POLICY_HTML_TEMPLATE")
 @app.route('/subscribe', methods=['POST'])
 def subscribe():
     email = request.form.get('email', '').strip().lower()
-    if not email: 
-        flash('Email is required to subscribe.', 'warning')
-    elif Subscriber.query.filter_by(email=email).first():
-        flash('You are already subscribed with this email address.', 'info')
+    if not email: flash('Email is required.', 'warning')
+    elif Subscriber.query.filter_by(email=email).first(): flash('Already subscribed.', 'info')
     else:
         try:
             db.session.add(Subscriber(email=email, subscribed_at=datetime.now(timezone.utc)))
-            db.session.commit()
-            flash('Thank you for subscribing!', 'success')
+            db.session.commit(); flash('Subscribed successfully!', 'success')
         except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error subscribing email {email}: {e}", exc_info=True)
-            flash('Could not subscribe due to a server error. Please try again.', 'danger')
+            db.session.rollback(); app.logger.error(f"Sub Error: {e}", exc_info=True)
+            flash('Subscription failed. Server error.', 'danger')
     return redirect(request.referrer or url_for('index'))
 
 @app.errorhandler(404)
 def page_not_found(e):
-    app.logger.warning(f"404 error at {request.url}: {e}", exc_info=False) # No need for full traceback for 404
+    app.logger.warning(f"404 error at {request.url}: {e}", exc_info=False)
     return render_template("404_TEMPLATE"), 404
 
 @app.errorhandler(500)
@@ -912,7 +824,7 @@ def internal_server_error(e):
         return jsonify(error="Internal Server Error", message=str(e)), 500
     return render_template("500_TEMPLATE"), 500
 
-# Rev14.py (Continued)
+# Rev14.py (Continued from your existing Python code up to the end of section 6)
 
 # ==============================================================================
 # --- 7. HTML Templates (Full, Unabbreviated Version) ---
@@ -1195,22 +1107,27 @@ BASE_HTML_TEMPLATE = """
                 {% set _query_args_date = request.args.get('date') if request and request.args else none %}
                 {% set _current_category_from_view = _view_args.get('category_name') %}
                 {% set _current_date_from_view = _view_args.get('date_str') %}
+                {% set _current_query_string = request.args.get('query') if request and request.args else '' %}
+
 
                 {% for cat_item in categories if categories is defined %}
-                    {% set is_active_category = (selected_category is defined and selected_category == cat_item) or \
-                                                (_current_category_from_view is defined and _current_category_from_view == cat_item) or \
-                                                (selected_category is not defined and _current_category_from_view is none and cat_item == 'All Articles' and not (_current_date_from_view or _query_args_date) and not (request.args.get('query') if request and request.args else '')) %}
-                    {% set link_date_str = selected_date if selected_date is defined and cat_item != 'Community Hub' and (_current_date_from_view or _query_args_date) else none %}
-                    <a href="{{ url_for('index', category_name=cat_item, date_str=link_date_str) }}"
+                    {% set is_active_category = (selected_category is defined and selected_category == cat_item and not _current_date_from_view and not _query_args_date and not _current_query_string) or \
+                                                (_current_category_from_view is defined and _current_category_from_view == cat_item and not _current_date_from_view and not _query_args_date and not _current_query_string) or \
+                                                (selected_category is not defined and _current_category_from_view is none and cat_item == 'All Articles' and not _current_date_from_view and not _query_args_date and not _current_query_string) %}
+                    
+                    {# Determine if a date filter is currently active to persist it in category links #}
+                    {% set active_date_for_link = selected_date if selected_date is defined and (_current_date_from_view or _query_args_date) else none %}
+
+                    <a href="{{ url_for('index', category_name=cat_item, date_str=active_date_for_link) }}"
                        class="category-link {% if is_active_category %}active{% endif %}">
                         <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% else %}tag{% endif %} me-1 d-none d-sm-inline"></i>
                         {{ cat_item }}
                     </a>
                 {% endfor %}
                 
-                {% set _selected_category_for_picker = selected_category if selected_category is defined else _current_category_from_view %}
-                {% set show_date_picker = (_selected_category_for_picker is defined and _selected_category_for_picker != 'Community Hub') or \
-                                          (_selected_category_for_picker is none and not (request.args.get('query') if request and request.args else '')) %}
+                {% set _actual_selected_category = selected_category if selected_category is defined else _current_category_from_view %}
+                {% set show_date_picker = (_actual_selected_category is defined and _actual_selected_category != 'Community Hub') or \
+                                          (_actual_selected_category is none and not _current_query_string) %}
 
                 {% if show_date_picker %}
                 <div class="date-picker-container">
@@ -1345,7 +1262,6 @@ BASE_HTML_TEMPLATE = """
                     let pathSegments = currentPath.split('/').filter(Boolean); 
                     let categoryName = 'All Articles'; // Default
 
-                    // Determine current category from URL segments
                     if (pathSegments.includes('category')) {
                         let catIndex = pathSegments.indexOf('category');
                         if (catIndex + 1 < pathSegments.length && pathSegments[catIndex + 1] !== 'date') {
@@ -1354,10 +1270,10 @@ BASE_HTML_TEMPLATE = """
                     }
                     
                     let newUrl = "";
-                    if (categoryName !== 'All Articles') { // Specific category selected
-                        newUrl = `/category/${encodeURIComponent(categoryName)}/date/${selectedDateValue}`;
-                    } else { // 'All Articles' or no category in path (e.g. home, /date/...)
-                        newUrl = `/date/${selectedDateValue}`;
+                    if (categoryName !== 'All Articles') {
+                        newUrl = \`/category/\${encodeURIComponent(categoryName)}/date/\${selectedDateValue}\`;
+                    } else {
+                        newUrl = \`/date/\${selectedDateValue}\`;
                     }
                     window.location.href = newUrl;
                 }
@@ -1512,9 +1428,9 @@ ARTICLE_HTML_TEMPLATE = """
     {% if article.is_community_article %}
         {% if article.groq_summary %}
             <div class="summary-box my-3"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
-        {% elif article.groq_summary is none and GROQ_API_KEY %}
+        {% elif article.groq_summary is none and GROQ_API_KEY_PRESENT %}
              <div class="alert alert-secondary small p-3 mt-3">AI Summary was not generated for this community article.</div>
-        {% elif not GROQ_API_KEY %}
+        {% elif not GROQ_API_KEY_PRESENT %}
             <div class="alert alert-info small p-3 mt-3">AI analysis service is currently unavailable.</div>
         {% endif %}
 
@@ -1522,7 +1438,7 @@ ARTICLE_HTML_TEMPLATE = """
             <div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
                 <ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul>
             </div>
-        {% elif article.groq_takeaways is none and GROQ_API_KEY %}
+        {% elif article.groq_takeaways is none and GROQ_API_KEY_PRESENT %}
              <div class="alert alert-secondary small p-3 mt-3">AI Takeaways were not generated for this community article.</div>
         {% endif %}
         <hr class="my-4">
@@ -1619,24 +1535,28 @@ ARTICLE_HTML_TEMPLATE = """
 document.addEventListener('DOMContentLoaded', function () {
     const articleData = {{ article|tojson if article else 'null' }};
     const isCommunityArticle = {{ article.is_community_article|tojson if article else 'false' }};
-    const GROQ_API_IS_CONFIGURED = {{ GROQ_API_KEY is defined and GROQ_API_KEY|tojson != 'null' }};
-
+    // GROQ_API_KEY_PRESENT is injected globally from Python
+    const GROQ_API_IS_CONFIGURED = {{ GROQ_API_KEY_PRESENT|tojson if GROQ_API_KEY_PRESENT is defined else false }};
 
     if (articleData && !isCommunityArticle) {
         const articleHashIdGlobal = articleData.id; 
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContentContainer = document.getElementById('apiArticleContent');
         const originalArticleUrl = articleData.url; 
-        const originalArticleSourceName = articleData.source ? articleData.source.name : 'the source';
+        const originalArticleSourceName = articleData.source && articleData.source.name ? articleData.source.name : 'the source';
 
         function displayAnalysis(data) {
             if (contentLoader) contentLoader.style.display = 'none';
-            if (!apiArticleContentContainer) return;
+            if (!apiArticleContentContainer) {
+                console.error("apiArticleContentContainer not found in DOM");
+                return;
+            }
 
             let htmlContent = '';
             const analysisResult = data.groq_analysis;
+            const fetchParseError = data.error; // Error from fetching/parsing content itself
 
-            if (analysisResult && !analysisResult.error) {
+            if (analysisResult && !analysisResult.error) { // AI analysis was successful
                 if (analysisResult.groq_summary) {
                     htmlContent += `<div class="summary-box my-3 animate-fade-in"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">${analysisResult.groq_summary.replace(/\\n/g, '<br>')}</p></div>`;
                 }
@@ -1645,20 +1565,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
             
-            // Handle errors from AI analysis or content fetching
-            let overallError = data.error; // Error from fetch_and_parse_article_content itself
-            let aiError = analysisResult ? analysisResult.error : "AI analysis data not found.";
-
-            if (htmlContent.trim() === '' || (analysisResult && analysisResult.error)) { // If no content OR if there was an AI error
-                 let errorToShow = aiError || overallError || "AI-generated summary is not available for this article.";
-                 if (overallError && overallError.includes("extract text")) { // More specific error for parsing
-                    errorToShow = "Could not extract text from the article for analysis.";
-                 }
-                 htmlContent = `<div class="alert alert-warning small p-3 mt-3">${errorToShow}</div>` + htmlContent;
-            } else if (htmlContent.trim() === '' && !overallError) { // No AI content, no error reported from AI, no fetch error
-                 htmlContent = `<div class="alert alert-secondary small p-3 mt-3">AI analysis did not return specific content for this article.</div>`;
+            // Handle and display errors prominently
+            let errorMessages = [];
+            if (fetchParseError) { // Error from fetching or parsing the article before AI
+                errorMessages.push(`Failed to retrieve article content: ${fetchParseError}`);
+            }
+            if (analysisResult && analysisResult.error) { // Error from the AI analysis step
+                 errorMessages.push(`AI Analysis Error: ${analysisResult.error}`);
             }
 
+            if (errorMessages.length > 0) {
+                htmlContent = `<div class="alert alert-danger p-3 mt-3"><strong>Notice:</strong><br>${errorMessages.join('<br>')}</div>` + htmlContent; // Prepend errors
+            } else if (htmlContent.trim() === '') { 
+                // No specific errors reported, but no summary/takeaways either
+                 htmlContent = `<div class="alert alert-secondary small p-3 mt-3">AI analysis did not return specific content for this article.</div>`;
+            }
 
             if (originalArticleUrl) {
                 htmlContent += `<hr class="my-4"><p class="text-center"><a href="${originalArticleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${originalArticleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a></p>`;
@@ -1669,13 +1590,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (GROQ_API_IS_CONFIGURED) {
             if (contentLoader) contentLoader.style.display = 'flex';
 
-            fetch(`/api_article_data/${articleHashIdGlobal}`)
+            fetch(\`/api_article_data/\${articleHashIdGlobal}\`)
                 .then(response => {
                     if (!response.ok) {
-                        return response.json().then(errData => { // Try to get JSON error from server
-                            throw new Error(errData.error || `Server error: ${response.status} ${response.statusText}`);
-                        }).catch(() => { // Fallback if error response isn't JSON
-                            throw new Error(`Network error: ${response.status} ${response.statusText}`);
+                        return response.json().then(errData => {
+                            throw new Error(errData.error || \`Server error: \${response.status} \${response.statusText}\`);
+                        }).catch(() => { 
+                            throw new Error(\`Network error: \${response.status} \${response.statusText}\`);
                         });
                     }
                     return response.json();
@@ -1684,22 +1605,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     displayAnalysis(data);
                 })
                 .catch(error => {
-                    console.error("Error fetching article data with AI analysis:", error);
+                    console.error("Error fetching or processing article data with AI analysis:", error);
                     if (contentLoader) contentLoader.style.display = 'none';
                     if (apiArticleContentContainer) {
-                        let errorHtml = `<div class="alert alert-danger">Failed to load article summary: ${error.message}.</div>`;
+                        let errorHtml = \`<div class="alert alert-danger p-3 mt-3"><strong>Error:</strong> \${error.message || 'Failed to load article summary.'}</div>\`;
                          if (originalArticleUrl) {
-                            errorHtml += `<hr class="my-4"><p class="text-center"><a href="${originalArticleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">You can still read the original article at ${originalArticleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a></p>`;
+                            errorHtml += \`<hr class="my-4"><p class="text-center"><a href="\${originalArticleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">You can still read the original article at \${originalArticleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a></p>\`;
                         }
                         apiArticleContentContainer.innerHTML = errorHtml;
                     }
                 });
-        } else { // GROQ_API_KEY not configured
+        } else { 
             if (contentLoader) contentLoader.style.display = 'none';
             if (apiArticleContentContainer) {
-                 let noAIHtml = `<div class="alert alert-info small p-3 mt-3">AI analysis service is not configured.</div>`;
+                 let noAIHtml = \`<div class="alert alert-info small p-3 mt-3">AI analysis service is not configured for this site.</div>\`;
                  if (originalArticleUrl) {
-                    noAIHtml += `<hr class="my-4"><p class="text-center"><a href="${originalArticleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${originalArticleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a></p>`;
+                    noAIHtml += \`<hr class="my-4"><p class="text-center"><a href="\${originalArticleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at \${originalArticleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a></p>\`;
                 }
                 apiArticleContentContainer.innerHTML = noAIHtml;
             }
@@ -1713,55 +1634,57 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function convertUTCToISTForComment(utcIsoString) {
             if (!utcIsoString) return "N/A";
-            const date = new Date(utcIsoString);
-            return new Intl.DateTimeFormat('en-IN', {
-                year: 'numeric', month: 'short', day: 'numeric',
-                hour: 'numeric', minute: '2-digit', hour12: true,
-                timeZone: 'Asia/Kolkata', timeZoneName: 'shortOffset' // Using shortOffset like +05:30
-            }).format(date);
+            try {
+                const date = new Date(utcIsoString);
+                return new Intl.DateTimeFormat('en-IN', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit', hour12: true,
+                    timeZone: 'Asia/Kolkata', timeZoneName: 'shortOffset'
+                }).format(date);
+            } catch (e) {
+                console.error("Error formatting date:", utcIsoString, e);
+                return utcIsoString; // fallback
+            }
         }
         
         function createCommentHTML(commentDataFromServer) {
-            const comment = commentDataFromServer.comment; // Assuming server sends { success: true, comment: {...} }
+            const comment = commentDataFromServer.comment;
             const authorName = comment.author && comment.author.name ? comment.author.name : 'Anonymous';
             const userInitial = comment.author && comment.author.initial ? comment.author.initial : (authorName[0] ? authorName[0].toUpperCase() : 'A');
             const commentDate = comment.timestamp_display || convertUTCToISTForComment(comment.timestamp_iso);
 
             let actionsHTML = '';
             if (isUserLoggedIn) {
-                actionsHTML = `
+                actionsHTML = \`
                 <div class="comment-actions">
-                    <button class="vote-btn ${comment.user_vote === 1 ? 'active vote-up' : ''}" data-comment-id="${comment.id}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-${comment.id}">${comment.likes || 0}</span></button>
-                    <button class="vote-btn ${comment.user_vote === -1 ? 'active vote-down' : ''}" data-comment-id="${comment.id}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-${comment.id}">${comment.dislikes || 0}</span></button>
-                    <button class="reply-btn" data-comment-id="${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
+                    <button class="vote-btn \${comment.user_vote === 1 ? 'active vote-up' : ''}" data-comment-id="\${comment.id}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-\${comment.id}">\${comment.likes || 0}</span></button>
+                    <button class="vote-btn \${comment.user_vote === -1 ? 'active vote-down' : ''}" data-comment-id="\${comment.id}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-\${comment.id}">\${comment.dislikes || 0}</span></button>
+                    <button class="reply-btn" data-comment-id="\${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
                 </div>
-                <div class="reply-form-container" id="reply-form-container-${comment.id}"><form class="reply-form mt-2"><input type="hidden" name="article_hash_id" value="${currentArticleHashId}"><input type="hidden" name="parent_id" value="${comment.id}"><div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div><button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button><button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button></form></div>`;
+                <div class="reply-form-container" id="reply-form-container-\${comment.id}"><form class="reply-form mt-2"><input type="hidden" name="article_hash_id" value="\${currentArticleHashId}"><input type="hidden" name="parent_id" value="\${comment.id}"><div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div><button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button><button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button></form></div>\`;
             }
-            return `<div class="comment-container animate-fade-in" id="comment-${comment.id}"><div class="comment-card"><div class="comment-avatar" title="${authorName}">${userInitial}</div><div class="comment-body"><div class="comment-header"><span class="comment-author">${authorName}</span><span class="comment-date">${commentDate}</span></div><p class="comment-content mb-2">${comment.content.replace(/\\n/g, '<br>')}</p>${actionsHTML}</div></div><div class="comment-replies" id="replies-of-${comment.id}"></div></div>`;
+            return \`<div class="comment-container animate-fade-in" id="comment-\${comment.id}"><div class="comment-card"><div class="comment-avatar" title="\${authorName}">\${userInitial}</div><div class="comment-body"><div class="comment-header"><span class="comment-author">\${authorName}</span><span class="comment-date">\${commentDate}</span></div><p class="comment-content mb-2">\${comment.content.replace(/\\n/g, '<br>')}</p>\${actionsHTML}</div></div><div class="comment-replies" id="replies-of-\${comment.id}"></div></div>\`;
         }
 
         function handleCommentSubmit(form, articleHashId, parentId = null) {
             const content = form.querySelector('textarea[name="content"]').value;
             if (!content.trim()) { alert("Comment cannot be empty."); return; }
-
             const submitButton = form.querySelector('button[type="submit"]');
             const originalButtonText = submitButton.innerHTML;
             submitButton.disabled = true;
             submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
-
-            fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+            fetch(\`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}\`.replace('PLACEHOLDER', articleHashId), {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId })
             })
             .then(res => res.json().then(data => ({ status: res.status, body: data })))
             .then(({ status, body }) => {
                 if (status === 201 && body.success) {
-                    const newCommentHTML = createCommentHTML(body); // Pass the whole body which contains the comment object
+                    const newCommentHTML = createCommentHTML(body);
                     const tempDiv = document.createElement('div');
                     tempDiv.innerHTML = newCommentHTML.trim();
                     const newCommentNode = tempDiv.firstChild;
-
                     if (parentId) {
-                        document.getElementById(`replies-of-${parentId}`).appendChild(newCommentNode);
+                        document.getElementById(\`replies-of-\${parentId}\`).appendChild(newCommentNode);
                         form.closest('.reply-form-container').style.display = 'none';
                     } else {
                         const list = document.getElementById('comments-list');
@@ -1790,40 +1713,29 @@ document.addEventListener('DOMContentLoaded', function () {
                 e.preventDefault();
                 const commentId = voteBtn.dataset.commentId;
                 const voteType = parseInt(voteBtn.dataset.voteType);
-                
-                fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                fetch(\`{{ url_for('vote_comment', comment_id=0) }}\`.replace('0', commentId), {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ vote_type: voteType })
                 })
                 .then(res => res.json().then(data => ({ status: res.status, body: data })))
                 .then(({ status, body }) => {
                     if (status === 200 && body.success) {
-                        document.getElementById(`likes-count-${commentId}`).textContent = body.likes;
-                        document.getElementById(`dislikes-count-${commentId}`).textContent = body.dislikes;
-                        
-                        const allVoteBtnsOnComment = document.querySelectorAll(`.vote-btn[data-comment-id="${commentId}"]`);
-                        allVoteBtnsOnComment.forEach(btn => {
-                            btn.classList.remove('active', 'vote-up', 'vote-down');
-                        });
-
+                        document.getElementById(\`likes-count-\${commentId}\`).textContent = body.likes;
+                        document.getElementById(\`dislikes-count-\${commentId}\`).textContent = body.dislikes;
+                        const allVoteBtnsOnComment = document.querySelectorAll(\`.vote-btn[data-comment-id="\${commentId}"]\`);
+                        allVoteBtnsOnComment.forEach(btn => { btn.classList.remove('active', 'vote-up', 'vote-down'); });
                         if (body.user_vote_status === 1) {
-                            voteBtn.closest('.comment-actions').querySelector(`.vote-btn[data-vote-type="1"]`).classList.add('active', 'vote-up');
+                            voteBtn.closest('.comment-actions').querySelector(\`.vote-btn[data-vote-type="1"]\`).classList.add('active', 'vote-up');
                         } else if (body.user_vote_status === -1) {
-                             voteBtn.closest('.comment-actions').querySelector(`.vote-btn[data-vote-type="-1"]`).classList.add('active', 'vote-down');
+                             voteBtn.closest('.comment-actions').querySelector(\`.vote-btn[data-vote-type="-1"]\`).classList.add('active', 'vote-down');
                         }
-                    } else {
-                        alert('Error voting: ' + (body.error || 'Unknown error.'));
-                    }
-                }).catch(err => {
-                    console.error("Vote error:", err);
-                    alert("Could not process vote: " + err.message);
-                });
+                    } else { alert('Error voting: ' + (body.error || 'Unknown error.')); }
+                }).catch(err => { console.error("Vote error:", err); alert("Could not process vote: " + err.message); });
             }
-
             const replyBtn = e.target.closest('.reply-btn');
             if (replyBtn && isUserLoggedIn) {
                 e.preventDefault();
                 const commentId = replyBtn.dataset.commentId;
-                const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                const formContainer = document.getElementById(\`reply-form-container-\${commentId}\`);
                 if (formContainer) {
                     const isDisplayed = formContainer.style.display === 'block';
                     document.querySelectorAll('.reply-form-container').forEach(fc => { fc.style.display = 'none'; }); 
@@ -1990,7 +1902,6 @@ PRIVACY_POLICY_HTML_TEMPLATE = """
 
 ERROR_404_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}404 Not Found - Briefly{% endblock %}{% block content %}<div class='text-center my-5 p-4 article-card animate-fade-in mx-auto' style='max-width: 600px;'><h1><i class='fas fa-ghost text-warning me-2'></i>404 - Page Not Found</h1><p class='lead'>Oops! The page you are looking for does not exist or has been moved.</p><p>Perhaps you were looking for one of these?</p><ul class="list-unstyled mt-3"><li class="mb-1"><a href='{{url_for("index")}}' class='btn btn-sm btn-outline-primary'>Go to Homepage</a></li>{% if categories is defined %}{% for cat_item in categories %}<li class="mb-1"><a href="{{ url_for('index', category_name=cat_item) }}" class="btn btn-sm btn-outline-secondary">{{cat_item}}</a></li>{% endfor %}{% endif %}</ul></div>{% endblock %}"""
 ERROR_500_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}500 Server Error - Briefly{% endblock %}{% block content %}<div class='text-center my-5 p-4 article-card animate-fade-in mx-auto' style='max-width: 600px;'><h1><i class='fas fa-cogs text-danger me-2'></i>500 - Internal Server Error</h1><p class='lead'>Yikes! Something went wrong on our end. We've been notified and are looking into it.</p><p>Please try again in a few moments, or <a href='{{url_for("index")}}' class=''>return to the homepage</a>.</p></div>{% endblock %}"""
-
 
 # ==============================================================================
 # --- 8. Add all templates to the template_storage dictionary ---
