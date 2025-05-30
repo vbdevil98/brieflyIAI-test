@@ -1,5 +1,6 @@
 # Rev14.py - MODIFIED FOR MORE ROBUST AND DIAGNOSTIC NEWS FETCHING, NEW COMMENT FEATURES,
-# BOOKMARKING, USER PROFILES, AI TAGS, AND CELERY BACKGROUND TASKS
+# BOOKMARKING, USER PROFILES, AI TAGS, CELERY BACKGROUND TASKS,
+# AND ENHANCED LOGGING FOR DEPLOYMENT DEBUGGING
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -19,9 +20,9 @@ import nltk
 import requests
 from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, case
+from sqlalchemy import func, case, create_engine as sqlalchemy_create_engine # Renamed to avoid conflict
 from sqlalchemy.orm import joinedload
-from sqlalchemy.exc import IntegrityError # Added for graceful handling
+from sqlalchemy.exc import IntegrityError
 from jinja2 import DictLoader
 from newsapi import NewsApiClient
 from newsapi.newsapi_exception import NewsAPIException
@@ -32,7 +33,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.exceptions import LangChainException
 import pytz
-from celery import Celery # Added for background tasks
+from celery import Celery
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -66,7 +67,7 @@ app.jinja_loader = DictLoader(template_storage)
 
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'YOUR_FALLBACK_FLASK_SECRET_KEY_HERE_32_CHARS')
 app.config['PER_PAGE'] = 9
-app.config['CATEGORIES'] = ['All Articles', 'Community Hub'] # My Bookmarks will be a separate link
+app.config['CATEGORIES'] = ['All Articles', 'Community Hub']
 
 app.config['NEWS_API_QUERY'] = 'India OR "Indian politics" OR "Indian economy" OR "Bollywood"'
 app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.com,indianexpress.com,hindustantimes.com'
@@ -76,67 +77,123 @@ app.config['NEWS_API_SORT_BY'] = 'publishedAt'
 app.config['CACHE_EXPIRY_SECONDS'] = 3600 # 1 hour
 app.permanent_session_lifetime = timedelta(days=30)
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app.logger.setLevel(logging.INFO)
+logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
+app.logger.setLevel(logging.INFO) # Ensure Flask's logger is also set to INFO
 
-# Data Persistence
-database_url = os.environ.get('DATABASE_URL')
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    app.logger.info("Connecting to persistent PostgreSQL database.")
-else:
-    db_file_name = 'app_data.db'
-    project_root_for_db = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(project_root_for_db, db_file_name)
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.logger.info(f"Using local SQLite database for development at {db_path}.")
-
+# Initialize db after app is created, but before Celery and DB URI setup if they depend on app.config indirectly
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+
+# --- Data Persistence (with enhanced logging and PostgreSQL connection test) ---
+database_url_env = os.environ.get('DATABASE_URL')
+app.logger.info(f"DATABASE_SETUP: DATABASE_URL from environment: '{database_url_env}'")
+
+if database_url_env and (database_url_env.startswith("postgres://") or database_url_env.startswith("postgresql://")):
+    actual_db_uri = database_url_env
+    if actual_db_uri.startswith("postgres://"):
+        actual_db_uri = actual_db_uri.replace("postgres://", "postgresql://", 1)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = actual_db_uri
+    app.logger.info(f"DATABASE_SETUP: Attempting to use PostgreSQL. SQLAlchemy URI set to: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    
+    try:
+        engine = sqlalchemy_create_engine(app.config['SQLALCHEMY_DATABASE_URI'], connect_args={'connect_timeout': 5})
+        with engine.connect() as connection:
+            app.logger.info("DATABASE_SETUP: Successfully created temporary engine and connected to PostgreSQL.")
+    except Exception as e:
+        app.logger.error(f"DATABASE_SETUP: Failed to create engine or connect to PostgreSQL with URI {app.config['SQLALCHEMY_DATABASE_URI']}. Error: {type(e).__name__} - {e}")
+        app.logger.error("DATABASE_SETUP: Falling back to SQLite due to PostgreSQL connection issue.")
+        db_file_name = 'app_data_fallback.db'
+        project_root_for_db = os.path.dirname(os.path.abspath(__file__))
+        render_disk_path = os.environ.get('RENDER_DISK_MOUNT_PATH')
+        if render_disk_path:
+            project_root_for_db = render_disk_path
+            os.makedirs(project_root_for_db, exist_ok=True)
+            app.logger.info(f"DATABASE_SETUP: Using Render disk path for SQLite fallback: {project_root_for_db}")
+        db_path = os.path.join(project_root_for_db, db_file_name)
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+        app.logger.warning(f"DATABASE_SETUP: FALLBACK: Using SQLite database at {db_path}")
+else:
+    app.logger.warning(f"DATABASE_SETUP: DATABASE_URL is not set or is not a PostgreSQL URL. DATABASE_URL: '{database_url_env}'. Falling back to SQLite.")
+    db_file_name = 'app_data_default.db'
+    project_root_for_db = os.path.dirname(os.path.abspath(__file__))
+    render_disk_path = os.environ.get('RENDER_DISK_MOUNT_PATH')
+    if render_disk_path:
+        project_root_for_db = render_disk_path
+        os.makedirs(project_root_for_db, exist_ok=True)
+        app.logger.info(f"DATABASE_SETUP: Using Render disk path for default SQLite: {project_root_for_db}")
+    db_path = os.path.join(project_root_for_db, db_file_name)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.logger.info(f"DATABASE_SETUP: DEFAULT: Using SQLite database at {db_path}")
+
+
 # ==============================================================================
-# --- Celery Configuration ---
+# --- Celery Configuration (with enhanced logging) ---
 # ==============================================================================
 def make_celery(flask_app):
     broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
     result_backend_url = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
-    
-    # Check if Redis is accessible (basic check)
+    flask_app.logger.info(f"make_celery: Initial broker_url: {broker_url}, result_backend_url: {result_backend_url}")
+
     try:
-        if broker_url.startswith('redis://'):
+        if broker_url and broker_url.startswith('redis://'):
             from redis import Redis
             from redis.exceptions import ConnectionError as RedisConnectionError
-            redis_client_test = Redis.from_url(broker_url)
+            redis_client_test = Redis.from_url(broker_url, socket_connect_timeout=5)
             redis_client_test.ping()
-            app.logger.info(f"Successfully connected to Redis broker for Celery: {broker_url}")
-    except (ImportError, RedisConnectionError) as e:
-        app.logger.warning(f"Could not connect to Redis broker at {broker_url}. Celery background tasks may not work. Error: {e}")
-        app.logger.warning("Falling back to EAGER mode for Celery tasks if Redis is unavailable.")
-        # Fallback to running tasks eagerly if Redis isn't available or redis-py not installed
+            flask_app.logger.info(f"make_celery: Successfully connected to Redis broker for Celery: {broker_url}")
+        elif not broker_url:
+            flask_app.logger.warning("make_celery: CELERY_BROKER_URL is not set. Background tasks may not work as expected if not always eager.")
+            # Force eager if no broker unless one is configured in app.config by Celery itself
+            if not flask_app.config.get('CELERY_BROKER_URL') and not flask_app.config.get('broker_url'):
+                 flask_app.config['CELERY_TASK_ALWAYS_EAGER'] = True
+                 flask_app.config['CELERY_TASK_EAGER_PROPAGATES'] = True
+                 broker_url = None 
+                 result_backend_url = None
+                 flask_app.logger.warning("make_celery: Forcing EAGER mode as no broker URL was found/set.")
+
+
+    except (ImportError, RedisConnectionError, Exception) as e:
+        flask_app.logger.error(f"CRITICAL: Could not connect to Redis broker at {broker_url}. Celery background tasks WILL NOT WORK ASYNCHRONOUSLY. Error: {type(e).__name__} - {e}")
+        flask_app.logger.warning("EMERGENCY FALLBACK: Configuring Celery tasks to run EAGERLY in the web process. This is NOT recommended for production and may cause timeouts or slow responses.")
         flask_app.config['CELERY_TASK_ALWAYS_EAGER'] = True
-        flask_app.config['CELERY_TASK_EAGER_PROPAGATES'] = True # Propagates exceptions like normal functions
-        # No need to set broker/backend if always eager
-        broker_url = None # Effectively disables broker for eager mode
+        flask_app.config['CELERY_TASK_EAGER_PROPAGATES'] = True
+        broker_url = None 
         result_backend_url = None
+
+    # Update app.config with potentially modified broker/backend URLs before Celery object creation
+    # if they were set to None due to Redis connection failure and EAGER mode is on.
+    if broker_url is None:
+        flask_app.config['CELERY_BROKER_URL'] = None
+        flask_app.config['broker_url'] = None # some celery versions might use this
+    if result_backend_url is None:
+        flask_app.config['CELERY_RESULT_BACKEND'] = None
+        flask_app.config['result_backend'] = None
 
 
     celery_instance = Celery(
         flask_app.import_name,
-        backend=result_backend_url,
-        broker=broker_url
+        # Broker and backend are taken from flask_app.config by default if not passed here explicitly
+        # backend=result_backend_url, 
+        # broker=broker_url
     )
-    celery_instance.conf.update(flask_app.config)
+    celery_instance.conf.update(flask_app.config) # This should pick up CELERY_BROKER_URL etc.
     
-    # Ensure tasks run within Flask application context
     class ContextTask(celery_instance.Task):
         def __call__(self, *args, **kwargs):
             with flask_app.app_context():
                 return self.run(*args, **kwargs)
     celery_instance.Task = ContextTask
+    # Log the final effective configuration Celery is using
+    effective_broker = celery_instance.conf.broker_url or flask_app.config.get('CELERY_BROKER_URL')
+    effective_backend = celery_instance.conf.result_backend or flask_app.config.get('CELERY_RESULT_BACKEND')
+    is_eager = celery_instance.conf.task_always_eager or flask_app.config.get('CELERY_TASK_ALWAYS_EAGER', False)
+
+    flask_app.logger.info(f"make_celery: Final Celery Config - Effective Broker: {effective_broker}, Effective Backend: {effective_backend}, Always Eager: {is_eager}")
     return celery_instance
 
-# Update Flask app config for Celery (can be overridden by make_celery if Redis fails)
+# Set default Celery configurations in Flask app config
 app.config.update(
     CELERY_BROKER_URL=os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
     CELERY_RESULT_BACKEND=os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0'),
@@ -147,8 +204,6 @@ app.config.update(
     CELERY_ENABLE_UTC=True,
 )
 celery = make_celery(app)
-app.logger.info(f"Celery configured. Broker: {celery.conf.broker_url}, Backend: {celery.conf.result_backend}, Always Eager: {app.config.get('CELERY_TASK_ALWAYS_EAGER', False)}")
-
 
 # ==============================================================================
 # --- 3. API Client Initialization ---
@@ -161,7 +216,7 @@ GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 groq_client = None
 if GROQ_API_KEY:
     try:
-        groq_client = ChatGroq(model="llama3-70b-8192", groq_api_key=GROQ_API_KEY, temperature=0.2) # Slightly higher temp for tag creativity
+        groq_client = ChatGroq(model="llama3-70b-8192", groq_api_key=GROQ_API_KEY, temperature=0.2)
         app.logger.info("Groq client initialized.")
     except Exception as e:
         app.logger.error(f"Failed to initialize Groq client: {e}")
@@ -180,11 +235,11 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     name = db.Column(db.String(120), nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)) # NEW
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     articles = db.relationship('CommunityArticle', backref='author', lazy='dynamic', cascade="all, delete-orphan")
     comments = db.relationship('Comment', backref=db.backref('author', lazy='joined'), lazy='dynamic', cascade="all, delete-orphan")
     comment_votes = db.relationship('CommentVote', backref='user', lazy='dynamic', cascade="all, delete-orphan")
-    bookmarks = db.relationship('Bookmark', backref=db.backref('user', lazy='joined'), lazy='dynamic', cascade="all, delete-orphan") # NEW
+    bookmarks = db.relationship('Bookmark', backref=db.backref('user', lazy='joined'), lazy='dynamic', cascade="all, delete-orphan")
 
 class CommunityArticle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -197,10 +252,10 @@ class CommunityArticle(db.Model):
     published_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     groq_summary = db.Column(db.Text, nullable=True)
-    groq_takeaways = db.Column(db.Text, nullable=True) # Stored as JSON string
-    tags = db.Column(db.Text, nullable=True) # NEW: Stored as JSON string list of tags
+    groq_takeaways = db.Column(db.Text, nullable=True) 
+    tags = db.Column(db.Text, nullable=True) 
     comments = db.relationship('Comment', backref=db.backref('community_article', lazy='joined'), lazy='dynamic', foreign_keys='Comment.community_article_id', cascade="all, delete-orphan")
-    bookmarks = db.relationship('Bookmark', foreign_keys='Bookmark.community_article_id', backref='community_article_ref', lazy='dynamic', cascade="all, delete-orphan") # NEW
+    bookmarks = db.relationship('Bookmark', foreign_keys='Bookmark.community_article_id', backref='community_article_ref', lazy='dynamic', cascade="all, delete-orphan")
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -225,31 +280,31 @@ class Subscriber(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     subscribed_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
-# NEW Bookmark Model
 class Bookmark(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"), nullable=False)
     api_article_hash_id = db.Column(db.String(32), nullable=True, index=True)
     community_article_id = db.Column(db.Integer, db.ForeignKey('community_article.id', ondelete="CASCADE"), nullable=True)
     timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    # Ensure a user can only bookmark an article once
     __table_args__ = (
         db.UniqueConstraint('user_id', 'api_article_hash_id', name='_user_api_article_bookmark_uc'),
         db.UniqueConstraint('user_id', 'community_article_id', name='_user_community_article_bookmark_uc'),
         db.CheckConstraint(
             "(api_article_hash_id IS NOT NULL AND community_article_id IS NULL) OR "
             "(api_article_hash_id IS NULL AND community_article_id IS NOT NULL)",
-            name="chk_bookmark_type_exclusive" # Ensures one of the article foreign keys is set, but not both
+            name="chk_bookmark_type_exclusive"
         )
     )
 
-
 def init_db():
-    with app.app_context():
-        app.logger.info("Attempting to create/update database tables...")
-        # db.drop_all() # Use with caution during development if schema changes frequently
-        db.create_all()
-        app.logger.info("Database tables should be ready.")
+    with app.app_context(): # Ensures operations are within Flask app context
+        app.logger.info(f"INIT_DB: Attempting to create/update database tables for URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+        try:
+            db.create_all()
+            app.logger.info("INIT_DB: Database tables creation process completed.")
+        except Exception as e:
+            app.logger.error(f"INIT_DB: Error during db.create_all(): {type(e).__name__} - {e}", exc_info=True)
+
 
 # ==============================================================================
 # --- 5. Helper Functions ---
@@ -260,8 +315,9 @@ INDIAN_TIMEZONE = pytz.timezone('Asia/Kolkata')
 def generate_article_id(url_or_title): return hashlib.md5(url_or_title.encode('utf-8')).hexdigest()
 
 def jinja_truncate_filter(s, length=120, killwords=False, end='...'):
-    if not s: return ''
+    if not s: return '' # Handle None or empty string input
     if len(s) <= length: return s
+    # ... (rest of truncate logic)
     if killwords: return s[:length - len(end)] + end
     words = s.split()
     result_words = []
@@ -270,11 +326,12 @@ def jinja_truncate_filter(s, length=120, killwords=False, end='...'):
         if current_length + len(word) + (1 if result_words else 0) > length - len(end): break
         result_words.append(word)
         current_length += len(word) + (1 if len(result_words) > 1 else 0)
-    if not result_words: return s[:length - len(end)] + end
+    if not result_words: return s[:length - len(end)] + end # Handle case where first word is too long
     return ' '.join(result_words) + end
 app.jinja_env.filters['truncate'] = jinja_truncate_filter
 
 def to_ist_filter(utc_dt):
+    # ... (existing to_ist_filter logic) ...
     if not utc_dt: return "N/A"
     if isinstance(utc_dt, str):
         try: utc_dt = datetime.fromisoformat(utc_dt.replace('Z', '+00:00'))
@@ -285,15 +342,15 @@ def to_ist_filter(utc_dt):
     return ist_dt.strftime('%b %d, %Y at %I:%M %p %Z')
 app.jinja_env.filters['to_ist'] = to_ist_filter
 
-def json_loads_safe(s): # NEW Jinja filter for parsing JSON in templates
+def json_loads_safe(s):
     try:
         return json.loads(s) if s else []
     except json.JSONDecodeError:
         return []
 app.jinja_env.filters['json_loads_safe'] = json_loads_safe
 
-
 def simple_cache(expiry_seconds_default=None):
+    # ... (existing simple_cache logic) ...
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -311,7 +368,9 @@ def simple_cache(expiry_seconds_default=None):
         return wrapper
     return decorator
 
+
 def login_required(f):
+    # ... (existing login_required logic) ...
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
@@ -320,86 +379,105 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-@simple_cache(expiry_seconds_default=3600 * 12) # Cache Groq responses for 12 hours
+# --- Groq Helper (with added logging) ---
+@simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
-    if not groq_client: return {"error": "AI analysis service not available."}
-    if not article_text or not article_text.strip(): return {"error": "No text provided for AI analysis."}
-    app.logger.info(f"Requesting Groq analysis for: {article_title[:50]}...")
+    if not groq_client:
+        app.logger.warning("GROQ_ANALYSIS: Groq client not initialized. Analysis skipped.")
+        return {"error": "AI analysis service not available."}
+    if not article_text or not article_text.strip():
+        app.logger.warning(f"GROQ_ANALYSIS: No text provided for AI analysis. Title: {article_title[:50]}")
+        return {"error": "No text provided for AI analysis."}
+    
+    app.logger.info(f"GROQ_ANALYSIS: Requesting for title: {article_title[:50]}...")
     system_prompt = (
         "You are an expert news analyst. Analyze the following article. "
         "1. Provide a concise, neutral summary (3-4 paragraphs). "
         "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
-        "3. Provide 3-5 relevant keywords or tags for this article as a list of strings. " # NEW requirement for tags
+        "3. Provide 3-5 relevant keywords or tags for this article as a list of strings. "
         "Format your entire response as a single JSON object with keys 'summary' (string), 'takeaways' (a list of strings), and 'tags' (a list of strings)."
     )
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}" # Max length for Groq
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
+    
     try:
         json_model = groq_client.bind(response_format={"type": "json_object"})
         ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+        app.logger.info(f"GROQ_ANALYSIS: Received response from Groq for title: {article_title[:50]}. Content length: {len(ai_response.content)}")
         analysis = json.loads(ai_response.content)
-        if 'summary' in analysis and 'takeaways' in analysis and 'tags' in analysis: # Check for tags
+        
+        if 'summary' in analysis and 'takeaways' in analysis and 'tags' in analysis:
+            app.logger.info(f"GROQ_ANALYSIS: Successfully parsed analysis for title: {article_title[:50]}")
             return {
                 "groq_summary": analysis.get("summary"),
                 "groq_takeaways": analysis.get("takeaways"),
-                "tags": analysis.get("tags"), # Return tags
+                "tags": analysis.get("tags"),
                 "error": None
             }
         missing_keys = [key for key in ['summary', 'takeaways', 'tags'] if key not in analysis]
+        app.logger.error(f"GROQ_ANALYSIS: Missing keys in Groq JSON for '{article_title[:50]}': {', '.join(missing_keys)}")
         raise ValueError(f"Missing keys in Groq JSON: {', '.join(missing_keys)}")
     except (json.JSONDecodeError, ValueError, LangChainException) as e:
-        app.logger.error(f"Groq analysis failed for '{article_title[:50]}': {e}")
+        app.logger.error(f"GROQ_ANALYSIS: Failed for '{article_title[:50]}'. Error: {type(e).__name__} - {e}")
         return {"error": f"AI analysis failed: {str(e)}"}
     except Exception as e:
-        app.logger.error(f"Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
+        app.logger.error(f"GROQ_ANALYSIS: Unexpected error for '{article_title[:50]}'. Error: {type(e).__name__} - {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
 
+
 # ==============================================================================
-# --- Celery Tasks ---
+# --- Celery Tasks (with enhanced logging and retry) ---
 # ==============================================================================
-@celery.task(name='Rev14.analyze_community_article_content_task', bind=True)
+@celery.task(name='Rev14.analyze_community_article_content_task', bind=True, max_retries=3, default_retry_delay=60) # Added default_retry_delay
 def analyze_community_article_content_task(self, article_id, article_text, article_title):
-    app.logger.info(f"Celery task started: analyze_community_article_content_task for article_id {article_id}")
+    app.logger.info(f"CELERY_TASK_START: analyze_community_article_content_task for article_id {article_id}, title: '{article_title[:30]}...', attempt {self.request.retries + 1} of {self.max_retries}")
     try:
-        # No need to import db, CommunityArticle if ContextTask is working correctly and app_context is pushed.
-        # However, explicit imports inside task can be safer depending on Celery setup.
-        # from Rev14 import db, CommunityArticle, get_article_analysis_with_groq # Potentially needed
-        
-        analysis_result = get_article_analysis_with_groq(article_text, article_title) # This function is defined above
-        
+        analysis_result = get_article_analysis_with_groq(article_text, article_title)
+        # Log a snippet of the result to avoid overly verbose logs
+        log_analysis_result = {k: (str(v)[:100] + '...' if isinstance(v, (str, list, dict)) and len(str(v)) > 100 else v) for k, v in (analysis_result or {}).items()}
+        app.logger.info(f"CELERY_TASK_GROQ_RESULT for article_id {article_id}: {log_analysis_result}")
+
         article = CommunityArticle.query.get(article_id)
         if article:
             if analysis_result and not analysis_result.get("error"):
                 article.groq_summary = analysis_result.get('groq_summary')
                 takeaways = analysis_result.get('groq_takeaways')
-                if takeaways and isinstance(takeaways, list):
-                    article.groq_takeaways = json.dumps(takeaways)
-                
+                article.groq_takeaways = json.dumps(takeaways if takeaways and isinstance(takeaways, list) else [])
                 tags = analysis_result.get('tags')
-                if tags and isinstance(tags, list):
-                    article.tags = json.dumps(tags) # Store tags as JSON string
-                else:
-                    article.tags = json.dumps([]) # Ensure it's a JSON list even if empty/error
-
+                article.tags = json.dumps(tags if tags and isinstance(tags, list) else []) # Ensure tags is always json list
+                
+                app.logger.info(f"CELERY_TASK_DB_UPDATE_ATTEMPT for article_id {article_id}")
                 db.session.commit()
-                app.logger.info(f"Celery task: Successfully updated Groq analysis and tags for article {article_id}")
+                app.logger.info(f"CELERY_TASK_DB_UPDATE_SUCCESS for article_id {article_id}")
                 return {"status": "success", "article_id": article_id, "summary_present": bool(article.groq_summary), "tags_present": bool(article.tags)}
             else:
                 error_msg = analysis_result.get('error') if analysis_result else 'No result from Groq'
-                app.logger.error(f"Celery task: Groq analysis failed for article {article_id}: {error_msg}")
-                return {"status": "error", "article_id": article_id, "error": error_msg}
+                app.logger.error(f"CELERY_TASK_GROQ_ANALYSIS_FAILED for article {article_id}: {error_msg}")
+                # Do not retry for application-level errors from Groq unless they are transient (e.g. rate limit)
+                # For now, we don't automatically retry these specific errors from Groq.
+                return {"status": "error_groq_analysis", "article_id": article_id, "error": error_msg}
         else:
-            app.logger.error(f"Celery task: CommunityArticle with id {article_id} not found.")
-            return {"status": "error", "article_id": article_id, "error": "Article not found in DB"}
+            app.logger.error(f"CELERY_TASK_ARTICLE_NOT_FOUND for article_id {article_id}.")
+            # No point retrying if article is not found
+            return {"status": "error_article_not_found", "article_id": article_id, "error": "Article not found in DB"}
     except Exception as e:
-        app.logger.error(f"Celery task unhandled exception for article_id {article_id}: {e}", exc_info=True)
-        # self.retry(exc=e, countdown=60) # Optional: retry task after 1 minute
-        return {"status": "exception", "article_id": article_id, "error": str(e)}
+        app.logger.error(f"CELERY_TASK_UNHANDLED_EXCEPTION for article_id {article_id}: {type(e).__name__} - {e}", exc_info=True)
+        try:
+            # Retry for generic exceptions (e.g., network issues, temporary Groq unavailability if not caught above)
+            countdown_value = self.default_retry_delay * (2 ** self.request.retries) 
+            app.logger.info(f"CELERY_TASK_RETRYING for article_id {article_id}, countdown {countdown_value}s")
+            raise self.retry(exc=e, countdown=countdown_value)
+        except self.MaxRetriesExceededError:
+            app.logger.error(f"CELERY_TASK_MAX_RETRIES_EXCEEDED for article_id {article_id} after {self.request.retries} retries. Final error: {type(e).__name__} - {e}")
+            return {"status": "exception_max_retries", "article_id": article_id, "error": str(e)}
+    finally: # Ensure this logs regardless of success or failure
+        app.logger.info(f"CELERY_TASK_END: analyze_community_article_content_task for article_id {article_id}")
 
 # ==============================================================================
 # --- NEWS FETCHING ---
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api():
+    # ... (existing fetch_news_from_api logic - ensure it's robust) ...
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
@@ -411,6 +489,7 @@ def fetch_news_from_api():
 
     all_raw_articles = []
     try:
+        # ... (top_headlines call) ...
         app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
         top_headlines_response = newsapi.get_top_headlines(
             country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE']
@@ -420,11 +499,12 @@ def fetch_news_from_api():
         app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
         if status == 'ok' and total_results > 0: all_raw_articles.extend(top_headlines_response['articles'])
         elif status == 'error': app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
-    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Top-Headlines): {e}", exc_info=True)
+    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Top-Headlines): {e}", exc_info=False) # exc_info=False for less verbose logs on common API errors
     except Exception as e: app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
 
 
     try:
+        # ... (everything call) ...
         app.logger.info(f"Attempt 2: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_str} to {to_date_str}")
         everything_response = newsapi.get_everything(
             q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
@@ -435,12 +515,12 @@ def fetch_news_from_api():
         app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
         if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
         elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
-    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Everything): {e}", exc_info=True)
+    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Everything): {e}", exc_info=False)
     except Exception as e: app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
-
 
     if not all_raw_articles:
         try:
+            # ... (fallback call) ...
             app.logger.warning("No articles from primary calls. Trying Fallback with domains.")
             domains_to_check = app.config['NEWS_API_DOMAINS']
             app.logger.info(f"Attempt 3 (Fallback): Fetching from domains: {domains_to_check} from {from_date_str} to {to_date_str}")
@@ -453,25 +533,29 @@ def fetch_news_from_api():
             app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
             if status == 'ok' and total_results > 0: all_raw_articles.extend(fallback_response['articles'])
             elif status == 'error': app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
-        except NewsAPIException as e: app.logger.error(f"NewsAPIException (Fallback): {e}", exc_info=True)
+        except NewsAPIException as e: app.logger.error(f"NewsAPIException (Fallback): {e}", exc_info=False)
         except Exception as e: app.logger.error(f"Generic Exception (Fallback): {e}", exc_info=True)
-
+            
     processed_articles, unique_urls = [], set()
+    # ... (rest of article processing and MASTER_ARTICLE_STORE update) ...
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
     for art_data in all_raw_articles:
         url = art_data.get('url')
         if not url or url in unique_urls: continue
         title = art_data.get('title')
-        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip(): continue
+        # Ensure essential fields are present and title is not "[Removed]"
+        if not all([title, art_data.get('source'), art_data.get('description')]) or title == '[Removed]' or not title.strip(): 
+            app.logger.debug(f"Skipping article with missing data or '[Removed]' title: {title[:50]}")
+            continue
         unique_urls.add(url)
         article_id = generate_article_id(url)
         source_name = art_data['source'].get('name', 'Unknown Source')
-        placeholder_text = urllib.parse.quote_plus(source_name[:20])
+        placeholder_text = urllib.parse.quote_plus(source_name[:20]) if source_name else "News"
         standardized_article = {
             'id': article_id, 'title': title, 'description': art_data.get('description', ''),
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
             'publishedAt': art_data.get('publishedAt'), 'source': {'name': source_name}, 'is_community_article': False,
-            'article_hash_id': article_id # For consistency with community article field name in templates/JS
+            'article_hash_id': article_id 
         }
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
@@ -480,26 +564,36 @@ def fetch_news_from_api():
     app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
     return processed_articles
 
-@simple_cache(expiry_seconds_default=3600 * 6)
+
+@simple_cache(expiry_seconds_default=3600 * 6) # Cache for 6 hours
 def fetch_and_parse_article_content(article_hash_id, url):
-    app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
-    if not SCRAPER_API_KEY: return {"error": "Content fetching service unavailable."}
+    app.logger.info(f"FETCH_PARSE_CONTENT: Attempting for article_hash_id: {article_hash_id}, URL: {url}")
+    if not SCRAPER_API_KEY:
+        app.logger.warning("FETCH_PARSE_CONTENT: SCRAPER_API_KEY missing. Cannot fetch article content.")
+        return {"error": "Content fetching service unavailable."}
+    
     params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
-        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
-        response.raise_for_status()
+        response = requests.get('http://api.scraperapi.com', params=params, timeout=45) # Increased timeout
+        response.raise_for_status() # Raises HTTPError for bad responses (4XX or 5XX)
+        
         config = Config()
         config.fetch_images = False
-        config.memoize_articles = False
+        config.memoize_articles = False # Avoid newspaper's own caching if we manage it externally
         article_scraper = Article(url, config=config)
         article_scraper.download(input_html=response.text)
         article_scraper.parse()
-        if not article_scraper.text: return {"error": "Could not extract text from the article."}
+
+        if not article_scraper.text or not article_scraper.text.strip():
+            app.logger.warning(f"FETCH_PARSE_CONTENT: Could not extract text from article at {url}")
+            return {"error": "Could not extract text from the article."}
+            
         article_title = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
-        
-        # For API articles, we only need summary and takeaways. Tags are for community articles.
-        # If you want tags for API articles too, modify Groq call or its processing here.
+        app.logger.info(f"FETCH_PARSE_CONTENT: Calling get_article_analysis_with_groq for '{article_title[:50]}'")
         groq_analysis_result = get_article_analysis_with_groq(article_scraper.text, article_title)
+        
+        log_groq_result = {k: (str(v)[:100] + '...' if isinstance(v, (str, list, dict)) and len(str(v)) > 100 else v) for k, v in (groq_analysis_result or {}).items()}
+        app.logger.info(f"FETCH_PARSE_CONTENT: Groq analysis result for '{article_title[:50]}': {log_groq_result}")
         
         return_data = {"full_text": article_scraper.text, "groq_analysis": None, "error": None}
 
@@ -507,20 +601,24 @@ def fetch_and_parse_article_content(article_hash_id, url):
             return_data["groq_analysis"] = {
                 "groq_summary": groq_analysis_result.get("groq_summary"),
                 "groq_takeaways": groq_analysis_result.get("groq_takeaways")
-                # Not including 'tags' for API articles from this function by default
             }
-        elif groq_analysis_result: # There was an error in analysis
+        elif groq_analysis_result and groq_analysis_result.get("error"):
              return_data["error"] = groq_analysis_result.get("error")
+             app.logger.warning(f"FETCH_PARSE_CONTENT: Groq analysis returned an error for {url}: {return_data['error']}")
         else: # No analysis result at all
-            return_data["error"] = "AI analysis unavailable."
+            return_data["error"] = "AI analysis unavailable or failed without specific error."
+            app.logger.warning(f"FETCH_PARSE_CONTENT: AI analysis unavailable/failed for {url}")
             
         return return_data
 
+    except requests.exceptions.Timeout:
+        app.logger.error(f"FETCH_PARSE_CONTENT: Timeout when fetching article content via proxy for {url}")
+        return {"error": f"Timeout fetching article content."}
     except requests.exceptions.RequestException as e:
-        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
-        return {"error": f"Failed to fetch article content via proxy: {str(e)}"}
+        app.logger.error(f"FETCH_PARSE_CONTENT: Failed to fetch article content via proxy for {url}: {type(e).__name__} - {e}")
+        return {"error": f"Failed to fetch article content: {str(e)}"}
     except Exception as e:
-        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
+        app.logger.error(f"FETCH_PARSE_CONTENT: Failed to parse article content for {url}: {type(e).__name__} - {e}", exc_info=True)
         return {"error": f"Failed to parse article content: {str(e)}"}
 
 # ==============================================================================
@@ -528,16 +626,18 @@ def fetch_and_parse_article_content(article_hash_id, url):
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
+    # ... (existing inject_global_vars logic) ...
     user_is_logged_in = 'user_id' in session
     return {
         'categories': app.config['CATEGORIES'], 
         'current_year': datetime.utcnow().year, 
         'session': session, 
         'request': request,
-        'user_is_logged_in': user_is_logged_in # Add this for convenience in templates
+        'user_is_logged_in': user_is_logged_in
     }
 
 def get_paginated_articles(articles, page, per_page):
+    # ... (existing get_paginated_articles logic) ...
     total = len(articles)
     start = (page - 1) * per_page
     end = start + per_page
@@ -546,8 +646,8 @@ def get_paginated_articles(articles, page, per_page):
     return paginated_items, total_pages
 
 def get_sort_key(article):
+    # ... (existing get_sort_key logic) ...
     date_val = None
-    # For sorting bookmarks page by bookmarked_at if available
     if isinstance(article, dict) and 'bookmarked_at' in article:
         date_val = article.get('bookmarked_at')
     elif hasattr(article, 'bookmarked_at') and article.bookmarked_at:
@@ -559,7 +659,7 @@ def get_sort_key(article):
     if isinstance(date_val, str):
         try: return datetime.fromisoformat(date_val.replace('Z', '+00:00'))
         except ValueError:
-            app.logger.warning(f"Could not parse date string: {date_val}")
+            app.logger.warning(f"Could not parse date string for sorting: {date_val}")
             return datetime.min.replace(tzinfo=timezone.utc)
     if isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
@@ -569,9 +669,11 @@ def get_sort_key(article):
 @app.route('/category/<category_name>')
 @app.route('/category/<category_name>/page/<int:page>')
 def index(page=1, category_name='All Articles'):
-    session['previous_list_page'] = request.full_path # Save for back button on article detail
+    # ... (existing index route logic) ...
+    session['previous_list_page'] = request.full_path
     per_page = app.config['PER_PAGE']
-    all_display_articles = []
+    all_display_articles_source = [] # This will hold items before pagination if needed for combined lists
+    total_pages = 0
 
     if category_name == 'Community Hub':
         db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc())
@@ -579,29 +681,28 @@ def index(page=1, category_name='All Articles'):
         
         for art in db_articles_paginated.items:
             art.is_community_article = True
-            all_display_articles.append(art)
+            all_display_articles_source.append(art)
         total_pages = db_articles_paginated.pages
-    else: # All Articles or any other (future) NewsAPI-based category
-        api_articles = fetch_news_from_api() # This is cached
-        for art_dict in api_articles:
-            art_dict_copy = art_dict.copy() # Avoid modifying MASTER_ARTICLE_STORE items directly
+        # The list is already paginated
+        current_page_articles = all_display_articles_source
+    else: # All Articles
+        api_articles_list = fetch_news_from_api()
+        for art_dict in api_articles_list:
+            art_dict_copy = art_dict.copy()
             art_dict_copy['is_community_article'] = False
-            all_display_articles.append(art_dict_copy)
-        # Manual pagination for combined list if other sources were merged here.
-        # For now, only API articles are in 'All Articles'
-        all_display_articles.sort(key=get_sort_key, reverse=True)
-        paginated_articles_list, total_pages = get_paginated_articles(all_display_articles, page, per_page)
-        all_display_articles = paginated_articles_list # Replace with paginated list
+            all_display_articles_source.append(art_dict_copy)
+        
+        all_display_articles_source.sort(key=get_sort_key, reverse=True)
+        current_page_articles, total_pages = get_paginated_articles(all_display_articles_source, page, per_page)
 
-
-    # featured_article_on_this_page logic might need adjustment if pagination source changes
-    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and all_display_articles)
+    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and current_page_articles)
     
-    return render_template("INDEX_HTML_TEMPLATE", articles=all_display_articles, selected_category=category_name, current_page=page, total_pages=total_pages, featured_article_on_this_page=featured_article_on_this_page)
+    return render_template("INDEX_HTML_TEMPLATE", articles=current_page_articles, selected_category=category_name, current_page=page, total_pages=total_pages, featured_article_on_this_page=featured_article_on_this_page)
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
+    # ... (existing search_results logic) ...
     session['previous_list_page'] = request.full_path
     query_str = request.args.get('query', '').strip()
     per_page = app.config['PER_PAGE']
@@ -609,7 +710,6 @@ def search_results(page=1):
     app.logger.info(f"Search query: '{query_str}'")
     
     api_results = []
-    # Search MASTER_ARTICLE_STORE (cached API articles)
     for art_id, art_data in MASTER_ARTICLE_STORE.items():
         if query_str.lower() in art_data.get('title', '').lower() or \
            query_str.lower() in art_data.get('description', '').lower():
@@ -617,17 +717,16 @@ def search_results(page=1):
             art_copy['is_community_article'] = False
             api_results.append(art_copy)
 
-    # Search Community Articles
     community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
         db.or_(
             CommunityArticle.title.ilike(f'%{query_str}%'), 
             CommunityArticle.description.ilike(f'%{query_str}%'),
-            CommunityArticle.full_text.ilike(f'%{query_str}%'), # Search full text
-            CommunityArticle.tags.ilike(f'%"{query_str}"%') # Search in JSON tags string
+            CommunityArticle.full_text.ilike(f'%{query_str}%'), 
+            CommunityArticle.tags.ilike(f'%"{query_str}"%') # Basic JSON string search
         )
     )
     community_db_articles = []
-    for art in community_db_articles_query.all(): # Fetch all then sort/paginate
+    for art in community_db_articles_query.all():
         art.is_community_article = True
         community_db_articles.append(art)
     
@@ -638,78 +737,79 @@ def search_results(page=1):
     
     return render_template("INDEX_HTML_TEMPLATE", articles=paginated_search_articles, selected_category=f"Search: {query_str}", current_page=page, total_pages=total_pages, featured_article_on_this_page=False, query=query_str)
 
-
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
+    # ... (existing article_detail logic with is_bookmarked) ...
     article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
     previous_list_page = session.get('previous_list_page', url_for('index'))
-    is_bookmarked = False # NEW
+    is_bookmarked = False
 
     article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
 
     if article_db:
         article_data = article_db
         is_community_article = True
-        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
-        except json.JSONDecodeError:
-            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
-            article_data.parsed_takeaways = []
-        try: article_data.parsed_tags = json.loads(article_data.tags) if article_data.tags else [] # NEW: Parse tags
-        except json.JSONDecodeError:
-            app.logger.error(f"JSONDecodeError for tags on community article {article_data.article_hash_id}")
-            article_data.parsed_tags = []
+        # Parsing for takeaways and tags is done in template with json_loads_safe filter
         
         all_article_comments_list = Comment.query.options(
             joinedload(Comment.author), 
             joinedload(Comment.replies).options(joinedload(Comment.author))
         ).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
-        if 'user_id' in session: # Check bookmark status
+        if 'user_id' in session:
             is_bookmarked = Bookmark.query.filter_by(user_id=session['user_id'], community_article_id=article_db.id).first() is not None
     else:
         article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
         if article_api_dict:
             article_data = article_api_dict.copy()
             is_community_article = False
-            # Add article_hash_id for consistency if not present (it should be from fetch_news_from_api)
             article_data.setdefault('article_hash_id', article_hash_id)
 
             all_article_comments_list = Comment.query.options(
                 joinedload(Comment.author),
                 joinedload(Comment.replies).options(joinedload(Comment.author))
             ).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
-            if 'user_id' in session: # Check bookmark status
+            if 'user_id' in session:
                 is_bookmarked = Bookmark.query.filter_by(user_id=session['user_id'], api_article_hash_id=article_hash_id).first() is not None
+            
+            # For API articles, check if Groq analysis is already in MASTER_ARTICLE_STORE or needs fetching
+            if 'groq_analysis' not in article_data or article_data.get('groq_analysis') is None:
+                 article_data['groq_analysis_pending'] = True # Flag for template to show loader or fetch client-side
+            elif article_data.get('groq_analysis') and article_data['groq_analysis'].get("error"):
+                 article_data['groq_analysis_error'] = article_data['groq_analysis'].get("error")
+
         else:
             flash("Article not found.", "danger"); return redirect(previous_list_page)
 
     comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
-    
+    # ... (comment data processing)
     if all_article_comments_list:
-        comment_ids = [c.id for c in all_article_comments_list for c_reply in [c] + (c.replies or [])] # Get all comment IDs including replies
-        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
+        comment_ids_flat = []
+        for c_top in all_article_comments_list:
+            comment_ids_flat.append(c_top.id)
+            if c_top.replies: # Check if replies is not None (it's a list from selectin)
+                for r in c_top.replies:
+                    comment_ids_flat.append(r.id)
+        
+        for c_id in comment_ids_flat: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
         
         vote_counts_query = db.session.query(
             CommentVote.comment_id,
             func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'),
             func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')
-        ).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
+        ).filter(CommentVote.comment_id.in_(comment_ids_flat)).group_by(CommentVote.comment_id).all()
         for c_id, likes, dislikes in vote_counts_query:
-            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
+            if c_id in comment_data: 
+                comment_data[c_id]['likes'] = likes
+                comment_data[c_id]['dislikes'] = dislikes
         
         if 'user_id' in session:
-            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
+            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids_flat), CommentVote.user_id == session['user_id']).all()
             for vote in user_votes:
-                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
-
-    # Ensure consistent 'is_community_article' attribute for the template
+                if vote.comment_id in comment_data: 
+                    comment_data[vote.comment_id]['user_vote'] = vote.vote_type
+                    
     if isinstance(article_data, dict): article_data['is_community_article'] = False
     elif article_data: article_data.is_community_article = True
-    
-    # For API articles, check if Groq analysis is already in MASTER_ARTICLE_STORE
-    if not is_community_article and article_data and 'groq_analysis' not in article_data:
-        article_data['groq_analysis_pending'] = True # Flag for template to show loader or fetch
-    elif not is_community_article and article_data and article_data.get('groq_analysis') and article_data['groq_analysis'].get("error"):
-        article_data['groq_analysis_error'] = article_data['groq_analysis'].get("error")
 
 
     return render_template("ARTICLE_HTML_TEMPLATE", 
@@ -718,33 +818,50 @@ def article_detail(article_hash_id):
                            comments=comments_for_template, 
                            comment_data=comment_data, 
                            previous_list_page=previous_list_page,
-                           is_bookmarked=is_bookmarked) # Pass bookmark status
+                           is_bookmarked=is_bookmarked)
 
+# --- Route /get_article_content_json (with enhanced logging) ---
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
-    article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
-    if not article_data or 'url' not in article_data: return jsonify({"error": "Article data or URL not found"}), 404
-    
+    app.logger.info(f"ROUTE_GET_ARTICLE_CONTENT: Request for article_hash_id: {article_hash_id}")
+    article_data_from_master = MASTER_ARTICLE_STORE.get(article_hash_id)
+    if not article_data_from_master or 'url' not in article_data_from_master:
+        app.logger.warning(f"ROUTE_GET_ARTICLE_CONTENT: Article data or URL not found in MASTER_ARTICLE_STORE for {article_hash_id}")
+        return jsonify({"error": "Article data or URL not found"}), 404
+
     # Check if analysis is already cached in MASTER_ARTICLE_STORE
-    if 'groq_analysis' in article_data and article_data['groq_analysis'] is not None:
-        app.logger.info(f"Returning cached Groq analysis for API article ID: {article_hash_id}")
-        # Ensure the structure matches what fetch_and_parse_article_content would return for groq_analysis part
+    if 'groq_analysis' in article_data_from_master and article_data_from_master['groq_analysis'] is not None:
+        app.logger.info(f"ROUTE_GET_ARTICLE_CONTENT: Returning cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id}")
         return jsonify({
-            "groq_analysis": article_data['groq_analysis'], 
-            "error": article_data['groq_analysis'].get("error") if isinstance(article_data['groq_analysis'], dict) else None
+            "groq_analysis": article_data_from_master['groq_analysis'], 
+            "error": article_data_from_master['groq_analysis'].get("error") if isinstance(article_data_from_master['groq_analysis'], dict) else None
         })
         
-    processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url']) # This is cached
+    app.logger.info(f"ROUTE_GET_ARTICLE_CONTENT: No cached analysis in MASTER_ARTICLE_STORE, calling fetch_and_parse_article_content for {article_hash_id}, URL: {article_data_from_master.get('url')}")
+    processed_content = fetch_and_parse_article_content(article_hash_id, article_data_from_master['url']) # This function itself is cached
     
-    if processed_content and not processed_content.get("error"):
-        # Store only the 'groq_analysis' part in MASTER_ARTICLE_STORE to avoid storing full_text repeatedly
-        MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = processed_content.get('groq_analysis')
-        return jsonify({"groq_analysis": processed_content.get('groq_analysis'), "error": None})
-    elif processed_content: # Error occurred during processing
-        return jsonify({"groq_analysis": None, "error": processed_content.get("error")})
-    else: # Should not happen if fetch_and_parse_article_content always returns a dict
-        return jsonify({"groq_analysis": None, "error": "Unknown error processing article content."})
+    log_processed_content = {k: (str(v)[:100] + '...' if isinstance(v, (str, list, dict)) and len(str(v)) > 100 else v) for k, v in (processed_content or {}).items()}
+    app.logger.info(f"ROUTE_GET_ARTICLE_CONTENT: Result from fetch_and_parse_article_content for {article_hash_id}: {log_processed_content}")
 
+    if processed_content and not processed_content.get("error"):
+        # Store only the 'groq_analysis' part in MASTER_ARTICLE_STORE
+        MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = processed_content.get('groq_analysis')
+        app.logger.info(f"ROUTE_GET_ARTICLE_CONTENT: Stored new Groq analysis in MASTER_ARTICLE_STORE for {article_hash_id}")
+        return jsonify({"groq_analysis": processed_content.get('groq_analysis'), "error": None})
+    elif processed_content and processed_content.get("error"):
+        app.logger.warning(f"ROUTE_GET_ARTICLE_CONTENT: Error in processed_content for {article_hash_id}: {processed_content.get('error')}")
+        # Also store this error state in MASTER_ARTICLE_STORE to avoid re-fetching a known failure too soon
+        MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = {"error": processed_content.get("error")}
+        return jsonify({"groq_analysis": None, "error": processed_content.get("error")})
+    else: # Should ideally not happen if fetch_and_parse_article_content always returns a dict
+        app.logger.error(f"ROUTE_GET_ARTICLE_CONTENT: Unknown error, processed_content is None or malformed for {article_hash_id}")
+        MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = {"error": "Unknown processing error."}
+        return jsonify({"groq_analysis": None, "error": "Unknown error processing article content."}), 500
+
+# ... (rest of your routes: add_comment, vote_comment, post_article, user_profile, bookmark_article, bookmarks_page, auth routes, static pages, error handlers) ...
+# Ensure these routes are the same as the previous complete version you had.
+# For brevity, I'm not re-listing them here but assuming they are unchanged from the version before this debugging session.
+# Key routes that interact with new features or were part of the previous "complete" script:
 
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
@@ -753,7 +870,7 @@ def add_comment(article_hash_id):
     parent_id = request.json.get('parent_id') 
     if not content: return jsonify({"error": "Comment cannot be empty."}), 400
     
-    user = User.query.get(session['user_id']) # Already joined with author for eager loading
+    user = User.query.get(session['user_id'])
     if not user: 
         app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}")
         return jsonify({"error": "User not found."}), 401
@@ -769,8 +886,8 @@ def add_comment(article_hash_id):
         
     db.session.add(new_comment)
     db.session.commit()
-    # Author is already eager loaded via user.comments backref or direct query if needed
     author_name = new_comment.author.name if new_comment.author else "Anonymous"
+    author_username = new_comment.author.username if new_comment.author else None
     
     return jsonify({
         "success": True, 
@@ -778,9 +895,9 @@ def add_comment(article_hash_id):
             "id": new_comment.id, 
             "content": new_comment.content, 
             "timestamp": new_comment.timestamp.isoformat(), 
-            "author": {"name": author_name, "username": new_comment.author.username if new_comment.author else None}, # Add username for profile link
+            "author": {"name": author_name, "username": author_username},
             "parent_id": new_comment.parent_id,
-            "replies": [] # New comments won't have replies yet
+            "replies": [] 
         }
     }), 201
 
@@ -794,28 +911,23 @@ def vote_comment(comment_id):
     existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
     if existing_vote:
         if existing_vote.vote_type == vote_type: 
-            db.session.delete(existing_vote) # User is toggling off their vote
+            db.session.delete(existing_vote)
         else: 
-            existing_vote.vote_type = vote_type # User is changing their vote
+            existing_vote.vote_type = vote_type
     else: 
         db.session.add(CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type))
     
     try:
         db.session.commit()
-    except IntegrityError: # Should not happen with the above logic but as a safeguard
+    except IntegrityError:
         db.session.rollback()
         return jsonify({"success": False, "error": "Could not record vote due to a conflict."}), 409
 
     likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
     dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
-    
-    # Determine the user's current vote status after the transaction
-    current_user_vote = 0
-    final_vote_check = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
-    if final_vote_check:
-        current_user_vote = final_vote_check.vote_type
-
-    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": current_user_vote}), 200
+    current_user_vote_obj = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
+    user_vote = current_user_vote_obj.vote_type if current_user_vote_obj else 0
+    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": user_vote}), 200
 
 
 @app.route('/post_article', methods=['POST'])
@@ -831,59 +943,39 @@ def post_article():
         return redirect(request.referrer or url_for('index'))
 
     article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
-    
     new_article = CommunityArticle(
-        article_hash_id=article_hash_id, 
-        title=title, 
-        description=description, 
-        full_text=content, 
-        source_name=source_name, 
+        article_hash_id=article_hash_id, title=title, description=description, 
+        full_text=content, source_name=source_name, 
         image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}', 
-        user_id=session['user_id'], 
-        published_at=datetime.now(timezone.utc),
-        # AI fields will be populated by Celery task, initialize as None or empty JSON
-        groq_summary=None, 
-        groq_takeaways=json.dumps([]),
-        tags=json.dumps([]) 
+        user_id=session['user_id'], published_at=datetime.now(timezone.utc),
+        groq_summary=None, groq_takeaways=json.dumps([]), tags=json.dumps([]) 
     )
     db.session.add(new_article)
-    db.session.commit() # Commit to get the new_article.id
+    db.session.commit() 
 
-    # Offload AI analysis to Celery
-    # Ensure Celery is running and configured, otherwise this might run eagerly or fail
-    # if not app.config.get('CELERY_TASK_ALWAYS_EAGER'): # Only log if truly async
-    app.logger.info(f"Queuing Celery task for AI analysis of new community article ID: {new_article.id}")
-    
+    app.logger.info(f"POST_ARTICLE: Queuing Celery task for AI analysis of new community article ID: {new_article.id}, Title: {title[:30]}")
     analyze_community_article_content_task.delay(new_article.id, content, title)
     
     flash("Your article has been posted! AI analysis is in progress.", "success")
     return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
-# --- NEW User Profile Route ---
 @app.route('/profile/<username>')
 @app.route('/profile/<username>/page/<int:page>')
 def user_profile(username, page=1):
     profile_user = User.query.filter_by(username=username).first_or_404()
-    per_page = app.config['PER_PAGE'] - 3 # Show slightly fewer articles on profile
-
+    per_page = app.config['PER_PAGE'] - 3
     user_articles_query = CommunityArticle.query.filter_by(user_id=profile_user.id)\
                                              .order_by(CommunityArticle.published_at.desc())
-    
     user_articles_pagination = user_articles_query.paginate(page=page, per_page=per_page, error_out=False)
-    
     articles_for_template = []
     for art in user_articles_pagination.items:
-        art.is_community_article = True # Ensure flag is set
-        # No need to parse tags here if template uses json_loads_safe filter
+        art.is_community_article = True
         articles_for_template.append(art)
-
     return render_template("PROFILE_HTML_TEMPLATE", 
-                           profile_user=profile_user, 
-                           articles=articles_for_template, 
+                           profile_user=profile_user, articles=articles_for_template, 
                            pagination=user_articles_pagination,
                            selected_category=f"{profile_user.name}'s Profile")
 
-# --- NEW Bookmark Routes ---
 @app.route('/bookmark_article/<article_hash_id>', methods=['POST'])
 @login_required
 def bookmark_article(article_hash_id):
@@ -895,37 +987,29 @@ def bookmark_article(article_hash_id):
     if not is_api_article and not community_article_db:
         return jsonify({"success": False, "error": "Article not found"}), 404
 
-    existing_bookmark = None
     bookmark_args = {'user_id': session['user_id']}
     if is_api_article:
         bookmark_args['api_article_hash_id'] = article_hash_id
-    elif community_article_db : # Must be community article
+    elif community_article_db:
         bookmark_args['community_article_id'] = community_article_db.id
-    else: # Should not be reached if previous checks are correct
+    else:
          return jsonify({"success": False, "error": "Invalid article type for bookmarking"}), 400
 
-
     existing_bookmark = Bookmark.query.filter_by(**bookmark_args).first()
-
     if existing_bookmark:
         db.session.delete(existing_bookmark)
-        bookmarked_status = False
-        message = "Bookmark removed."
+        bookmarked_status = False; message = "Bookmark removed."
     else:
         new_bookmark = Bookmark(**bookmark_args)
         db.session.add(new_bookmark)
-        bookmarked_status = True
-        message = "Article bookmarked!"
-    
+        bookmarked_status = True; message = "Article bookmarked!"
     try:
         db.session.commit()
     except IntegrityError as e:
         db.session.rollback()
         app.logger.error(f"Bookmark integrity error for article {article_hash_id}, user {session['user_id']}: {e}")
-        return jsonify({"success": False, "error": "Could not update bookmark due to a conflict. Please try again."}), 409
-        
+        return jsonify({"success": False, "error": "Could not update bookmark due to a conflict."}), 409
     return jsonify({"success": True, "bookmarked": bookmarked_status, "message": message})
-
 
 @app.route('/bookmarks')
 @app.route('/bookmarks/page/<int:page>')
@@ -934,43 +1018,29 @@ def bookmarks_page(page=1):
     session['previous_list_page'] = request.full_path
     user_id = session['user_id']
     per_page = app.config['PER_PAGE']
-
-    # Fetch all bookmark entries for the user first
     all_user_bookmarks = Bookmark.query.filter_by(user_id=user_id).order_by(Bookmark.timestamp.desc()).all()
-
     bookmarked_articles_combined = []
     for bm in all_user_bookmarks:
         if bm.api_article_hash_id:
             article_data = MASTER_ARTICLE_STORE.get(bm.api_article_hash_id)
             if article_data:
-                art_copy = article_data.copy()
-                art_copy['is_community_article'] = False
-                art_copy['bookmarked_at'] = bm.timestamp
-                art_copy['article_hash_id'] = bm.api_article_hash_id # Ensure consistent key
+                art_copy = article_data.copy(); art_copy['is_community_article'] = False
+                art_copy['bookmarked_at'] = bm.timestamp; art_copy['article_hash_id'] = bm.api_article_hash_id
                 bookmarked_articles_combined.append(art_copy)
         elif bm.community_article_id:
-            # Eager load author when fetching community article for bookmark
             community_art = CommunityArticle.query.options(joinedload(CommunityArticle.author))\
                                               .filter_by(id=bm.community_article_id).first()
             if community_art:
-                community_art.is_community_article = True
-                community_art.bookmarked_at = bm.timestamp
-                # Tags parsing can be done here or in template with json_loads_safe
+                community_art.is_community_article = True; community_art.bookmarked_at = bm.timestamp
                 bookmarked_articles_combined.append(community_art)
-    
-    # Sort by bookmark timestamp (already done by query for initial list, but good if merging from multiple sources)
-    # bookmarked_articles_combined.sort(key=get_sort_key, reverse=True) # get_sort_key needs to handle bookmarked_at
-
     paginated_bookmarks, total_pages = get_paginated_articles(bookmarked_articles_combined, page, per_page)
-
     return render_template("BOOKMARKS_HTML_TEMPLATE", 
-                           articles=paginated_bookmarks, 
-                           current_page=page, 
-                           total_pages=total_pages, 
-                           selected_category="My Bookmarks")
+                           articles=paginated_bookmarks, current_page=page, 
+                           total_pages=total_pages, selected_category="My Bookmarks")
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    # ... (register logic from previous full code)
     if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
         name, username, password = request.form.get('name', '').strip(), request.form.get('username', '').strip().lower(), request.form.get('password', '')
@@ -983,33 +1053,28 @@ def register():
             db.session.add(new_user); db.session.commit()
             flash(f'Registration successful, {name}! Please log in.', 'success')
             return redirect(url_for('login'))
-        # Fall through to re-render register form with flashed messages
-        # No need for explicit redirect(url_for('register')) here if we just return the template render
     return render_template("REGISTER_HTML_TEMPLATE")
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # ... (login logic from previous full code)
     if 'user_id' in session: return redirect(url_for('index'))
     if request.method == 'POST':
         username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
             session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
-            session['user_username'] = user.username # Store username for profile links
+            session['user_username'] = user.username 
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
-            # session.pop('previous_list_page', None) # Keep previous_list_page for back button navigation
             return redirect(next_url or url_for('index'))
         else: flash('Invalid username or password.', 'danger')
     return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
 def logout(): 
-    session.clear()
-    flash("You have been successfully logged out.", "info")
-    return redirect(url_for('index'))
-
+    session.clear(); flash("You have been successfully logged out.", "info"); return redirect(url_for('index'))
 @app.route('/about')
 def about(): return render_template("ABOUT_US_HTML_TEMPLATE")
 @app.route('/contact')
@@ -1019,6 +1084,7 @@ def privacy(): return render_template("PRIVACY_POLICY_HTML_TEMPLATE")
 
 @app.route('/subscribe', methods=['POST'])
 def subscribe():
+    # ... (subscribe logic from previous full code)
     email = request.form.get('email', '').strip().lower()
     if not email: flash('Email is required to subscribe.', 'warning')
     elif Subscriber.query.filter_by(email=email).first(): flash('You are already subscribed.', 'info')
@@ -1027,7 +1093,7 @@ def subscribe():
             db.session.add(Subscriber(email=email))
             db.session.commit()
             flash('Thank you for subscribing!', 'success')
-        except IntegrityError: # Handles race conditions or other DB unique constraint violations
+        except IntegrityError: 
             db.session.rollback()
             flash('This email is already subscribed or an error occurred.', 'warning')
         except Exception as e: 
@@ -1036,15 +1102,14 @@ def subscribe():
             flash('Could not subscribe. Please try again.', 'danger')
     return redirect(request.referrer or url_for('index'))
 
+
 @app.errorhandler(404)
 def page_not_found(e): return render_template("404_TEMPLATE"), 404
 @app.errorhandler(500)
 def internal_server_error(e): 
-    db.session.rollback() # Ensure session is clean after an error
+    db.session.rollback() 
     app.logger.error(f"500 error at {request.url}: {e}", exc_info=True)
     return render_template("500_TEMPLATE"), 500
-
-# Rev14.py - CONTINUED
 
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
@@ -2451,31 +2516,19 @@ template_storage['PROFILE_HTML_TEMPLATE'] = PROFILE_HTML_TEMPLATE
 template_storage['404_TEMPLATE'] = ERROR_404_TEMPLATE
 template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 
+# --- Final block (ensure init_db is called correctly) ---
 # ==============================================================================
 # --- 9. App Context & Main Execution Block ---
 # ==============================================================================
-# IMPORTANT: Database Initialization for Render
-# This block ensures that init_db() (which calls db.create_all()) is executed
-# when the application module is imported by Gunicorn or any other WSGI server.
-# This is crucial for creating your database tables if they don't exist.
-
 with app.app_context():
-    app.logger.info("Application context pushed for module-level initialization.")
-    init_db() # This will attempt to create all defined tables.
+    app.logger.info("DB_INIT: Application context pushed for module-level database initialization.")
+    # TheSQLALCHEMY_DATABASE_URI should be configured before this by the logic above
+    app.logger.info(f"DB_INIT: Final SQLAlchemy URI before init_db: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+    init_db() 
 
 if __name__ == '__main__':
-    # init_db() is already called above when the module loads,
-    # so it's not strictly necessary to call it again here for __main__ execution.
-    # However, having it here for direct script execution doesn't harm if it's idempotent.
-    # with app.app_context():
-    #     init_db()
-
+    # init_db() is already called above.
     port = int(os.environ.get("PORT", 8080))
-    # When running locally with `python Rev14.py`, FLASK_DEBUG is more relevant.
-    # Gunicorn will typically manage debug mode through its own flags or environment variables.
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
-
-    app.logger.info(f"Starting Flask app directly (not via Gunicorn) in {'debug' if debug_mode else 'production-like'} mode on port {port}")
-    app.logger.info("For production on Render, Gunicorn is typically used as the WSGI server.")
-    app.logger.info("Ensure Celery worker is running separately for background tasks: celery -A Rev14.celery worker -l info")
+    app.logger.info(f"Starting Flask app directly in {'debug' if debug_mode else 'dev-production'} mode on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
