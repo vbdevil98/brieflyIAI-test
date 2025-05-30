@@ -132,7 +132,7 @@ GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 groq_client = None
 if GROQ_API_KEY:
     try:
-        groq_client = ChatGroq(model="llama3-70b-8192", groq_api_key=GROQ_API_KEY, temperature=0.1)
+        groq_client = ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=GROQ_API_KEY, temperature=0.1)
         app.logger.info("Groq client initialized.")
     except Exception as e:
         app.logger.error(f"Failed to initialize Groq client: {e}")
@@ -1110,7 +1110,7 @@ BASE_HTML_TEMPLATE = """
         .article-body { padding: 1.25rem; flex-grow: 1; display: flex; flex-direction: column; }
         .article-title { font-weight: 700; line-height: 1.35; margin-bottom: 0.6rem; font-size:1.1rem; }
         .article-title a { color: var(--primary-color); text-decoration: none; }
-        .article-card:hover .article-title a { color: var(--primary-color) !important; } /* Keep color on hover for light mode */
+        .article-card:hover .article-title a { color: var(--primary-color) !important; } 
         body.dark-mode .article-card .article-title a { color: var(--text-color) !important; }
         body.dark-mode .article-card:hover .article-title a { color: var(--secondary-color) !important; }
         .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
@@ -1183,13 +1183,13 @@ BASE_HTML_TEMPLATE = """
         .comment-author { font-weight: 600; color: var(--primary-color); }
         body.dark-mode .comment-author { color: var(--secondary-light); }
         .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
-        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; } /* Use pre-wrap for newlines */
+        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; } 
         .comment-actions { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
         .comment-actions button { background: none; border: none; padding: 0.2rem 0.4rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; transition: color 0.2s ease, background-color 0.2s ease; border-radius: 4px; }
         .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
         body.dark-mode .comment-actions button:hover { color: var(--secondary-light); background-color: rgba(var(--secondary-color-rgb),0.2); }
-        .comment-actions button.active.vote-up { color: var(--primary-color); } /* Specific class for upvote */
-        .comment-actions button.active.vote-down { color: var(--accent-color); } /* Specific class for downvote */
+        .comment-actions button.active.vote-up { color: var(--primary-color); } 
+        .comment-actions button.active.vote-down { color: var(--accent-color); } 
         body.dark-mode .comment-actions button.active.vote-up { color: var(--secondary-color); }
         body.dark-mode .comment-actions button.active.vote-down { color: var(--accent-color); }
         .comment-actions .vote-count { font-weight: 500; min-width: 12px; text-align: center;}
@@ -1201,7 +1201,7 @@ BASE_HTML_TEMPLATE = """
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            margin: 0 0.5rem 0 1rem; /* Adjust margin as needed */
+            margin: 0 0.5rem 0 1rem; 
         }
         .date-picker-input {
             background-color: #fff;
@@ -1211,7 +1211,7 @@ BASE_HTML_TEMPLATE = """
             padding: 0.4rem 0.8rem;
             font-size: 0.85rem;
             font-weight: 500;
-            max-width: 150px; /* Constrain width */
+            max-width: 150px; 
         }
         body.dark-mode .date-picker-input {
             background-color: #2C2C2C; color: var(--text-color); border-color: #444;
@@ -1221,34 +1221,34 @@ BASE_HTML_TEMPLATE = """
             font-size: 0.85rem;
             border-radius: 20px;
         }
-        @media (max-width: 991.98px) { /* Medium devices (tablets, less than 992px) */
-            body { padding-top: 180px; } /* Increased padding for taller fixed header */
+        @media (max-width: 991.98px) { 
+            body { padding-top: 180px; } 
             .navbar-main { padding-bottom: 0.5rem; height: auto;}
             .navbar-content-wrapper { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
             .navbar-brand-custom { margin-bottom: 0.5rem; }
             .search-form-container { width: 100%; order: 3; margin-top:0.5rem; padding: 0; }
             .header-controls { position: absolute; top: 0.9rem; right: 1rem; order: 2; }
-            .category-nav { top: 130px; } /* Adjusted for taller navbar */
+            .category-nav { top: 130px; } 
         }
-        @media (max-width: 767.98px) { /* Small devices (landscape phones, less than 768px) */
+        @media (max-width: 767.98px) { 
             body { padding-top: 170px; }
             .category-nav { top: 120px; }
             .featured-article .row { flex-direction: column; }
             .featured-image { margin-bottom: 1rem; height: 250px; }
-            .categories-wrapper { justify-content: flex-start; } /* Allow scrolling */
-            .date-picker-container { margin-left: 0.5rem; } /* Reduce left margin on small screens */
+            .categories-wrapper { justify-content: flex-start; } 
+            .date-picker-container { margin-left: 0.5rem; } 
         }
-        @media (max-width: 575.98px) { /* Extra small devices (portrait phones, less than 576px) */
+        @media (max-width: 575.98px) { 
             .navbar-brand-custom { font-size: 1.8rem;}
             .header-controls { gap: 0.3rem; }
             .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
             .dark-mode-toggle { font-size: 1rem; }
-            .article-title-main {font-size: 1.8rem;} /* Smaller main article title */
+            .article-title-main {font-size: 1.8rem;} 
         }
     </style>
     {% block head_extra %}{% endblock %}
 </head>
-<body class="{{ request.cookies.get('darkMode', 'disabled') }}">
+<body class="{{ request.cookies.get('darkMode', 'disabled') if request and request.cookies else 'disabled' }}">
     <div id="alert-placeholder">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -1271,7 +1271,7 @@ BASE_HTML_TEMPLATE = """
                 </a>
                 <div class="search-form-container">
                     <form action="{{ url_for('search_results') }}" method="GET" class="search-container animate-fade-in fade-in-delay-1">
-                        <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
+                        <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') if request and request.args else '' }}">
                         <i class="fas fa-search search-icon"></i>
                         <button type="submit" class="d-none">Search</button>
                     </form>
@@ -1286,7 +1286,7 @@ BASE_HTML_TEMPLATE = """
                         <i class="fas fa-sign-out-alt"></i> <span class="d-none d-sm-inline">Logout</span>
                     </a>
                     {% else %}
-                    <a href="{{ url_for('login', next=request.url) }}" class="header-btn" title="Login/Register">
+                    <a href="{{ url_for('login', next=(request.url if request else '')) }}" class="header-btn" title="Login/Register">
                         <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
                     </a>
                     {% endif %}
@@ -1298,18 +1298,31 @@ BASE_HTML_TEMPLATE = """
     <nav class="navbar navbar-expand-lg category-nav">
         <div class="container">
             <div class="categories-wrapper">
+                {% set _view_args = request.view_args if request and request.view_args is defined else {} %}
+                {% set _query_args_date = request.args.get('date') if request and request.args else none %}
+                {% set _current_category_from_view = _view_args.get('category_name') %}
+                {% set _current_date_from_view = _view_args.get('date_str') %}
+
                 {% for cat_item in categories %}
-                    <a href="{{ url_for('index', category_name=cat_item, date_str=selected_date if cat_item != 'Community Hub' and selected_date and request.view_args.get('date_str') else none) }}"
-                       class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                    {% set is_active_category = (selected_category is defined and selected_category == cat_item) or \
+                                                (_current_category_from_view is defined and _current_category_from_view == cat_item) or \
+                                                (selected_category is not defined and _current_category_from_view is none and cat_item == 'All Articles' and not (_current_date_from_view or _query_args_date) and not (request.args.get('query') if request and request.args else '')) %}
+                    {% set link_date_str = selected_date if cat_item != 'Community Hub' and selected_date and (_current_date_from_view or _query_args_date) else none %}
+                    <a href="{{ url_for('index', category_name=cat_item, date_str=link_date_str) }}"
+                       class="category-link {% if is_active_category %}active{% endif %}">
                         <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% else %}tag{% endif %} me-1 d-none d-sm-inline"></i>
                         {{ cat_item }}
                     </a>
                 {% endfor %}
-                {% if selected_category != 'Community Hub' %}
+                
+                {% set show_date_picker = (selected_category is defined and selected_category != 'Community Hub') or \
+                                          (_current_category_from_view is defined and _current_category_from_view != 'Community Hub') or \
+                                          (selected_category is not defined and _current_category_from_view is none) %}
+                {% if show_date_picker %}
                 <div class="date-picker-container">
                     <form id="dateFilterForm" class="d-flex align-items-center">
                         <label for="news_date" class="form-label me-2 mb-0 text-muted small d-none d-sm-inline">Date:</label>
-                        <input type="date" id="news_date" name="date" class="form-control form-control-sm date-picker-input" value="{{ selected_date }}">
+                        <input type="date" id="news_date" name="date" class="form-control form-control-sm date-picker-input" value="{{ selected_date if selected_date is defined else '' }}">
                         <button type="submit" class="btn btn-sm btn-secondary ms-2">Go</button>
                     </form>
                 </div>
@@ -1369,7 +1382,9 @@ BASE_HTML_TEMPLATE = """
                 <div class="footer-section">
                     <h5>Categories</h5>
                     <div class="footer-links">
-                        {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item) }}"><i class="fas fa-angle-right"></i> {{ cat_item }}</a>{% endfor %}
+                        {% if categories is defined %}
+                           {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item) }}"><i class="fas fa-angle-right"></i> {{ cat_item }}</a>{% endfor %}
+                        {% endif %}
                     </div>
                 </div>
                 <div class="footer-section">
@@ -1383,7 +1398,7 @@ BASE_HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
-            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
+            <div class="copyright">&copy; {{ current_year if current_year is defined else '' }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
         </div>
     </footer>
 
@@ -1396,17 +1411,17 @@ BASE_HTML_TEMPLATE = """
         function applyTheme(theme) {
             if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
             updateThemeIcon();
-            localStorage.setItem('darkMode', theme); // Use localStorage for persistence
-            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365*5) + ";SameSite=Lax"; // Cookie for server-side
+            localStorage.setItem('darkMode', theme); 
+            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365*5) + ";SameSite=Lax"; 
         }
         if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
 
         let storedTheme = localStorage.getItem('darkMode');
-        if (!storedTheme) { // Fallback to cookie if localStorage is empty (e.g. first visit or after clearing localStorage)
+        if (!storedTheme) { 
             const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
             if (cookieTheme) storedTheme = cookieTheme;
         }
-        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); } // Apply if found, else just set icon for default
+        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); } 
 
         const addArticleBtn = document.getElementById('addArticleBtn');
         const addArticleModal = document.getElementById('addArticleModal');
@@ -1414,7 +1429,7 @@ BASE_HTML_TEMPLATE = """
         const cancelArticleBtn = document.getElementById('cancelArticleBtn');
         if(addArticleBtn && addArticleModal) {
             addArticleBtn.addEventListener('click', () => { addArticleModal.style.display = 'flex'; body.style.overflow = 'hidden'; });
-            const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; document.getElementById('addArticleForm').reset(); };
+            const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; if(document.getElementById('addArticleForm')) {document.getElementById('addArticleForm').reset();} };
             if(closeModalBtn) closeModalBtn.addEventListener('click', closeModalFunction);
             if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
             addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
@@ -1427,23 +1442,33 @@ BASE_HTML_TEMPLATE = """
         if(dateFilterForm) {
             dateFilterForm.addEventListener('submit', function(e) {
                 e.preventDefault();
-                const selectedDate = document.getElementById('news_date').value;
-                if(selectedDate) {
-                    // Get current category from URL or default to 'All Articles'
+                const selectedDateInput = document.getElementById('news_date');
+                if (!selectedDateInput) return;
+                const selectedDateValue = selectedDateInput.value;
+
+                if(selectedDateValue) {
                     let currentPath = window.location.pathname;
-                    let pathSegments = currentPath.split('/').filter(Boolean); // remove empty strings
-                    let categoryName = 'All Articles'; // Default
+                    let pathSegments = currentPath.split('/').filter(Boolean); 
+                    let categoryName = 'All Articles'; 
+                    let existingDateIndex = -1;
 
                     if (pathSegments.includes('category')) {
                         let catIndex = pathSegments.indexOf('category');
                         if (catIndex + 1 < pathSegments.length) {
                             categoryName = decodeURIComponent(pathSegments[catIndex + 1]);
+                            if (pathSegments.length > catIndex + 2 && pathSegments[catIndex+2] === 'date') {
+                                existingDateIndex = catIndex + 3;
+                            }
                         }
+                    } else if (pathSegments.includes('date')) {
+                         existingDateIndex = pathSegments.indexOf('date') + 1;
                     }
-                    // Reconstruct URL to ensure it's one of the defined route patterns
-                    let newUrl = `/category/${encodeURIComponent(categoryName)}/date/${selectedDate}`;
-                    if (categoryName === 'All Articles' && !currentPath.includes('/category/')) {
-                        newUrl = `/date/${selectedDate}`;
+                    
+                    let newUrl = "";
+                    if (categoryName !== 'All Articles') {
+                        newUrl = `/category/${encodeURIComponent(categoryName)}/date/${selectedDateValue}`;
+                    } else {
+                        newUrl = `/date/${selectedDateValue}`;
                     }
                     window.location.href = newUrl;
                 }
