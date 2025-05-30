@@ -312,6 +312,8 @@ def get_article_analysis_with_groq(self, article_text, article_title=""):
 # ==============================================================================
 # --- NEWS FETCHING: MODIFIED FOR DAY-WISE FILTERING ---
 # ==============================================================================
+# Replace this function in your Rev14.py file
+
 @simple_cache()
 def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-MM-DD' in IST
     if not newsapi:
@@ -335,8 +337,9 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
             from_date_utc = day_start_ist.astimezone(pytz.utc)
             to_date_utc = day_end_ist.astimezone(pytz.utc)
 
-            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            # *** MODIFIED: Removed 'Z' from strftime format ***
+            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
             app.logger.info(f"Querying NewsAPI from UTC: {from_date_utc_api_str} to UTC: {to_date_utc_api_str}")
 
         else:
@@ -345,8 +348,9 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
             from_date_utc = datetime.now(timezone.utc) - timedelta(days=days_ago)
             to_date_utc = datetime.now(timezone.utc) # Current time UTC
             
-            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            # *** MODIFIED: Removed 'Z' from strftime format ***
+            from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+            to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
             app.logger.info(f"Fetching news for default period (last {days_ago} days). Querying NewsAPI from UTC: {from_date_utc_api_str} to UTC: {to_date_utc_api_str}")
 
     except (ValueError, TypeError) as e:
@@ -355,8 +359,9 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
         days_ago = app.config.get('NEWS_API_DAYS_AGO', 2)
         from_date_utc = datetime.now(timezone.utc) - timedelta(days=days_ago)
         to_date_utc = datetime.now(timezone.utc)
-        from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-        to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+        # *** MODIFIED: Removed 'Z' from strftime format ***
+        from_date_utc_api_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+        to_date_utc_api_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
 
 
     all_raw_articles = []
@@ -364,8 +369,8 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
         app.logger.info(f"Attempting to fetch 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_utc_api_str} to {to_date_utc_api_str}")
         everything_response = newsapi.get_everything(
             q=app.config['NEWS_API_QUERY'],
-            from_param=from_date_utc_api_str,
-            to=to_date_utc_api_str,
+            from_param=from_date_utc_api_str, # This will be 'YYYY-MM-DDTHH:MM:SS'
+            to=to_date_utc_api_str,           # This will be 'YYYY-MM-DDTHH:MM:SS'
             language='en',
             sort_by=app.config['NEWS_API_SORT_BY'],
             page_size=app.config['NEWS_API_PAGE_SIZE']
@@ -377,9 +382,13 @@ def fetch_news_from_api(target_date_str=None): # target_date_str is like 'YYYY-M
             all_raw_articles.extend(everything_response['articles'])
         elif status == 'error':
             app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
-    except NewsAPIException as e:
+    except NewsAPIException as e: # Catch specific NewsAPI client exceptions
         app.logger.error(f"NewsAPIException (Everything): {e}", exc_info=True)
-    except Exception as e:
+        # The exception 'e' itself often contains useful info like e.get_message() or e.get_code()
+        # For ValueError from stringify_date_param, it might not be a NewsAPIException but a direct ValueError
+    except ValueError as e: # Specifically catch the ValueError if it happens here
+        app.logger.error(f"ValueError during NewsAPI call setup (Everything): {e}", exc_info=True)
+    except Exception as e: # Catch any other exceptions
         app.logger.error(f"General Exception during NewsAPI call (Everything): {e}", exc_info=True)
 
 
