@@ -358,47 +358,72 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- MODIFIED: get_article_analysis_with_groq (Simplified Prompt) ---
+# In Rev14.py
+
+# Modify get_article_analysis_with_groq
 @simple_cache(expiry_seconds_default=3600 * 12)
 def get_article_analysis_with_groq(article_text, article_title=""):
+    app.logger.info(f"GROQ_DEBUG: ENTER get_article_analysis_with_groq for title: '{article_title[:70]}'")
     if not groq_client:
-        app.logger.warning("GROQ_ANALYSIS: Groq client not initialized. Analysis skipped.")
-        return {"error": "AI analysis service not available."}
+        app.logger.error("GROQ_DEBUG: Groq client is NOT INITIALIZED.")
+        return {"error": "AI analysis service not available (Groq client missing)."}
     if not article_text or not article_text.strip():
-        app.logger.warning(f"GROQ_ANALYSIS: No text provided for AI analysis. Title: {article_title[:50]}")
+        app.logger.error(f"GROQ_DEBUG: No text provided for AI analysis. Title: '{article_title[:70]}'")
         return {"error": "No text provided for AI analysis."}
-    
-    app.logger.info(f"GROQ_ANALYSIS: Requesting for title: {article_title[:50]} (Simplified Prompt)")
+
     system_prompt = (
         "You are an expert news analyst. Analyze the following article. "
         "1. Provide a concise, neutral summary (3-4 paragraphs). "
         "2. List 5-7 key takeaways as bullet points. Each takeaway must be a complete sentence. "
         "Format your entire response as a single JSON object with keys 'summary' (string) and 'takeaways' (a list of strings)."
     )
-    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:20000]}"
-    
+    human_prompt = f"Article Title: {article_title}\n\nArticle Text:\n{article_text[:18000]}" # Slightly reduced length for safety
+
     try:
+        app.logger.info(f"GROQ_DEBUG: Attempting to bind model for title: '{article_title[:70]}'")
         json_model = groq_client.bind(response_format={"type": "json_object"})
-        ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
-        app.logger.info(f"GROQ_ANALYSIS: Received response from Groq for title: {article_title[:50]}. Content length: {len(ai_response.content)}")
-        analysis = json.loads(ai_response.content)
+        app.logger.info(f"GROQ_DEBUG: Model bound. Invoking Groq for title: '{article_title[:70]}'")
         
-        if 'summary' in analysis and 'takeaways' in analysis:
-            app.logger.info(f"GROQ_ANALYSIS: Successfully parsed analysis for title: {article_title[:50]}")
+        # Add a timeout to the Groq call if possible, though langchain_groq might not expose it directly.
+        # This is a conceptual addition; actual implementation depends on langchain_groq capabilities.
+        # For now, we rely on Groq's default timeouts or potential HTTP client timeouts.
+        ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+        
+        app.logger.info(f"GROQ_DEBUG: Groq invoke COMPLETE for title: '{article_title[:70]}'. Response content length: {len(ai_response.content if ai_response and hasattr(ai_response, 'content') else 'N/A')}")
+
+        if not ai_response or not ai_response.content:
+            app.logger.error(f"GROQ_DEBUG: Empty response or no content from Groq for title: '{article_title[:70]}'")
+            return {"error": "Empty response from AI analysis service."}
+
+        app.logger.info(f"GROQ_DEBUG: Attempting to parse JSON for title: '{article_title[:70]}'. Content snippet: {ai_response.content[:200]}")
+        analysis = json.loads(ai_response.content)
+        app.logger.info(f"GROQ_DEBUG: JSON parsed successfully for title: '{article_title[:70]}'")
+
+        summary = analysis.get("summary")
+        takeaways = analysis.get("takeaways")
+
+        if isinstance(summary, str) and isinstance(takeaways, list):
+            app.logger.info(f"GROQ_DEBUG: SUCCESS - Valid summary and takeaways found for title: '{article_title[:70]}'")
             return {
-                "groq_summary": analysis.get("summary"),
-                "groq_takeaways": analysis.get("takeaways"),
+                "groq_summary": summary,
+                "groq_takeaways": takeaways,
                 "error": None
             }
-        missing_keys = [key for key in ['summary', 'takeaways'] if key not in analysis]
-        app.logger.error(f"GROQ_ANALYSIS: Missing keys in Groq JSON for '{article_title[:50]}': {', '.join(missing_keys)}")
-        raise ValueError(f"Missing keys in Groq JSON: {', '.join(missing_keys)}")
-    except (json.JSONDecodeError, ValueError, LangChainException) as e:
-        app.logger.error(f"GROQ_ANALYSIS: Failed for '{article_title[:50]}'. Error: {type(e).__name__} - {e}")
-        return {"error": f"AI analysis failed: {str(e)}"}
+        else:
+            app.logger.error(f"GROQ_DEBUG: ERROR - Missing 'summary' or 'takeaways', or incorrect type in Groq JSON for '{article_title[:70]}'. Summary type: {type(summary)}, Takeaways type: {type(takeaways)}")
+            return {"error": "AI analysis response missing key fields or has incorrect format."}
+
+    except json.JSONDecodeError as e:
+        app.logger.error(f"GROQ_DEBUG: JSONDecodeError for '{article_title[:70]}'. Error: {e}. Response: {ai_response.content[:500] if ai_response else 'No AI response'}", exc_info=True)
+        return {"error": f"AI analysis failed to return valid JSON: {e}"}
+    except LangChainException as e:
+        app.logger.error(f"GROQ_DEBUG: LangChainException for '{article_title[:70]}'. Error: {e}", exc_info=True)
+        return {"error": f"AI analysis LangChain error: {e}"}
     except Exception as e:
-        app.logger.error(f"GROQ_ANALYSIS: Unexpected error for '{article_title[:50]}'. Error: {type(e).__name__} - {e}", exc_info=True)
-        return {"error": "An unexpected error occurred during AI analysis."}
+        app.logger.error(f"GROQ_DEBUG: UNEXPECTED error during Groq call for '{article_title[:70]}'. Error: {type(e).__name__} - {e}", exc_info=True)
+        return {"error": f"An unexpected error occurred during AI analysis: {e}"}
+    finally:
+        app.logger.info(f"GROQ_DEBUG: EXIT get_article_analysis_with_groq for title: '{article_title[:70]}'")
 
 # ==============================================================================
 # --- Celery Tasks ---
@@ -769,32 +794,72 @@ def get_article_content_json(article_hash_id):
         MASTER_ARTICLE_STORE[article_hash_id]['groq_analysis'] = {"error": "Unknown processing error."}
         return jsonify({"groq_analysis": None, "error": "Unknown error processing article content."}), 500
 
+# In Rev14.py
+
+# Modify add_comment route
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
-    content = request.json.get('content', '').strip()
-    parent_id = request.json.get('parent_id') 
-    if not content: return jsonify({"error": "Comment cannot be empty."}), 400
-    user = User.query.get(session['user_id'])
-    if not user: 
-        app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}")
-        return jsonify({"error": "User not found."}), 401
-    new_comment = None
-    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
-    if community_article: 
-        new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
-    elif article_hash_id in MASTER_ARTICLE_STORE: 
-        new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
-    else: 
-        return jsonify({"error": "Article not found."}), 404
-    db.session.add(new_comment); db.session.commit()
-    author_name = new_comment.author.name if new_comment.author else "Anonymous"
-    author_username = new_comment.author.username if new_comment.author else None
-    return jsonify({
-        "success": True, "comment": {"id": new_comment.id, "content": new_comment.content, 
-        "timestamp": new_comment.timestamp.isoformat(), "author": {"name": author_name, "username": author_username},
-        "parent_id": new_comment.parent_id, "replies": [] }
-    }), 201
+    app.logger.info(f"ADD_COMMENT_DEBUG: Received request for article_hash_id: {article_hash_id}")
+    try:
+        data = request.get_json()
+        if not data:
+            app.logger.error("ADD_COMMENT_DEBUG: No JSON data received.")
+            return jsonify({"success": False, "error": "Invalid request. JSON data expected."}), 400
+
+        content = data.get('content', '').strip()
+        parent_id = data.get('parent_id') # Can be None
+        app.logger.info(f"ADD_COMMENT_DEBUG: Content: '{content[:50]}...', parent_id: {parent_id}")
+
+        if not content:
+            app.logger.warning("ADD_COMMENT_DEBUG: Comment content is empty.")
+            return jsonify({"success": False, "error": "Comment cannot be empty."}), 400
+        
+        user = User.query.get(session['user_id'])
+        if not user: 
+            app.logger.error(f"ADD_COMMENT_DEBUG: User not found for user_id {session.get('user_id')}")
+            return jsonify({"success": False, "error": "User not found."}), 401
+        
+        new_comment_instance = None
+        community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+        
+        if community_article:
+            app.logger.info(f"ADD_COMMENT_DEBUG: Commenting on CommunityArticle ID: {community_article.id}")
+            new_comment_instance = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
+        elif article_hash_id in MASTER_ARTICLE_STORE:
+            app.logger.info(f"ADD_COMMENT_DEBUG: Commenting on API Article hash: {article_hash_id}")
+            new_comment_instance = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
+        else: 
+            app.logger.warning(f"ADD_COMMENT_DEBUG: Article not found for hash_id: {article_hash_id}")
+            return jsonify({"success": False, "error": "Article not found."}), 404
+            
+        db.session.add(new_comment_instance)
+        db.session.commit()
+        app.logger.info(f"ADD_COMMENT_DEBUG: Comment ID {new_comment_instance.id} committed successfully.")
+
+        # Ensure author is loaded for the response
+        # db.session.refresh(new_comment_instance) # Not strictly necessary if relationships are set up correctly
+        # If new_comment_instance.author is None, it means the backref isn't working as expected post-commit or relationship needs explicit load.
+        # However, 'user' object (the current session user) is already available.
+
+        author_name = user.name # Use the already fetched user object
+        author_username = user.username
+
+        return jsonify({
+            "success": True, 
+            "comment": {
+                "id": new_comment_instance.id, 
+                "content": new_comment_instance.content, 
+                "timestamp": new_comment_instance.timestamp.isoformat(), 
+                "author": {"name": author_name, "username": author_username},
+                "parent_id": new_comment_instance.parent_id,
+                "replies": [] 
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"ADD_COMMENT_DEBUG: Exception in add_comment: {type(e).__name__} - {e}", exc_info=True)
+        return jsonify({"success": False, "error": "An internal error occurred while adding the comment."}), 500
 
 @app.route('/vote_comment/<int:comment_id>', methods=['POST'])
 @login_required
@@ -818,39 +883,45 @@ def vote_comment(comment_id):
     user_vote = current_user_vote_obj.vote_type if current_user_vote_obj else 0
     return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": user_vote}), 200
 
-# --- MODIFIED: post_article (Synchronous Groq Call for Debugging) ---
+# In Rev14.py
+
+# Modify post_article
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
-    title, description, content, source_name, image_url = map(
-        lambda x: request.form.get(x, '').strip(), 
-        ['title', 'description', 'content', 'sourceName', 'imageUrl']
-    )
-    source_name = source_name or 'Community Post'
+    # ... (form data retrieval and validation) ...
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    content = request.form.get('content', '').strip()
+    source_name = request.form.get('sourceName', 'Community Post').strip()
+    image_url = request.form.get('imageUrl', '').strip()
+
     if not all([title, description, content, source_name]):
         flash("Title, Description, Full Content, and Source Name are required.", "danger")
         return redirect(request.referrer or url_for('index'))
 
     article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
     
-    app.logger.info(f"POST_ARTICLE: Performing SYNCHRONOUS Groq analysis for new community article: {title[:30]}")
-    groq_analysis_result = get_article_analysis_with_groq(content, title)
-    
+    app.logger.info(f"POST_ARTICLE_DEBUG: Calling get_article_analysis_with_groq SYNCHRONOUSLY for new article: '{title[:70]}'")
+    groq_analysis_result = get_article_analysis_with_groq(content, title) # Synchronous call
+    app.logger.info(f"POST_ARTICLE_DEBUG: Result from sync Groq call for '{title[:70]}': {str(groq_analysis_result)[:200]}")
+
     groq_summary_text = None
-    groq_takeaways_json_str = json.dumps([])
+    groq_takeaways_json_str = json.dumps([]) # Default to empty JSON list
 
     if groq_analysis_result and not groq_analysis_result.get("error"):
-        app.logger.info(f"POST_ARTICLE: Synchronous Groq analysis SUCCESS for {title[:30]}")
         groq_summary_text = groq_analysis_result.get('groq_summary')
         takeaways_list = groq_analysis_result.get('groq_takeaways')
         if takeaways_list and isinstance(takeaways_list, list):
             groq_takeaways_json_str = json.dumps(takeaways_list)
-    elif groq_analysis_result and groq_analysis_result.get("error"):
-        app.logger.error(f"POST_ARTICLE: Synchronous Groq analysis FAILED for {title[:30]}. Error: {groq_analysis_result.get('error')}")
-        flash(f"Article posted, but AI analysis failed: {groq_analysis_result.get('error')}", "warning")
+        app.logger.info(f"POST_ARTICLE_DEBUG: Groq analysis successful for '{title[:70]}'. Summary: {'Present' if groq_summary_text else 'Missing'}")
+        flash("Your article has been posted and AI analysis completed!", "success")
     else:
-        app.logger.error(f"POST_ARTICLE: Synchronous Groq analysis FAILED (no result) for {title[:30]}.")
-        flash("Article posted, but AI analysis could not be performed at this time.", "warning")
+        error_message = "AI analysis could not be performed or returned an error."
+        if groq_analysis_result and groq_analysis_result.get("error"):
+            error_message = f"AI analysis failed: {groq_analysis_result.get('error')}"
+        app.logger.error(f"POST_ARTICLE_DEBUG: Groq analysis failed for '{title[:70]}'. Error: {error_message}")
+        flash(f"Article posted, but {error_message}", "warning")
 
     new_article = CommunityArticle(
         article_hash_id=article_hash_id, title=title, description=description, 
@@ -861,10 +932,16 @@ def post_article():
         groq_takeaways=groq_takeaways_json_str,
         tags=json.dumps([]) # Tags temporarily empty
     )
-    db.session.add(new_article)
-    db.session.commit()
-    
-    flash("Your article has been posted and analyzed!", "success")
+    try:
+        db.session.add(new_article)
+        db.session.commit()
+        app.logger.info(f"POST_ARTICLE_DEBUG: Successfully committed new community article '{title[:70]}' with hash {article_hash_id} to DB.")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"POST_ARTICLE_DEBUG: DB Error committing article '{title[:70]}': {e}", exc_info=True)
+        flash("Error saving article to database. Please try again.", "danger")
+        return redirect(request.referrer or url_for('index'))
+        
     return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
 # --- MODIFIED: user_profile route (added joinedload for author on CommunityArticle) ---
@@ -1647,10 +1724,9 @@ ARTICLE_HTML_TEMPLATE = """
         <span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span>
     </div>
 
-    {# Tags display (will be empty for now as AI generation of tags is simplified) #}
     {% if is_community_article and article.tags %}
         {% set parsed_tags = article.tags | json_loads_safe %}
-        {% if parsed_tags %}
+        {% if parsed_tags %} {# Only display if there are tags after parsing #}
         <div class="article-tags mb-3">
             <strong>Tags:</strong> 
             {% for tag in parsed_tags %}
@@ -1663,7 +1739,6 @@ ARTICLE_HTML_TEMPLATE = """
     {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
     {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
 
-    {# Loader for API articles if analysis is pending #}
     <div id="contentLoader" class="loader-container my-4 {% if is_community_article or (not is_community_article and (article.groq_analysis or article.groq_analysis_error)) %}d-none{% endif %}">
         <div class="loader"></div>
         <div>Analyzing article and generating summary...</div>
@@ -1671,7 +1746,6 @@ ARTICLE_HTML_TEMPLATE = """
     
     <div id="articleAnalysisContainer">
     {% if is_community_article %}
-        {# Community Article: Display summary/takeaways if available from synchronous call #}
         {% if article.groq_summary %}
             <div class="summary-box my-3"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
         {% elif not article.groq_summary and not (article.groq_takeaways | json_loads_safe) %}
@@ -1687,12 +1761,11 @@ ARTICLE_HTML_TEMPLATE = """
         <hr class="my-4">
         <h4 class="mb-3">Full Article Content</h4>
         <div class="content-text">{{ article.full_text }}</div>
-    {% else %} {# API Article: JS will populate this, or pre-rendered if cached in MASTER_ARTICLE_STORE #}
-        {% if article.groq_analysis_error %} {# Error from MASTER_ARTICLE_STORE cache #}
+    {% else %} {# API Article #}
+        {% if article.groq_analysis_error %}
              <div class="alert alert-warning small p-3 mt-3">Could not load full analysis: {{ article.groq_analysis_error }}</div>
         {% endif %}
         <div id="apiArticleContent">
-            {# Pre-render if analysis is already in article_data (from MASTER_ARTICLE_STORE) #}
             {% if article.groq_analysis and not article.groq_analysis.error %}
                 {% if article.groq_analysis.groq_summary %}
                 <div class="summary-box my-3"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_analysis.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
@@ -1795,23 +1868,41 @@ ARTICLE_HTML_TEMPLATE = """
 document.addEventListener('DOMContentLoaded', function () {
     {% if article %} 
     const isCommunityArticlePage = {{ is_community_article | tojson }};
-    const articleHashIdGlobalPage = {{ article.article_hash_id | tojson }};
+    const articleHashIdGlobalPage = {{ article.article_hash_id | tojson }}; // Used for API article fetch
+    const articleHashIdForComments = {{ article.article_hash_id | tojson }}; // Explicitly for comments
     const userIsLoggedInPage = {{ user_is_logged_in | tojson }};
 
-    function convertUTCToIST(utcIsoString) { /* ... */ } // Keep this helper
+    function convertUTCToIST(utcIsoString) {
+        if (!utcIsoString) return "N/A";
+        const date = new Date(utcIsoString);
+        return new Intl.DateTimeFormat('en-IN', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: 'numeric', minute: '2-digit', hour12: true,
+            timeZone: 'Asia/Kolkata', timeZoneName: 'short'
+        }).format(date);
+    }
 
     if (!isCommunityArticlePage && articleHashIdGlobalPage && document.getElementById('contentLoader')) {
         const contentLoaderEl = document.getElementById('contentLoader');
         const apiArticleContentEl = document.getElementById('apiArticleContent');
         
-        // Only fetch if content isn't already rendered by Jinja and loader is visible
         if (contentLoaderEl && getComputedStyle(contentLoaderEl).display !== 'none' && apiArticleContentEl && !apiArticleContentEl.innerHTML.trim()) {
+            console.log("ARTICLE_JS_DEBUG: Fetching API article content for", articleHashIdGlobalPage);
             fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobalPage))
             .then(response => {
-                if (!response.ok) { throw new Error('Network response error: ' + response.status + ' ' + response.statusText); }
+                console.log("ARTICLE_JS_DEBUG: API article fetch response status:", response.status);
+                if (!response.ok) { 
+                    return response.json().then(err => { // Try to get error from body
+                        console.error("ARTICLE_JS_DEBUG: API article fetch error response body:", err);
+                        throw new Error(err.error || `Network response error: ${response.status} ${response.statusText}`);
+                    }).catch(() => { // If parsing error body fails
+                        throw new Error(`Network response error: ${response.status} ${response.statusText}`);
+                    });
+                }
                 return response.json();
             })
             .then(data => {
+                console.log("ARTICLE_JS_DEBUG: API article fetch data:", data);
                 if(contentLoaderEl) contentLoaderEl.style.display = 'none';
                 if (!apiArticleContentEl) return;
 
@@ -1820,7 +1911,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
                 let html = '';
-                const analysis = data.groq_analysis; // This should now have summary and takeaways only
+                const analysis = data.groq_analysis;
                 if (analysis && analysis.groq_summary) {
                     html += `<div class="summary-box my-3"><h5><i class="fas fa-bookmark me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`;
                 }
@@ -1834,23 +1925,17 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .catch(error => {
                 if(contentLoaderEl) contentLoaderEl.innerHTML = '<div class="alert alert-danger">Failed to load article analysis. Check console for details. The source may be blocking requests or an unexpected error occurred.</div>';
-                console.error("Error fetching article content for API article:", error);
+                console.error("ARTICLE_JS_DEBUG: Error fetching API article content:", error);
             });
         } else if (contentLoaderEl) {
+             console.log("ARTICLE_JS_DEBUG: Loader hidden or content already present for API article.");
              contentLoaderEl.style.display = 'none'; 
         }
     }
 
     const commentSection = document.getElementById('comment-section');
-    // ... (Full comment handling JS: createCommentHTML, handleCommentSubmit, click listeners for votes/replies)
-    // This JS part should remain as it was in the previous full version.
-    // Ensure createCommentHTML uses author.username for profile links.
-    function createCommentHTML(comment, articleHashIdForJs) { /* ... */ }
-    function handleCommentSubmit(form, articleHashId, parentId = null) { /* ... */ }
-    if (commentSection) { /* ... event listeners ... */ }
 
-    // Example of how createCommentHTML should be (ensure it's complete from prior version):
-    function createCommentHTML(comment, articleHashIdForJs) {
+    function createCommentHTML(comment, articleHashIdForJsParam) { // Renamed param to avoid conflict
         const commentDate = convertUTCToIST(comment.timestamp);
         const authorName = comment.author && comment.author.name ? comment.author.name : 'Anonymous';
         const authorUsername = comment.author && comment.author.username ? comment.author.username : null;
@@ -1860,175 +1945,182 @@ document.addEventListener('DOMContentLoaded', function () {
             authorLinkHTML = `<a href="/profile/${authorUsername}">${authorName}</a>`;
         }
         let actionsHTML = '';
-        if (userIsLoggedInPage) { // Ensure this uses the correct variable from Jinja
-            actionsHTML = `
+        if (userIsLoggedInPage) {
+            actionsHTML = \`
             <div class="comment-actions">
-                <button class="vote-btn" data-comment-id="${comment.id}" data-vote-type="1" title="Like">
-                    <i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-${comment.id}">0</span>
+                <button class="vote-btn" data-comment-id="\${comment.id}" data-vote-type="1" title="Like">
+                    <i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-\${comment.id}">0</span>
                 </button>
-                <button class="vote-btn" data-comment-id="${comment.id}" data-vote-type="-1" title="Dislike">
-                    <i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-${comment.id}">0</span>
+                <button class="vote-btn" data-comment-id="\${comment.id}" data-vote-type="-1" title="Dislike">
+                    <i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-\${comment.id}">0</span>
                 </button>
-                <button class="reply-btn" data-comment-id="${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
+                <button class="reply-btn" data-comment-id="\${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
             </div>
-            <div class="reply-form-container" id="reply-form-container-${comment.id}">
+            <div class="reply-form-container" id="reply-form-container-\${comment.id}">
                 <form class="reply-form mt-2">
-                    <input type="hidden" name="article_hash_id" value="${articleHashIdForJs}">
-                    <input type="hidden" name="parent_id" value="${comment.id}">
+                    <input type="hidden" name="article_hash_id" value="\${articleHashIdForJsParam}">
+                    <input type="hidden" name="parent_id" value="\${comment.id}">
                     <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
                     <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
                     <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
                 </form>
-            </div>`;
+            </div>\`;
         }
         return \`
-        <div class="comment-container" id="comment-${comment.id}">
+        <div class="comment-container" id="comment-\${comment.id}">
             <div class="comment-card">
-                <div class="comment-avatar" title="${authorName}">${userInitial}</div>
+                <div class="comment-avatar" title="\${authorName}">\${userInitial}</div>
                 <div class="comment-body">
-                    <div class="comment-header"><span class="comment-author">${authorLinkHTML}</span><span class="comment-date">${commentDate}</span></div>
-                    <p class="comment-content mb-2">${comment.content}</p>
-                    ${actionsHTML}
+                    <div class="comment-header"><span class="comment-author">\${authorLinkHTML}</span><span class="comment-date">\${commentDate}</span></div>
+                    <p class="comment-content mb-2">\${comment.content}</p>
+                    \${actionsHTML}
                 </div>
             </div>
-            <div class="comment-replies" id="replies-of-${comment.id}"></div>
+            <div class="comment-replies" id="replies-of-\${comment.id}"></div>
         </div>\`;
     }
-    // ... (rest of the JS from previous full script for comment submission, voting, replies)
-    // Make sure the handleCommentSubmit and the event listeners for commentSection are complete.
-    // It's critical that this entire script block in ARTICLE_HTML_TEMPLATE is correct and complete.
-    // I'm providing the structure; the detailed implementation of these JS functions should be from the last fully working version.
-    // The main change here is ensuring the API article fetch correctly handles the simplified Groq response.
+    
+    function handleCommentSubmit(form, articleHashIdToSubmit, parentId = null) {
+        const contentElement = form.querySelector('textarea[name="content"]');
+        if (!contentElement) { console.error("DEBUG_COMMENT_JS: Content textarea not found in form", form); return; }
+        const content = contentElement.value;
+        console.log("DEBUG_COMMENT_JS: handleCommentSubmit called. Content:", content, "Article Hash:", articleHashIdToSubmit, "Parent ID:", parentId);
 
+        if (!content.trim()) {
+            alert("Comment cannot be empty.");
+            console.warn("DEBUG_COMMENT_JS: Comment content is empty.");
+            return;
+        }
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        const originalButtonText = submitButton.innerHTML;
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
+
+        console.log("DEBUG_COMMENT_JS: Sending fetch request to /add_comment/", articleHashIdToSubmit);
+        fetch(\`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}\`.replace('PLACEHOLDER', articleHashIdToSubmit), {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ content: content, parent_id: parentId })
+        })
+        .then(response => {
+            console.log("DEBUG_COMMENT_JS: Received response from /add_comment. Status:", response.status);
+            if (!response.ok) {
+                return response.json().then(errData => {
+                    console.error("DEBUG_COMMENT_JS: Server returned error response object:", errData);
+                    throw new Error(errData.error || \`Server error: \${response.status} \${response.statusText}\`);
+                }).catch(parseError => {
+                    console.error("DEBUG_COMMENT_JS: Server returned error, and failed to parse error JSON:", parseError);
+                    throw new Error(\`Server error: \${response.status} \${response.statusText}. Could not retrieve detailed error message.\`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("DEBUG_COMMENT_JS: Parsed JSON data from /add_comment:", data);
+            if (data.success && data.comment) {
+                const newCommentHTML = createCommentHTML(data.comment, articleHashIdToSubmit);
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = newCommentHTML.trim();
+                const newCommentNode = tempDiv.firstChild;
+
+                if (parentId) {
+                    const repliesContainer = document.getElementById(\`replies-of-\${parentId}\`);
+                    if (repliesContainer) repliesContainer.appendChild(newCommentNode);
+                    const replyFormContainer = form.closest('.reply-form-container');
+                    if (replyFormContainer) replyFormContainer.style.display = 'none';
+                } else {
+                    const list = document.getElementById('comments-list');
+                    const noCommentsMsg = document.getElementById('no-comments-msg');
+                    if (noCommentsMsg) noCommentsMsg.remove();
+                    if (list) list.appendChild(newCommentNode);
+                    const countEl = document.getElementById('comment-count');
+                    if (countEl) countEl.textContent = parseInt(countEl.textContent) + 1;
+                }
+                form.reset();
+                console.log("DEBUG_COMMENT_JS: Comment successfully added to DOM.");
+            } else {
+                throw new Error(data.error || 'Unknown error posting comment (server success false or no comment data).');
+            }
+        })
+        .catch(err => {
+            console.error("DEBUG_COMMENT_JS: Error during comment submission fetch/processing:", err);
+            alert("Could not submit comment: " + err.message);
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalButtonText;
+            console.log("DEBUG_COMMENT_JS: handleCommentSubmit finished.");
+        });
+    }
+    
     const mainCommentForm = document.getElementById('comment-form');
-    if (mainCommentForm) { /* ... submit listener ... */ }
-    if (commentSection) { /* ... click listener for votes, replies, cancel ... */ }
-    // Full JS for comment submission, voting, and replies should be here from prior complete version.
-    // Example for mainCommentForm listener:
     if (mainCommentForm) {
         mainCommentForm.addEventListener('submit', function(e) {
             e.preventDefault();
+            console.log("DEBUG_COMMENT_JS: Main comment form submitted.");
             const articleHashIdFromForm = this.querySelector('input[name="article_hash_id"]').value;
+            if (!articleHashIdFromForm) {
+                console.error("DEBUG_COMMENT_JS: article_hash_id not found in main comment form!");
+                alert("Error: Could not identify article for comment.");
+                return;
+            }
             handleCommentSubmit(this, articleHashIdFromForm);
         });
+    } else {
+        console.warn("DEBUG_COMMENT_JS: Main comment form (id='comment-form') not found.");
     }
-    // Example for commentSection listener:
+
     if (commentSection) {
-        commentSection.addEventListener('click', function(e) { /* ... logic for voteBtn, replyBtn, cancelReplyBtn ... */ });
-        commentSection.addEventListener('submit', function(e) { /* ... logic for replyForm ... */ });
-    }
-    // You need to ensure the FULL JS logic for comments from the prior complete version is here.
-
-    // Re-pasting the full comment JS logic for clarity as it's complex
-    if (commentSection) {
-        // Function to handle comment/reply submission
-        function handleCommentSubmit(form, articleHashId, parentId = null) {
-            const contentElement = form.querySelector('textarea[name="content"]');
-            if (!contentElement) { console.error("Content textarea not found in form"); return; }
-            const content = contentElement.value;
-            if (!content.trim()) { alert("Comment cannot be empty."); return; }
-
-            const submitButton = form.querySelector('button[type="submit"]');
-            const originalButtonText = submitButton.innerHTML;
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
-
-            fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify({ content: content, parent_id: parentId })
-            })
-            .then(res => {
-                if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); }
-                return res.json();
-            })
-            .then(data => {
-                if (data.success && data.comment) {
-                    const newCommentHTML = createCommentHTML(data.comment, articleHashId); // createCommentHTML needs to be defined
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = newCommentHTML.trim();
-                    const newCommentNode = tempDiv.firstChild;
-
-                    if (parentId) {
-                        const repliesContainer = document.getElementById(`replies-of-${parentId}`);
-                        if (repliesContainer) repliesContainer.appendChild(newCommentNode);
-                        const replyFormContainer = form.closest('.reply-form-container');
-                        if (replyFormContainer) replyFormContainer.style.display = 'none';
-                    } else {
-                        const list = document.getElementById('comments-list');
-                        const noCommentsMsg = document.getElementById('no-comments-msg');
-                        if (noCommentsMsg) noCommentsMsg.remove();
-                        if (list) list.appendChild(newCommentNode);
-                        const countEl = document.getElementById('comment-count');
-                        if (countEl) countEl.textContent = parseInt(countEl.textContent) + 1;
-                    }
-                    form.reset();
-                } else { throw new Error(data.error || 'Unknown error posting comment.'); }
-            })
-            .catch(err => {
-                console.error("Comment submission error:", err);
-                alert("Could not submit comment: " + err.message);
-            })
-            .finally(() => {
-                submitButton.disabled = false;
-                submitButton.innerHTML = originalButtonText;
-            });
-        }
-        
-        // Event listener for main comment form
-        const mainCommentForm = document.getElementById('comment-form');
-        if (mainCommentForm) {
-            mainCommentForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const articleHashIdFromForm = this.querySelector('input[name="article_hash_id"]').value;
-                handleCommentSubmit(this, articleHashIdFromForm);
-            });
-        }
-
-        // Event delegation for clicks within the comment section (votes, replies)
         commentSection.addEventListener('click', function(e) {
             const voteBtn = e.target.closest('.vote-btn');
             const replyBtn = e.target.closest('.reply-btn');
             const cancelReplyBtn = e.target.closest('.cancel-reply-btn');
 
             if (voteBtn && userIsLoggedInPage) {
+                console.log("DEBUG_COMMENT_JS: Vote button clicked.");
                 const commentId = voteBtn.dataset.commentId;
                 const voteType = parseInt(voteBtn.dataset.voteType);
-                fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                fetch(\`{{ url_for('vote_comment', comment_id=0) }}\`.replace('0', commentId), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ vote_type: voteType })
                 })
                 .then(res => {
-                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); });}
+                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || \`HTTP error! status: \${res.status}\`);});}
                     return res.json();
                 })
                 .then(data => {
                     if(data.success) {
-                        document.getElementById(`likes-count-${commentId}`).textContent = data.likes;
-                        document.getElementById(`dislikes-count-${commentId}`).textContent = data.dislikes;
-                        const currentLikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`);
-                        const currentDislikeBtn = document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`);
+                        document.getElementById(\`likes-count-\${commentId}\`).textContent = data.likes;
+                        document.getElementById(\`dislikes-count-\${commentId}\`).textContent = data.dislikes;
+                        const currentLikeBtn = document.querySelector(\`.vote-btn[data-comment-id="\${commentId}"][data-vote-type="1"]\`);
+                        const currentDislikeBtn = document.querySelector(\`.vote-btn[data-comment-id="\${commentId}"][data-vote-type="-1"]\`);
                         if (currentLikeBtn) currentLikeBtn.classList.remove('user-liked');
                         if (currentDislikeBtn) currentDislikeBtn.classList.remove('user-disliked');
                         if (data.user_vote === 1 && currentLikeBtn) currentLikeBtn.classList.add('user-liked');
                         else if (data.user_vote === -1 && currentDislikeBtn) currentDislikeBtn.classList.add('user-disliked');
                     } else { throw new Error(data.error || 'Error voting.'); }
-                }).catch(err => { console.error("Vote error:", err); alert("Could not process vote: " + err.message); });
+                }).catch(err => { console.error("DEBUG_COMMENT_JS: Vote error:", err); alert("Could not process vote: " + err.message); });
             }
 
             if (replyBtn && userIsLoggedInPage) {
+                console.log("DEBUG_COMMENT_JS: Reply button clicked.");
                 const commentId = replyBtn.dataset.commentId;
-                const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                const formContainer = document.getElementById(\`reply-form-container-\${commentId}\`);
                 if (formContainer) {
                     const isDisplayed = formContainer.style.display === 'block';
-                    document.querySelectorAll('.reply-form-container').forEach(fc => { fc.style.display = 'none'; }); // Close others
+                    document.querySelectorAll('.reply-form-container').forEach(fc => { fc.style.display = 'none'; });
                     formContainer.style.display = isDisplayed ? 'none' : 'block';
                     if(formContainer.style.display === 'block') formContainer.querySelector('textarea').focus();
                 }
             }
 
             if (cancelReplyBtn) {
+                console.log("DEBUG_COMMENT_JS: Cancel reply button clicked.");
                 const formContainer = cancelReplyBtn.closest('.reply-form-container');
                 if (formContainer) {
                     formContainer.style.display = 'none';
@@ -2038,19 +2130,25 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
-        // Event delegation for submitting reply forms
         commentSection.addEventListener('submit', function(e) {
             const replyForm = e.target.closest('.reply-form');
             if (replyForm) {
                 e.preventDefault();
+                console.log("DEBUG_COMMENT_JS: Reply form submitted via delegation.");
                 const articleHashIdFromForm = replyForm.querySelector('input[name="article_hash_id"]').value;
                 const parentId = replyForm.querySelector('input[name="parent_id"]').value;
+                 if (!articleHashIdFromForm) {
+                    console.error("DEBUG_COMMENT_JS: article_hash_id not found in reply form!");
+                    alert("Error: Could not identify article for reply.");
+                    return;
+                }
                 handleCommentSubmit(replyForm, articleHashIdFromForm, parentId);
             }
         });
-    } // end if (commentSection)
-
-    {% endif %} // end if (article)
+    } else {
+        console.warn("DEBUG_COMMENT_JS: Comment section (id='comment-section') not found for event delegation.");
+    }
+    {% endif %}
 });
 </script>
 {% endblock %}
