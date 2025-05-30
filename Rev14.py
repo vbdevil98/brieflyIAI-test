@@ -1,6 +1,4 @@
-# Rev14.py - MODIFIED FOR MORE ROBUST AND DIAGNOSTIC NEWS FETCHING, NEW COMMENT FEATURES,
-# BOOKMARKING, USER PROFILES, AI TAGS, CELERY BACKGROUND TASKS,
-# AND ENHANCED LOGGING FOR DEPLOYMENT DEBUGGING
+# Rev14.py - CORRECTED INITIALIZATION ORDER
 
 #!/usr/bin/env python
 # coding: utf-8
@@ -20,7 +18,7 @@ import nltk
 import requests
 from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, case, create_engine as sqlalchemy_create_engine # Renamed to avoid conflict
+from sqlalchemy import func, case, create_engine as sqlalchemy_create_engine
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
 from jinja2 import DictLoader
@@ -78,14 +76,11 @@ app.config['CACHE_EXPIRY_SECONDS'] = 3600 # 1 hour
 app.permanent_session_lifetime = timedelta(days=30)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
-app.logger.setLevel(logging.INFO) # Ensure Flask's logger is also set to INFO
+app.logger.setLevel(logging.INFO)
 
-# Initialize db after app is created, but before Celery and DB URI setup if they depend on app.config indirectly
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+# --- **MOVED UP: Data Persistence Configuration (Set URI BEFORE SQLAlchemy init)** ---
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # Basic SQLAlchemy config
 
-
-# --- Data Persistence (with enhanced logging and PostgreSQL connection test) ---
 database_url_env = os.environ.get('DATABASE_URL')
 app.logger.info(f"DATABASE_SETUP: DATABASE_URL from environment: '{database_url_env}'")
 
@@ -99,10 +94,10 @@ if database_url_env and (database_url_env.startswith("postgres://") or database_
     
     try:
         engine = sqlalchemy_create_engine(app.config['SQLALCHEMY_DATABASE_URI'], connect_args={'connect_timeout': 5})
-        with engine.connect() as connection:
+        with engine.connect() as connection: # Test connection
             app.logger.info("DATABASE_SETUP: Successfully created temporary engine and connected to PostgreSQL.")
     except Exception as e:
-        app.logger.error(f"DATABASE_SETUP: Failed to create engine or connect to PostgreSQL with URI {app.config['SQLALCHEMY_DATABASE_URI']}. Error: {type(e).__name__} - {e}")
+        app.logger.error(f"DATABASE_SETUP: Failed to create engine or connect to PostgreSQL with URI {app.config.get('SQLALCHEMY_DATABASE_URI', 'NOT SET')}. Error: {type(e).__name__} - {e}")
         app.logger.error("DATABASE_SETUP: Falling back to SQLite due to PostgreSQL connection issue.")
         db_file_name = 'app_data_fallback.db'
         project_root_for_db = os.path.dirname(os.path.abspath(__file__))
@@ -127,10 +122,14 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.logger.info(f"DATABASE_SETUP: DEFAULT: Using SQLite database at {db_path}")
 
+# --- **Initialize SQLAlchemy AFTER setting SQLALCHEMY_DATABASE_URI** ---
+db = SQLAlchemy(app)
 
 # ==============================================================================
-# --- Celery Configuration (with enhanced logging) ---
+# --- Celery Configuration ---
 # ==============================================================================
+# (Celery configuration 'make_celery' function and its call remains here, 
+#  as it depends on app.config which now includes SQLALCHEMY_DATABASE_URI)
 def make_celery(flask_app):
     broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
     result_backend_url = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
@@ -145,15 +144,12 @@ def make_celery(flask_app):
             flask_app.logger.info(f"make_celery: Successfully connected to Redis broker for Celery: {broker_url}")
         elif not broker_url:
             flask_app.logger.warning("make_celery: CELERY_BROKER_URL is not set. Background tasks may not work as expected if not always eager.")
-            # Force eager if no broker unless one is configured in app.config by Celery itself
             if not flask_app.config.get('CELERY_BROKER_URL') and not flask_app.config.get('broker_url'):
                  flask_app.config['CELERY_TASK_ALWAYS_EAGER'] = True
                  flask_app.config['CELERY_TASK_EAGER_PROPAGATES'] = True
                  broker_url = None 
                  result_backend_url = None
                  flask_app.logger.warning("make_celery: Forcing EAGER mode as no broker URL was found/set.")
-
-
     except (ImportError, RedisConnectionError, Exception) as e:
         flask_app.logger.error(f"CRITICAL: Could not connect to Redis broker at {broker_url}. Celery background tasks WILL NOT WORK ASYNCHRONOUSLY. Error: {type(e).__name__} - {e}")
         flask_app.logger.warning("EMERGENCY FALLBACK: Configuring Celery tasks to run EAGERLY in the web process. This is NOT recommended for production and may cause timeouts or slow responses.")
@@ -162,38 +158,29 @@ def make_celery(flask_app):
         broker_url = None 
         result_backend_url = None
 
-    # Update app.config with potentially modified broker/backend URLs before Celery object creation
-    # if they were set to None due to Redis connection failure and EAGER mode is on.
-    if broker_url is None:
+    if broker_url is None: # Ensure app.config reflects EAGER mode decisions for Celery init
         flask_app.config['CELERY_BROKER_URL'] = None
-        flask_app.config['broker_url'] = None # some celery versions might use this
+        flask_app.config['broker_url'] = None 
     if result_backend_url is None:
         flask_app.config['CELERY_RESULT_BACKEND'] = None
         flask_app.config['result_backend'] = None
 
-
-    celery_instance = Celery(
-        flask_app.import_name,
-        # Broker and backend are taken from flask_app.config by default if not passed here explicitly
-        # backend=result_backend_url, 
-        # broker=broker_url
-    )
-    celery_instance.conf.update(flask_app.config) # This should pick up CELERY_BROKER_URL etc.
+    celery_instance = Celery(flask_app.import_name) # Celery will pick up from app.config
+    celery_instance.conf.update(flask_app.config)
     
     class ContextTask(celery_instance.Task):
         def __call__(self, *args, **kwargs):
             with flask_app.app_context():
                 return self.run(*args, **kwargs)
     celery_instance.Task = ContextTask
-    # Log the final effective configuration Celery is using
+    
     effective_broker = celery_instance.conf.broker_url or flask_app.config.get('CELERY_BROKER_URL')
     effective_backend = celery_instance.conf.result_backend or flask_app.config.get('CELERY_RESULT_BACKEND')
     is_eager = celery_instance.conf.task_always_eager or flask_app.config.get('CELERY_TASK_ALWAYS_EAGER', False)
-
     flask_app.logger.info(f"make_celery: Final Celery Config - Effective Broker: {effective_broker}, Effective Backend: {effective_backend}, Always Eager: {is_eager}")
     return celery_instance
 
-# Set default Celery configurations in Flask app config
+# Default Celery configurations in Flask app config (can be overridden by make_celery logic)
 app.config.update(
     CELERY_BROKER_URL=os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
     CELERY_RESULT_BACKEND=os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0'),
