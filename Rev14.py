@@ -2446,32 +2446,36 @@ template_storage['REGISTER_HTML_TEMPLATE'] = REGISTER_HTML_TEMPLATE
 template_storage['ABOUT_US_HTML_TEMPLATE'] = ABOUT_US_HTML_TEMPLATE
 template_storage['CONTACT_HTML_TEMPLATE'] = CONTACT_HTML_TEMPLATE
 template_storage['PRIVACY_POLICY_HTML_TEMPLATE'] = PRIVACY_POLICY_HTML_TEMPLATE
-template_storage['BOOKMARKS_HTML_TEMPLATE'] = BOOKMARKS_HTML_TEMPLATE # NEW
-template_storage['PROFILE_HTML_TEMPLATE'] = PROFILE_HTML_TEMPLATE # NEW
+template_storage['BOOKMARKS_HTML_TEMPLATE'] = BOOKMARKS_HTML_TEMPLATE
+template_storage['PROFILE_HTML_TEMPLATE'] = PROFILE_HTML_TEMPLATE
 template_storage['404_TEMPLATE'] = ERROR_404_TEMPLATE
 template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 
 # ==============================================================================
 # --- 9. App Context & Main Execution Block ---
 # ==============================================================================
-# Initialize DB within app context if not already done or if running as script
-# This ensures tables are created before the app runs if they don't exist.
-# For production, migrations (e.g., Alembic) are recommended over create_all() on every start.
-if __name__ == '__main__': # Only run init_db() when executing this script directly for dev
-    with app.app_context():
-        init_db() # This will create tables defined in models if they don't exist
-    
+# IMPORTANT: Database Initialization for Render
+# This block ensures that init_db() (which calls db.create_all()) is executed
+# when the application module is imported by Gunicorn or any other WSGI server.
+# This is crucial for creating your database tables if they don't exist.
+
+with app.app_context():
+    app.logger.info("Application context pushed for module-level initialization.")
+    init_db() # This will attempt to create all defined tables.
+
+if __name__ == '__main__':
+    # init_db() is already called above when the module loads,
+    # so it's not strictly necessary to call it again here for __main__ execution.
+    # However, having it here for direct script execution doesn't harm if it's idempotent.
+    # with app.app_context():
+    #     init_db()
+
     port = int(os.environ.get("PORT", 8080))
-    # Use Gunicorn's debug for production-like environment, Flask's for pure dev
-    # For Gunicorn, set FLASK_DEBUG=0 or False in .env
-    # For Flask dev server, FLASK_DEBUG=1 or True
+    # When running locally with `python Rev14.py`, FLASK_DEBUG is more relevant.
+    # Gunicorn will typically manage debug mode through its own flags or environment variables.
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
-    
-    app.logger.info(f"Starting Flask app in {'debug' if debug_mode else 'production-like (via Flask dev server)'} mode on port {port}")
+
+    app.logger.info(f"Starting Flask app directly (not via Gunicorn) in {'debug' if debug_mode else 'production-like'} mode on port {port}")
+    app.logger.info("For production on Render, Gunicorn is typically used as the WSGI server.")
     app.logger.info("Ensure Celery worker is running separately for background tasks: celery -A Rev14.celery worker -l info")
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
-else: # If imported (e.g., by Gunicorn or Celery worker), init_db() can be called here too
-      # but it's often better to have a separate db migration/init script for prod.
-    # with app.app_context():
-    #    init_db() # Be cautious with this in a Gunicorn setup with multiple workers.
-    pass
