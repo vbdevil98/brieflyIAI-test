@@ -780,7 +780,7 @@ BASE_HTML_TEMPLATE = """
     <style>
         :root {
             --primary-color: #0A2342; --primary-light: #1E3A5E;
-            --secondary-color: #B8860B; --secondary-light: #D4A017; /* Yellowish */
+            --secondary-color: #B8860B; --secondary-light: #D4A017;
             --accent-color: #F07F2D; --text-color: #343a40;
             --text-muted-color: #6c757d; --light-bg: #F8F9FA;
             --white-bg: #FFFFFF; --card-border-color: #E0E0E0;
@@ -788,130 +788,367 @@ BASE_HTML_TEMPLATE = """
             --footer-link-hover: var(--secondary-color);
             --primary-gradient: linear-gradient(135deg, var(--primary-color), var(--primary-light));
             --primary-color-rgb: 10, 35, 66; --secondary-color-rgb: 184, 134, 11;
-            /* --bookmark-active-color: var(--accent-color); REMOVED as we use secondary-light now */
+            --bookmark-active-color: var(--accent-color);
         }
         body { padding-top: 145px; font-family: 'Roboto', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
-            --primary-color: #1E3A5E; --primary-light: #2A4B7C; --secondary-color: #D4A017; --secondary-light: #E7B400; /* Brighter Yellow for dark mode */ --accent-color: #FF983E; --text-color: #E9ECEF; --text-muted-color: #ADB5BD; --light-bg: #121212; --white-bg: #1E1E1E; --card-border-color: #333333; --footer-bg: #0A0A0A; --footer-text: rgba(255,255,255,0.7); --primary-color-rgb: 30, 58, 94; --secondary-color-rgb: 212, 160, 23;
-            /* --bookmark-active-color: var(--secondary-light); REMOVED */
+            --primary-color: #1E3A5E; --primary-light: #2A4B7C; --secondary-color: #D4A017; --secondary-light: #E7B400; --accent-color: #FF983E; --text-color: #E9ECEF; --text-muted-color: #ADB5BD; --light-bg: #121212; --white-bg: #1E1E1E; --card-border-color: #333333; --footer-bg: #0A0A0A; --footer-text: rgba(255,255,255,0.7); --primary-color-rgb: 30, 58, 94; --secondary-color-rgb: 212, 160, 23;
+            --bookmark-active-color: var(--secondary-light);
         }
-        /* ... (other existing styles in body.dark-mode) ... */
+        body.dark-mode .navbar-main { background: linear-gradient(135deg, #0A1A2F, #10233B); border-bottom: 1px solid #2A4B7C; }
+        body.dark-mode .category-nav { background: #1A1A1A; border-bottom: 1px solid #2A2A2A; }
+        body.dark-mode .category-link { color: var(--text-muted-color) !important; }
+        body.dark-mode .category-link.active { background: var(--primary-color) !important; color: var(--white-bg) !important; }
+        body.dark-mode .category-link:hover:not(.active) { background: #2C2C2C !important; color: var(--secondary-color) !important; }
+        body.dark-mode .article-card, body.dark-mode .featured-article, body.dark-mode .article-full-content-wrapper, body.dark-mode .auth-container, body.dark-mode .static-content-wrapper, body.dark-mode .profile-card { background-color: var(--white-bg); border-color: var(--card-border-color); }
+        body.dark-mode .article-title a, body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, body.dark-mode h4, body.dark-mode h5, body.dark-mode .auth-title, body.dark-mode .profile-card h2 { color: var(--text-color) !important; }
+        body.dark-mode .article-description, body.dark-mode .meta-item, body.dark-mode .content-text p, body.dark-mode .article-meta-detailed, body.dark-mode .comment-content, body.dark-mode .comment-date, body.dark-mode .profile-card p { color: var(--text-muted-color) !important; }
+        body.dark-mode .read-more { background: var(--secondary-color); color: #000 !important; }
+        body.dark-mode .read-more:hover { background: var(--secondary-light); }
+        body.dark-mode .btn-outline-primary { color: var(--secondary-color); border-color: var(--secondary-color); }
+        body.dark-mode .btn-outline-primary:hover { background: var(--secondary-color); color: #000; }
+        body.dark-mode .modal-content { background-color: var(--white-bg); color: var(--text-color); border-color: var(--card-border-color);}
+        body.dark-mode .modal-form-control { background-color: #2C2C2C; color: var(--text-color); border-color: #444; }
+        body.dark-mode .modal-form-control::placeholder { color: var(--text-muted-color); }
+        body.dark-mode .close-modal { color: var(--text-muted-color); }
+        body.dark-mode .close-modal:hover { background: #2C2C2C; color: var(--text-color); }
+        body.dark-mode .page-link { background-color: var(--white-bg); border-color: var(--card-border-color); color: var(--secondary-color); }
+        body.dark-mode .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: var(--white-bg); }
+        body.dark-mode .page-item.disabled .page-link { background-color: var(--white-bg); color: var(--text-muted-color); }
+        body.dark-mode .page-link:hover:not(.active) { background-color: #2C2C2C; }
+        body.dark-mode .summary-box { background-color: rgba(var(--secondary-color-rgb), 0.05); border-color: rgba(var(--secondary-color-rgb), 0.2); }
+        body.dark-mode .summary-box h5 { color: var(--secondary-light); }
+        body.dark-mode .takeaways-box { background-color: rgba(var(--secondary-color-rgb), 0.05); border-left-color: var(--secondary-light); }
+        body.dark-mode .takeaways-box h5 { color: var(--secondary-light); }
+        body.dark-mode .content-text a {color: var(--secondary-light);}
+        body.dark-mode .content-text a:hover {color: var(--accent-color);}
+        body.dark-mode .loader { border-top-color: var(--secondary-color); }
+        .navbar-main { background: var(--primary-gradient); padding: 0.8rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-bottom: 2px solid rgba(255,255,255,0.15); transition: background 0.3s ease, border-bottom 0.3s ease; height: 95px; display: flex; align-items: center; }
+        .navbar-brand-custom { color: white !important; font-weight: 800; font-size: 2.2rem; letter-spacing: 0.5px; font-family: 'Poppins', sans-serif; margin-bottom: 0; display: flex; align-items: center; gap: 12px; text-decoration: none !important; }
+        .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.5rem; }
+        .navbar-brand-custom:hover { text-decoration: none !important; }
+        .search-form-container { flex-grow: 1; display: flex; justify-content: center; padding: 0 1rem; }
+        .search-container { position: relative; width: 100%; max-width: 550px; }
+        .navbar-search { border-radius: 25px; padding: 0.7rem 1.25rem 0.7rem 2.8rem; border: 1px solid rgba(255,255,255,0.2); font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.1); color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .navbar-search::placeholder { color: rgba(255,255,255,0.6); }
+        .navbar-search:focus { background: rgba(255,255,255,0.2); box-shadow: 0 0 0 3px rgba(var(--secondary-color-rgb),0.3); border-color: var(--secondary-color); outline: none; color:white; }
+        .search-icon { color: rgba(255,255,255,0.7); transition: all 0.3s ease; left: 1rem; position: absolute; top: 50%; transform: translateY(-50%); }
+        .navbar-search:focus + .search-icon { color: var(--secondary-light); }
+        .header-controls { display: flex; gap: 0.8rem; align-items: center; }
+        .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.3); padding: 0.5rem 1rem; border-radius: 20px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
+        .header-btn:hover { background: var(--secondary-color); border-color: var(--secondary-color); color: var(--primary-color); transform: translateY(-1px); }
+        .dark-mode-toggle { font-size: 1.1rem; width: 40px; height: 40px; justify-content: center;}
+        .category-nav { background: var(--white-bg); box-shadow: 0 3px 10px rgba(0,0,0,0.03); position: fixed; top: 95px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background 0.3s ease, border-bottom 0.3s ease; }
+        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0; scrollbar-width: thin; scrollbar-color: var(--secondary-color) var(--light-bg); }
+        .categories-wrapper::-webkit-scrollbar { height: 6px; }
+        .categories-wrapper::-webkit-scrollbar-thumb { background: var(--secondary-color); border-radius: 3px; }
+        .category-link { color: var(--primary-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 20px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; font-family: 'Roboto', sans-serif; }
+        .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: 0 3px 10px rgba(var(--primary-color-rgb), 0.2); border-color: var(--primary-light); }
+        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--secondary-color) !important; border-color: var(--secondary-color); }
+        .article-card, .featured-article, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--white-bg); border-radius: 10px; transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .article-card:hover, .featured-article:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+        .article-image-container { height: 200px; overflow: hidden; position: relative; border-top-left-radius: 9px; border-top-right-radius: 9px;}
+        .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
+        .article-card:hover .article-image { transform: scale(1.08); }
+        .category-tag { position: absolute; top: 10px; left: 10px; background: var(--secondary-color); color: var(--primary-color); font-size: 0.65rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 15px; z-index: 5; text-transform: uppercase; letter-spacing: 0.3px; }
+        body.dark-mode .category-tag { color: var(--white-bg); background-color: var(--primary-light); }
+        .article-body { padding: 1.25rem; flex-grow: 1; display: flex; flex-direction: column; }
+        .article-title { font-weight: 700; line-height: 1.35; margin-bottom: 0.6rem; font-size:1.1rem; } /* For cards */
+        .article-title a { color: var(--primary-color); text-decoration: none; }
+        .article-card:hover .article-title a { color: var(--primary-color) !important; } /* Keep color on hover */
+        body.dark-mode .article-card .article-title a { color: var(--text-color) !important; }
+        body.dark-mode .article-card:hover .article-title a { color: var(--secondary-color) !important; }
+        .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
+        .meta-item { display: flex; align-items: center; font-size: 0.8rem; color: var(--text-muted-color); }
+        .meta-item i { font-size: 0.9rem; margin-right: 0.3rem; color: var(--secondary-color); }
+        .article-description { color: var(--text-muted-color); margin-bottom: 1rem; font-size: 0.9rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.5rem 0; border-radius: 6px; font-weight: 600; font-size: 0.85rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
+        .read-more:hover { background: var(--primary-light); transform: translateY(-2px); color: white !important; }
+        body.dark-mode .read-more { background: var(--secondary-color); color: var(--primary-color) !important;}
+        body.dark-mode .read-more:hover { background: var(--secondary-light); }
+        .pagination { margin: 2rem 0; display: flex; justify-content: center; gap: 0.3rem; }
+        .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--primary-color); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; }
+        .page-item .page-link:hover { background-color: var(--light-bg); border-color: var(--secondary-color); color: var(--secondary-color); }
+        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.3); }
+        .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
+        .page-link-prev-next .page-link { width: auto; padding-left:1rem; padding-right:1rem; border-radius:20px; }
+        footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3rem 0 1.5rem; font-size:0.9rem; }
+        .footer-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 2rem; }
+        .footer-section h5 { color: var(--secondary-color); margin-bottom: 1rem; font-weight: 700; letter-spacing: 0.3px; position: relative; padding-bottom: 0.6rem; font-size: 1.1rem; }
+        .footer-section h5:after { content: ''; position: absolute; left: 0; bottom: 0; width: 35px; height: 2.5px; background: var(--secondary-light); }
+        .footer-links { display: flex; flex-direction: column; gap: 0.6rem; }
+        .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; display: flex; align-items: center; gap: 0.4rem; }
+        .footer-links a:hover { color: var(--footer-link-hover); transform: translateX(3px); }
+        .social-links { display: flex; gap: 0.8rem; margin-top: 0.5rem; }
+        .social-links a { color: var(--footer-text); font-size: 1.1rem; transition: all 0.2s ease; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.08); }
+        .social-links a:hover { color: var(--primary-color); background: var(--secondary-color); transform: translateY(-3px); }
+        .footer-brand-icon { color: var(--secondary-color); font-size: 1.8rem; }
+        .footer-brand-text { font-family: 'Poppins', sans-serif; font-weight: 700; color: white; }
+        .copyright { text-align: center; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.85rem; color: rgba(255,255,255,0.6); }
+        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
+        .add-article-btn { width: 55px; height: 55px; border-radius: 50%; background: var(--secondary-color); color: var(--primary-color); border: none; box-shadow: 0 4px 15px rgba(var(--secondary-color-rgb),0.3); display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; transition: all 0.3s ease; }
+        .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 7px 20px rgba(var(--secondary-color-rgb),0.4); background: var(--secondary-light); }
+        .add-article-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; }
+        .modal-content { width: 90%; max-width: 700px; background: var(--white-bg); border-radius: 10px; padding: 2rem; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); position: relative; animation: fadeInUp 0.3s ease-out; max-height: 90vh; overflow-y: auto;}
+        .close-modal { position: absolute; top: 12px; right: 12px; font-size: 20px; color: var(--text-muted-color); background: none; border: none; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .close-modal:hover { background: var(--light-bg); color: var(--text-color); }
+        .modal-form-group { margin-bottom: 1.2rem; }
+        .modal-form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; color: var(--text-color); font-size:0.9rem; }
+        .modal-form-control { width: 100%; padding: 0.65rem 0.9rem; border-radius: 6px; border: 1px solid var(--card-border-color); font-size: 0.95rem; transition: all 0.2s ease; background-color: var(--light-bg); }
+        .modal-form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb),0.15); outline: none; background-color: var(--white-bg); }
+        .modal-title {font-weight: 700; color: var(--primary-color); margin-bottom: 1.5rem !important;}
+        .btn-primary-modal { background-color: var(--primary-color); border-color: var(--primary-color); color:white; padding: 0.6rem 1.2rem; font-weight:600; }
+        .btn-primary-modal:hover { background-color: var(--primary-light); border-color: var(--primary-light); }
+        .btn-outline-secondary-modal { padding: 0.6rem 1.2rem; font-weight:600; border-color: var(--text-muted-color); color: var(--text-muted-color); }
+        body.dark-mode .btn-outline-secondary-modal { border-color: var(--text-muted-color); color: var(--text-muted-color); }
+        body.dark-mode .btn-outline-secondary-modal:hover { background-color: #333; color: var(--text-color); border-color: #444;}
+        .alert-top { position: fixed; top: 105px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: 0 3px 10px rgba(0,0,0,0.1);}
+        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(25px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in-delay-1 { animation-delay: 0.1s; } .fade-in-delay-2 { animation-delay: 0.2s; } .fade-in-delay-3 { animation-delay: 0.3s; }
+        .navbar-content-wrapper { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .static-content-wrapper { padding: 2rem; margin-top: 1rem; }
+        .static-content-wrapper h1, .static-content-wrapper h2 { color: var(--primary-color); font-family: 'Poppins', sans-serif; }
+        body.dark-mode .static-content-wrapper h1, body.dark-mode .static-content-wrapper h2 { color: var(--secondary-color); }
+        @media (max-width: 991.98px) {
+            body { padding-top: 180px; }
+            .navbar-main { padding-bottom: 0.5rem; height: auto;}
+            .navbar-content-wrapper { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+            .navbar-brand-custom { margin-bottom: 0.5rem; }
+            .search-form-container { width: 100%; order: 3; margin-top:0.5rem; padding: 0; }
+            .header-controls { position: absolute; top: 0.9rem; right: 1rem; order: 2; }
+            .category-nav { top: 130px; }
+        }
+        @media (max-width: 767.98px) {
+            body { padding-top: 170px; } 
+            .category-nav { top: 120px; } 
+            .featured-article .row { flex-direction: column; }
+            .featured-image { margin-bottom: 1rem; height: 250px; }
+        }
+        @media (max-width: 575.98px) {
+            .navbar-brand-custom { font-size: 1.8rem;}
+            .header-controls { gap: 0.3rem; }
+            .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+            .dark-mode-toggle { font-size: 1rem; }
+        }
+        .auth-container { max-width: 450px; margin: 3rem auto; padding: 2rem; }
+        .auth-title { text-align: center; color: var(--primary-color); margin-bottom: 1.5rem; font-weight: 700;}
+        body.dark-mode .auth-title { color: var(--secondary-color); }
 
-        .bookmark-btn {
-            background: none;
-            border: none;
-            font-size: 1.5rem; /* Default for article detail page */
-            color: var(--text-muted-color); /* Default color for hollow icon */
-            cursor: pointer;
-            padding: 0.25rem 0.5rem;
-            transition: color 0.2s ease, transform 0.2s ease;
-            vertical-align: middle;
-        }
-        .bookmark-btn .fa-bookmark.solid { /* Solid icon, initially hidden */
-            display: none;
-            color: var(--secondary-light); /* Yellow color when bookmarked */
-        }
-        .bookmark-btn .fa-bookmark.regular { /* Regular (hollow) icon, initially visible */
-            display: inline-block;
-        }
-        .bookmark-btn.active .fa-bookmark.solid { /* Show solid icon when active */
-            display: inline-block;
-        }
-        .bookmark-btn.active .fa-bookmark.regular { /* Hide regular icon when active */
-            display: none;
-        }
-        .bookmark-btn:hover {
-            transform: scale(1.1);
-        }
-        .bookmark-btn:hover .fa-bookmark.regular { /* Hover color for hollow icon */
-             color: var(--primary-color);
-        }
-        body.dark-mode .bookmark-btn:hover .fa-bookmark.regular {
-             color: var(--secondary-light);
-        }
-        /* No specific hover for solid active icon, it's already colored */
-
-        .article-card .bookmark-btn { /* Smaller for cards on homepage/profile */
-            font-size: 1.2rem;
-            padding: 0.1rem 0.3rem;
-        }
-        /* ... (rest of your existing styles) ... */
+        .comment-section { margin-top: 3rem; }
+        .comment-container { margin-bottom: 1.5rem; } 
+        .comment-card { display: flex; gap: 1rem; }
+        .comment-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+        body.dark-mode .comment-avatar { background: var(--primary-color); }
+        .comment-body { flex-grow: 1; border-bottom: 1px solid var(--card-border-color); padding-bottom: 1rem; }
+        .comment-container:last-child > .comment-card > .comment-body { border-bottom: none; } 
+        .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+        .comment-author { font-weight: 600; color: var(--primary-color); }
+        body.dark-mode .comment-author { color: var(--secondary-light); }
+        .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
+        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; } 
+        .comment-actions { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+        .comment-actions button { background: none; border: none; padding: 0.2rem 0.4rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; transition: color 0.2s ease, background-color 0.2s ease; border-radius: 4px; }
+        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
+        body.dark-mode .comment-actions button:hover { color: var(--secondary-light); background-color: rgba(var(--secondary-color-rgb),0.2); }
+        .comment-actions button.active { color: var(--primary-color); font-weight: 600; }
+        body.dark-mode .comment-actions button.active { color: var(--secondary-color); }
+        .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--primary-color); } 
+        .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); } 
+        body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--secondary-color); }
+        body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); }
+        .comment-actions .vote-count { font-weight: 500; min-width: 12px; text-align: center;}
+        .comment-replies { margin-left: 30px; padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); margin-top: 1rem; } 
+        .reply-form-container { display: none; margin-top: 0.75rem; padding: 0.75rem; background-color: rgba(var(--primary-color-rgb), 0.03); border-radius: 6px;}
+        body.dark-mode .reply-form-container { background-color: rgba(var(--secondary-color-rgb), 0.05); }
+        .add-comment-form textarea { min-height: 100px; }
+        
+        .profile-card { padding: 2rem; margin-bottom: 2rem; }
+        .profile-card .profile-avatar { width: 100px; height: 100px; border-radius: 50%; background-color: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 1rem; }
+        body.dark-mode .profile-card .profile-avatar { background-color: var(--secondary-color); }
+        .profile-card h2 { text-align: center; }
+        .profile-card p { text-align: center; margin-bottom: 0.5rem; }
+        .profile-tabs .nav-link { color: var(--primary-color); font-weight: 500; }
+        .profile-tabs .nav-link.active { color: var(--secondary-color); border-bottom: 2px solid var(--secondary-color); background: transparent; }
+        body.dark-mode .profile-tabs .nav-link { color: var(--text-muted-color); }
+        body.dark-mode .profile-tabs .nav-link.active { color: var(--secondary-light); border-bottom-color: var(--secondary-light); }
+        .bookmark-btn { background: none; border: none; font-size: 1.5rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: color 0.2s ease; vertical-align: middle; }
+        .bookmark-btn.active { color: var(--bookmark-active-color); }
+        .bookmark-btn:hover { color: var(--primary-color); }
+        body.dark-mode .bookmark-btn:hover { color: var(--secondary-light); }
+        .article-card .bookmark-btn { font-size: 1.2rem; padding: 0.1rem 0.3rem; } /* Smaller for cards */
     </style>
     {% block head_extra %}{% endblock %}
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}">
+    <div id="alert-placeholder">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show alert-top" role="alert">
+                    <span>{{ message }}</span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <nav class="navbar navbar-main navbar-expand-lg fixed-top">
+        <div class="container">
+            <div class="navbar-content-wrapper">
+                <a class="navbar-brand-custom animate-fade-in" href="{{ url_for('index') }}">
+                    <i class="fas fa-bolt-lightning brand-icon"></i>
+                    <span>Briefly</span>
+                </a>
+                <div class="search-form-container">
+                    <form action="{{ url_for('search_results') }}" method="GET" class="search-container animate-fade-in fade-in-delay-1">
+                        <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
+                        <i class="fas fa-search search-icon"></i>
+                        <button type="submit" class="d-none">Search</button>
+                    </form>
+                </div>
+                <div class="header-controls animate-fade-in fade-in-delay-2">
+                    <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    {% if session.user_id %}
+                    <div class="dropdown">
+                        <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
+                            <i class="fas fa-user-circle"></i> <span class="d-none d-md-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                        </ul>
+                    </div>
+                    {% else %}
+                    <a href="{{ url_for('login') }}" class="header-btn" title="Login/Register">
+                        <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="navbar navbar-expand-lg category-nav">
+        <div class="container">
+            <div class="categories-wrapper">
+                {% for cat_item in categories %}
+                    <a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
+                        {{ cat_item }}
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="container main-content my-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% if session.user_id %}
+    <div class="admin-controls">
+        <button class="add-article-btn" id="addArticleBtn" title="Post a New Article">
+            <i class="fas fa-plus"></i>
+        </button>
+    </div>
+    <div class="add-article-modal" id="addArticleModal">
+        <div class="modal-content">
+            <button class="close-modal" id="closeModalBtn" title="Close Modal"><i class="fas fa-times"></i></button>
+            <h3 class="modal-title">Post New Article to Community Hub</h3>
+            <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
+                <div class="modal-form-group"><label for="articleTitle">Article Title</label><input type="text" id="articleTitle" name="title" class="modal-form-control" placeholder="Enter article title" required></div>
+                <div class="modal-form-group"><label for="articleDescription">Short Description / Summary</label><textarea id="articleDescription" name="description" class="modal-form-control" rows="3" placeholder="Brief summary of the article" required></textarea></div>
+                <div class="modal-form-group"><label for="articleSource">Source Name (e.g., Your Blog, Personal Research)</label><input type="text" id="articleSource" name="sourceName" class="modal-form-control" placeholder="Source of this article" value="Community Post" required></div>
+                <div class="modal-form-group"><label for="articleImage">Featured Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="modal-form-control" placeholder="https://example.com/image.jpg"></div>
+                <div class="modal-form-group"><label for="articleContent">Full Article Content</label><textarea id="articleContent" name="content" class="modal-form-control" rows="7" placeholder="Write the full article content here..." required></textarea></div>
+                <div class="d-flex justify-content-end gap-2"><button type="button" class="btn btn-outline-secondary-modal" id="cancelArticleBtn">Cancel</button><button type="submit" class="btn btn-primary-modal">Post Article</button></div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <footer class="mt-auto">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-bolt-lightning footer-brand-icon me-2"></i>
+                        <span class="h5 mb-0 footer-brand-text">Briefly</span>
+                    </div>
+                    <p class="small">Your premier source for AI summarized, India-centric news.</p>
+                    <div class="social-links">
+                        <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h5>Quick Links</h5>
+                    <div class="footer-links">
+                        <a href="{{ url_for('index') }}"><i class="fas fa-angle-right"></i> Home</a>
+                        <a href="{{ url_for('about') }}"><i class="fas fa-angle-right"></i> About Us</a>
+                        <a href="{{ url_for('contact') }}"><i class="fas fa-angle-right"></i> Contact</a>
+                        <a href="{{ url_for('privacy') }}"><i class="fas fa-angle-right"></i> Privacy Policy</a>
+                        {% if session.user_id %}
+                        <a href="{{ url_for('profile') }}"><i class="fas fa-angle-right"></i> My Profile</a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h5>Categories</h5>
+                    <div class="footer-links">
+                        {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}"><i class="fas fa-angle-right"></i> {{ cat_item }}</a>{% endfor %}
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h5>Newsletter</h5>
+                    <p class="small">Subscribe for weekly updates on the latest news!</p>
+                    <form action="{{ url_for('subscribe') }}" method="POST" class="mt-2">
+                        <div class="input-group">
+                            <input type="email" name="email" class="form-control form-control-sm" placeholder="Your Email" aria-label="Your Email" required>
+                            <button class="btn btn-sm btn-primary-modal" type="submit">Subscribe</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
+        </div>
+    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    // Global function to handle bookmark toggling UI and AJAX
-    function handleBookmarkToggle(buttonElement) {
-        const articleHashId = buttonElement.dataset.articleHashId;
-        const isCommunity = buttonElement.dataset.isCommunity;
-        const title = buttonElement.dataset.title;
-        const sourceName = buttonElement.dataset.sourceName;
-        const imageUrl = buttonElement.dataset.imageUrl;
-        const description = buttonElement.dataset.description;
-        const publishedAt = buttonElement.dataset.publishedAt;
-
-        // Optimistically update UI first for responsiveness
-        const واجهاتActive = buttonElement.classList.contains('active');
-        buttonElement.classList.toggle('active', !wasActive);
-        buttonElement.title = !wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-
-
-        fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }, // Add CSRF if needed: 'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}'
-            body: JSON.stringify({
-                is_community_article: isCommunity,
-                title: title, source_name: sourceName, image_url: imageUrl,
-                description: description, published_at: publishedAt
-            })
-        })
-        .then(res => {
-            if (!res.ok) {
-                // Revert UI on error
-                buttonElement.classList.toggle('active', wasActive); // Revert to original state
-                buttonElement.title = wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-                return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); });
-            }
-            return res.json();
-        })
-        .then(data => {
-            if (data.success) {
-                // UI is already updated, just confirm with server response
-                buttonElement.classList.toggle('active', data.status === 'added');
-                buttonElement.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-
-                const alertPlaceholder = document.getElementById('alert-placeholder');
-                if(alertPlaceholder) {
-                    const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
-                    existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
-                    const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                    alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
-                    const newAlert = alertPlaceholder.lastChild;
-                    setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
-                }
-            } else {
-                // Revert UI on logical error from server
-                buttonElement.classList.toggle('active', wasActive);
-                buttonElement.title = wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-                alert('Error: ' + (data.error || 'Could not update bookmark.'));
-            }
-        })
-        .catch(err => {
-            // Revert UI on network/fetch error
-            buttonElement.classList.toggle('active', wasActive);
-            buttonElement.title = wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-            console.error("Bookmark error:", err);
-            alert("Could not update bookmark: " + err.message);
-        });
-    }
-
     document.addEventListener('DOMContentLoaded', function () {
-        // ... (existing dark mode, modal, alert JS) ...
         const darkModeToggle = document.querySelector('.dark-mode-toggle');
-        // ... (rest of your existing global JS)
+        const body = document.body;
+        function updateThemeIcon() { if(darkModeToggle) { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; } }
+        function applyTheme(theme) {
+            if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
+            updateThemeIcon();
+            localStorage.setItem('darkMode', theme);
+            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
+        }
+        if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
+        let storedTheme = localStorage.getItem('darkMode');
+        if (!storedTheme) { const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1]; if (cookieTheme) storedTheme = cookieTheme; }
+        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+        const addArticleBtn = document.getElementById('addArticleBtn');
+        const addArticleModal = document.getElementById('addArticleModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const cancelArticleBtn = document.getElementById('cancelArticleBtn');
+        if(addArticleBtn && addArticleModal) {
+            addArticleBtn.addEventListener('click', () => { addArticleModal.style.display = 'flex'; body.style.overflow = 'hidden'; });
+            const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; if(document.getElementById('addArticleForm')) document.getElementById('addArticleForm').reset(); };
+            if(closeModalBtn) closeModalBtn.addEventListener('click', closeModalFunction);
+            if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
+            addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
+        }
+        const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
+        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
     });
     </script>
     {% block scripts_extra %}{% endblock %}
@@ -925,7 +1162,6 @@ INDEX_HTML_TEMPLATE = """
     {% if query %}Search: {{ query|truncate(30) }}{% elif selected_category %}{{selected_category}}{% else %}Home{% endif %} - Briefly (India News)
 {% endblock %}
 {% block content %}
-    {# Featured Article Section - MODIFIED BOOKMARK BUTTON #}
     {% if articles and articles[0] and featured_article_on_this_page %}
     <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
         <div class="row g-0 g-md-4">
@@ -956,7 +1192,7 @@ INDEX_HTML_TEMPLATE = """
                             data-image-url="{{ (art0.image_url if art0.is_community_article else art0.urlToImage)|e }}"
                             data-description="{{ (art0.description if art0.description else '')|e }}"
                             data-published-at="{{ (art0.published_at.isoformat() if art0.is_community_article and art0.published_at else (art0.publishedAt if not art0.is_community_article and art0.publishedAt else ''))|e }}">
-                        <i class="fa-regular fa-bookmark regular"></i><i class="fa-solid fa-bookmark solid"></i>
+                        <i class="fa-solid fa-bookmark"></i>
                     </button>
                     {% endif %}
                 </div>
@@ -997,7 +1233,7 @@ INDEX_HTML_TEMPLATE = """
                             data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
                             data-description="{{ (art.description if art.description else '')|e }}"
                             data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
-                        <i class="fa-regular fa-bookmark regular"></i><i class="fa-solid fa-bookmark solid"></i>
+                        <i class="fa-solid fa-bookmark"></i>
                     </button>
                     {% endif %}
                 </div>
@@ -1013,7 +1249,6 @@ INDEX_HTML_TEMPLATE = """
         {% endfor %}
     </div>
 
-    {# Pagination (no changes) ... #}
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
         <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) if current_page > 1 else '#' }}">&laquo; Prev</a></li>
@@ -1033,7 +1268,35 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isUserLoggedInForHomepage) {
             button.addEventListener('click', function(event) {
                 event.preventDefault(); event.stopPropagation();
-                handleBookmarkToggle(this); // Use the global handler
+                const articleHashId = this.dataset.articleHashId;
+                const isCommunity = this.dataset.isCommunity;
+                const title = this.dataset.title;
+                const sourceName = this.dataset.sourceName;
+                const imageUrl = this.dataset.imageUrl;
+                const description = this.dataset.description;
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
+                })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added');
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                        const alertPlaceholder = document.getElementById('alert-placeholder');
+                        if(alertPlaceholder) {
+                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
+                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
+                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
+                            const newAlert = alertPlaceholder.lastChild;
+                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
+                        }
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
             });
         }
     });
@@ -1047,10 +1310,9 @@ ARTICLE_HTML_TEMPLATE = """
 {% block title %}{{ article.title|truncate(50) if article else "Article" }} - Briefly{% endblock %}
 {% block head_extra %}
 <style>
-    /* ... (existing styles for article detail page, no changes needed here for bookmark icon appearance) ... */
     .article-full-content-wrapper { background-color: var(--white-bg); padding: 2rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.07); margin-bottom: 2rem; margin-top: 1rem; }
     .article-full-content-wrapper .main-article-image { width: 100%; max-height: 480px; object-fit: cover; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .article-title-main {font-weight: 700; color: var(--primary-color); line-height:1.3; font-family: 'Poppins', sans-serif;}
+    .article-title-main {font-weight: 700; color: var(--primary-color); line-height:1.3; font-family: 'Poppins', sans-serif;} /* For article detail page */
     .article-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
     .article-meta-detailed { font-size: 0.85rem; color: var(--text-muted-color); margin-bottom: 1.5rem; display:flex; flex-wrap:wrap; gap: 0.5rem 1.2rem; align-items:center; border-bottom: 1px solid var(--card-border-color); padding-bottom:1rem; }
     .article-meta-detailed .meta-item i { color: var(--secondary-color); margin-right: 0.4rem; font-size:0.95rem; }
@@ -1078,7 +1340,7 @@ ARTICLE_HTML_TEMPLATE = """
     <div class="mb-3 d-flex justify-content-between align-items-center">
         <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
         {% if session.user_id %}
-        <button id="bookmarkBtnDetail" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" 
+        <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" 
                 title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
                 data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}"
                 data-is-community="{{ 'true' if is_community_article else 'false' }}"
@@ -1087,7 +1349,7 @@ ARTICLE_HTML_TEMPLATE = """
                 data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}"
                 data-description="{{ (article.description if article.description else '')|e }}"
                 data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}">
-            <i class="fa-regular fa-bookmark regular"></i><i class="fa-solid fa-bookmark solid"></i>
+            <i class="fa-solid fa-bookmark"></i>
         </button>
         {% endif %}
     </div>
@@ -1121,12 +1383,61 @@ ARTICLE_HTML_TEMPLATE = """
         <h4 class="mb-3">Full Article Content</h4>
         <div class="content-text">{{ article.full_text }}</div>
     {% else %}
+        {# API Article content will be loaded here by JavaScript #}
         <div id="apiArticleContent"></div>
     {% endif %}
     </div>
 
     <section class="comment-section" id="comment-section">
-        </section>
+        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ comments|length }}</span>)</h3>
+        {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %}
+            <div class="comment-container" id="comment-{{ comment.id }}">
+                <div class="comment-card">
+                    <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}">{{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }}</div>
+                    <div class="comment-body">
+                        <div class="comment-header">
+                            <span class="comment-author">{{ comment.author.name if comment.author else 'Anonymous' }}</span>
+                            <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
+                        </div>
+                        <p class="comment-content mb-2">{{ comment.content }}</p>
+                        {% if is_logged_in %}
+                        <div class="comment-actions">
+                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == 1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('likes', 0) }}</span></button>
+                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == -1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('dislikes', 0) }}</span></button>
+                            <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
+                        </div>
+                        <div class="reply-form-container" id="reply-form-container-{{ comment.id }}">
+                            <form class="reply-form mt-2">
+                                <input type="hidden" name="article_hash_id" value="{{ article_hash_id_for_js }}">
+                                <input type="hidden" name="parent_id" value="{{ comment.id }}">
+                                <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
+                                <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="comment-replies" id="replies-of-{{ comment.id }}">
+                    {% for reply in comment.replies|sort(attribute='timestamp') %} {{ render_comment_with_replies(reply, comment_data, is_logged_in, article_hash_id_for_js) }} {% endfor %}
+                </div>
+            </div>
+        {% endmacro %}
+        <div id="comments-list">
+            {% for comment in comments %} {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }}
+            {% else %}<p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>{% endfor %}
+        </div>
+        {% if session.user_id %}
+            <div class="add-comment-form mt-4 pt-4 border-top">
+                <h5 class="mb-3">Leave a Comment</h5>
+                <form id="comment-form">
+                    <input type="hidden" name="article_hash_id" value="{{ article.article_hash_id if is_community_article else article.id }}">
+                    <div class="mb-3"><textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea></div>
+                    <button type="submit" class="btn btn-primary-modal">Post Comment</button>
+                </form>
+            </div>
+        {% else %}<div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to join the discussion.</div>{% endif %}
+    </section>
 </article>
 {% endif %}
 {% endblock %}
@@ -1137,18 +1448,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const isCommunityArticle = {{ is_community_article | tojson }};
     const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
     const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
-    const groqConfiguredGlobal = {{ groq_client | tojson }}; // Make sure this is passed from context_processor
+    const groqConfiguredGlobal = {{ groq_client | tojson }}; // Passed from inject_global_vars
 
-    // ... (convertUTCToIST function - NO CHANGE) ...
     function convertUTCToIST(utcIsoString) {
         if (!utcIsoString) return "N/A";
         const date = new Date(utcIsoString);
         return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata', timeZoneName: 'short' }).format(date);
     }
 
-
     if (!isCommunityArticle && articleHashIdGlobal) {
-        // ... (JavaScript for fetching and displaying AI summary/takeaways - ALREADY CORRECTED, NO NEW CHANGES HERE) ...
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContent = document.getElementById('apiArticleContent');
 
@@ -1204,13 +1512,90 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
-    // ... (Comment handling JS - NO CHANGES HERE) ...
-
-    // Bookmark button functionality for Article Detail Page
-    const bookmarkBtnDetail = document.getElementById('bookmarkBtnDetail'); // Changed ID to be unique
-    if (bookmarkBtnDetail && isUserLoggedIn) {
-        bookmarkBtnDetail.addEventListener('click', function() {
-            handleBookmarkToggle(this); // Use the global handler
+    const commentSection = document.getElementById('comment-section');
+    function createCommentHTML(comment, articleHashIdForJs) {
+        const commentDate = convertUTCToIST(comment.timestamp);
+        const authorName = comment.author && comment.author.name ? comment.author.name : 'Anonymous';
+        const userInitial = authorName[0].toUpperCase();
+        let actionsHTML = '';
+        if (isUserLoggedIn) {
+            actionsHTML = `
+            <div class="comment-actions">
+                <button class="vote-btn <span class="math-inline">\{comment\.user\_vote \=\=\= 1 ? 'active' \: ''\}" data\-comment\-id\="</span>{comment.id}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-<span class="math-inline">\{comment\.id\}"\></span>{comment.likes || 0}</span></button>
+                <button class="vote-btn <span class="math-inline">\{comment\.user\_vote \=\=\= \-1 ? 'active' \: ''\}" data\-comment\-id\="</span>{comment.id}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-<span class="math-inline">\{comment\.id\}"\></span>{comment.dislikes || 0}</span></button>
+                <button class="reply-btn" data-comment-id="<span class="math-inline">\{comment\.id\}" title\="Reply"\><i class\="fas fa\-reply"\></i\> Reply</button\>
+</div\>
+<div class\="reply\-form\-container" id\="reply\-form\-container\-</span>{comment.id}">
+                <form class="reply-form mt-2">
+                    <input type="hidden" name="article_hash_id" value="<span class="math-inline">\{articleHashIdForJs\}"\><input type\="hidden" name\="parent\_id" value\="</span>{comment.id}">
+                    <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
+                    <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button><button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
+                </form>
+            </div>`;
+        }
+        return `<div class="comment-container" id="comment-<span class="math-inline">\{comment\.id\}"\><div class\="comment\-card"\><div class\="comment\-avatar" title\="</span>{authorName}"><span class="math-inline">\{userInitial\}</div\><div class\="comment\-body"\><div class\="comment\-header"\><span class\="comment\-author"\></span>{authorName}</span><span class="comment-date"><span class="math-inline">\{commentDate\}</span\></div\><p class\="comment\-content mb\-2"\></span>{comment.content}</p><span class="math-inline">\{actionsHTML\}</div\></div\><div class\="comment\-replies" id\="replies\-of\-</span>{comment.id}"></div></div>`;
+    }
+    function handleCommentSubmit(form, articleHashId, parentId = null) {
+        const content = form.querySelector('textarea[name="content"]').value; if (!content.trim()) return;
+        const submitButton = form.querySelector('button[type="submit"]'); const originalButtonText = submitButton.innerHTML; submitButton.disabled = true; submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
+        fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId }) })
+        .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+        .then(data => {
+            if (data.success) {
+                const newCommentHTML = createCommentHTML(data.comment, articleHashId); const tempDiv = document.createElement('div'); tempDiv.innerHTML = newCommentHTML.trim(); const newCommentNode = tempDiv.firstChild;
+                if (parentId) { document.getElementById(`replies-of-${parentId}`).appendChild(newCommentNode); form.closest('.reply-form-container').style.display = 'none'; }
+                else { const list = document.getElementById('comments-list'); const noCommentsMsg = document.getElementById('no-comments-msg'); if (noCommentsMsg) noCommentsMsg.remove(); list.appendChild(newCommentNode); const countEl = document.getElementById('comment-count'); countEl.textContent = parseInt(countEl.textContent) + 1; }
+                form.reset();
+            } else { alert('Error: ' + (data.error || 'Unknown error posting comment.')); }
+        })
+        .catch(err => { console.error("Comment submission error:", err); alert("Could not submit comment: " + err.message); })
+        .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
+    }
+    const mainCommentForm = document.getElementById('comment-form');
+    if (mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); const articleHashIdFromForm = this.querySelector('input[name="article_hash_id"]').value; handleCommentSubmit(this, articleHashIdFromForm); }); }
+    if (commentSection) {
+        commentSection.addEventListener('click', function(e) {
+            const voteBtn = e.target.closest('.vote-btn');
+            if (voteBtn && isUserLoggedIn) {
+                const commentId = voteBtn.dataset.commentId; const voteType = parseInt(voteBtn.dataset.voteType);
+                fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vote_type: voteType }) })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+                .then(data => {
+                    if(data.success) {
+                        document.getElementById(`likes-count-${commentId}`).textContent = data.likes; document.getElementById(`dislikes-count-${commentId}`).textContent = data.dislikes;
+                        const allVoteBtnsOnComment = document.querySelectorAll(`.vote-btn[data-comment-id="${commentId}"]`); allVoteBtnsOnComment.forEach(btn => btn.classList.remove('active'));
+                        if(data.user_vote === 1) { document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`).classList.add('active'); }
+                        else if (data.user_vote === -1) { document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`).classList.add('active'); }
+                    } else { alert('Error voting: ' + (data.error || 'Unknown error.')); }
+                }).catch(err => { console.error("Vote error:", err); alert("Could not process vote: " + err.message); });
+            }
+            const replyBtn = e.target.closest('.reply-btn');
+            if (replyBtn && isUserLoggedIn) {
+                const commentId = replyBtn.dataset.commentId; const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                if (formContainer) { const isDisplayed = formContainer.style.display === 'block'; document.querySelectorAll('.reply-form-container').forEach(fc => { if (fc.id !== `reply-form-container-${commentId}`) fc.style.display = 'none'; }); formContainer.style.display = isDisplayed ? 'none' : 'block'; if(formContainer.style.display === 'block') { formContainer.querySelector('textarea').focus(); } }
+            }
+            const cancelReplyBtn = e.target.closest('.cancel-reply-btn');
+            if (cancelReplyBtn) { const formContainer = cancelReplyBtn.closest('.reply-form-container'); formContainer.style.display = 'none'; formContainer.querySelector('form').reset(); }
+        });
+        commentSection.addEventListener('submit', function(e) {
+            const replyForm = e.target.closest('.reply-form');
+            if (replyForm) { e.preventDefault(); const articleHashIdFromForm = replyForm.querySelector('input[name="article_hash_id"]').value; const parentId = replyForm.querySelector('input[name="parent_id"]').value; handleCommentSubmit(replyForm, articleHashIdFromForm, parentId); }
+        });
+    }
+    const bookmarkBtn = document.getElementById('bookmarkBtn');
+    if (bookmarkBtn && isUserLoggedIn) {
+        bookmarkBtn.addEventListener('click', function() {
+            const articleHashId = this.dataset.articleHashId; const isCommunity = this.dataset.isCommunity; const title = this.dataset.title; const sourceName = this.dataset.sourceName; const imageUrl = this.dataset.imageUrl; const description = this.dataset.description; const publishedAt = this.dataset.publishedAt;
+            fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt }) })
+            .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+            .then(data => {
+                if (data.success) {
+                    this.classList.toggle('active', data.status === 'added'); this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    const alertPlaceholder = document.getElementById('alert-placeholder');
+                    if(alertPlaceholder) { const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert'); existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close()); const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`; alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv); const newAlert = alertPlaceholder.lastChild; setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000); }
+                } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+            })
+            .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
         });
     }
     {% endif %} 
@@ -1218,7 +1603,6 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 {% endblock %}
 """
-
 
 LOGIN_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
