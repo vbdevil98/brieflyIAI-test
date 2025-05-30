@@ -1373,7 +1373,15 @@ BASE_HTML_TEMPLATE = """
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
-    {% if query %}Search: {{ query|truncate(30) }}{% elif request.view_args.get('date_str') if request and request.view_args %}{{ selected_category if selected_category is defined else 'News' }} for {{ request.view_args.get('date_str') }}{% elif selected_category is defined %}{{selected_category}}{% else %}Home{% endif %} - Briefly
+    {% if query is defined and query %}
+        Search: {{ query|truncate(30) }}
+    {% elif request and request.view_args and request.view_args.get('date_str') %}
+        {{ selected_category if selected_category is defined else 'News' }} for {{ request.view_args.get('date_str') }}
+    {% elif selected_category is defined and selected_category %}
+        {{ selected_category }}
+    {% else %}
+        Home
+    {% endif %} - Briefly
 {% endblock %}
 {% block content %}
     {% if articles and articles[0] and featured_article_on_this_page %}
@@ -1435,8 +1443,8 @@ INDEX_HTML_TEMPLATE = """
 
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
-        {% set nav_category = request.view_args.get('category_name') if request.view_args else (selected_category if selected_category is defined else 'All Articles') %}
-        {% set nav_date_str = request.view_args.get('date_str') if request.view_args else (request.args.get('date') if request.args else none) %}
+        {% set nav_category = (request.view_args.get('category_name') if request and request.view_args else None) or (selected_category if selected_category is defined else 'All Articles') %}
+        {% set nav_date_str = (request.view_args.get('date_str') if request and request.view_args else None) or (request.args.get('date') if request and request.args else none) %}
         {% set nav_query = query if query is defined else none %}
         <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=nav_category, query=nav_query, date_str=nav_date_str) if current_page > 1 else '#' }}">&laquo; Prev</a></li>
         {% set page_window = 1 %}{% set show_first = 1 %}{% set show_last = total_pages %}
