@@ -1,3 +1,5 @@
+Profile Feature
+
 # Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AND AI DISPLAY FIXES
 
 #!/usr/bin/env python
@@ -77,31 +79,20 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s -
 app.logger.setLevel(logging.INFO)
 
 # Data Persistence
-app.logger.info("Attempting to configure database...")
-database_url_env = os.environ.get('DATABASE_URL')
-app.logger.info(f"DATABASE_URL from environment: {database_url_env}") # Log the raw env var
-
-if database_url_env and database_url_env.startswith("postgres://"):
-    app.logger.info("PostgreSQL DATABASE_URL found. Processing for SQLAlchemy.")
-    # Correctly replace postgres:// with postgresql:// for SQLAlchemy
-    final_database_url = database_url_env.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = final_database_url
-    app.logger.info(f"Connecting to persistent PostgreSQL database. URI set to: {final_database_url}")
-elif database_url_env and database_url_env.startswith("postgresql://"):
-    app.logger.info("PostgreSQL DATABASE_URL (already in postgresql:// format) found.")
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url_env
-    app.logger.info(f"Connecting to persistent PostgreSQL database. URI set to: {database_url_env}")
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    app.logger.info("Connecting to persistent PostgreSQL database.")
 else:
-    app.logger.warning("DATABASE_URL not found or not a PostgreSQL URL.")
     db_file_name = 'app_data.db'
     project_root_for_db = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(project_root_for_db, db_file_name)
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.logger.warning(f"FALLING BACK to local SQLite database for development at {db_path}. DATA WILL BE EPHEMERAL ON MOST DEPLOYMENT PLATFORMS.")
+    app.logger.info(f"Using local SQLite database for development at {db_path}.")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-app.logger.info("SQLAlchemy instance created.")
 
 # ==============================================================================
 # --- 3. API Client Initialization ---
@@ -191,23 +182,10 @@ class BookmarkedArticle(db.Model):
 
 def init_db():
     with app.app_context():
-        app.logger.info("Inside init_db function.")
-        current_db_uri = app.config.get('SQLALCHEMY_DATABASE_URI')
-        app.logger.info(f"Current SQLALCHEMY_DATABASE_URI before create_all: {current_db_uri}")
-        
-        if 'sqlite' in current_db_uri:
-            app.logger.warning("WARNING: init_db is about to operate on an SQLite database. Data might be ephemeral depending on the environment.")
-        else:
-            app.logger.info("init_db is operating on a non-SQLite (presumably PostgreSQL) database.")
+        app.logger.info("Attempting to create database tables...")
+        db.create_all()
+        app.logger.info("Database tables should be ready.")
 
-        app.logger.info("Attempting to call db.create_all()...")
-        try:
-            db.create_all()
-            app.logger.info("db.create_all() executed successfully. Database tables should be ready or ensured to exist.")
-        except Exception as e:
-            app.logger.error(f"Error during db.create_all(): {e}", exc_info=True)
-            # Depending on the error, you might want to sys.exit or handle differently
-            # For now, just logging the error.
 # ==============================================================================
 # --- 5. Helper Functions ---
 # ==============================================================================
@@ -313,110 +291,55 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 # ==============================================================================
 # --- NEWS FETCHING ---
 # ==============================================================================
-# NEWS FETCHING MODIFIED FOR DATE FILTER
 @simple_cache()
-def fetch_news_from_api(target_date_iso=None): # target_date_iso is "YYYY-MM-DD" string or None
+def fetch_news_from_api():
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
-
-    from_date_str_for_api = None
-    to_date_str_for_api = None
-    fetch_for_specific_date = False
-
-    if target_date_iso:
-        try:
-            # Parse the incoming "YYYY-MM-DD" string
-            date_obj = datetime.strptime(target_date_iso, '%Y-%m-%d').date()
-            
-            # For NewsAPI, set 'from' to the beginning of the target_date_iso (UTC)
-            # and 'to' to the end of the target_date_iso (UTC)
-            from_datetime_utc = datetime.combine(date_obj, datetime.min.time(), tzinfo=timezone.utc)
-            to_datetime_utc = datetime.combine(date_obj, datetime.max.time(), tzinfo=timezone.utc) # Covers the entire day
-            
-            from_date_str_for_api = from_datetime_utc.isoformat(timespec='seconds')
-            to_date_str_for_api = to_datetime_utc.isoformat(timespec='seconds')
-            fetch_for_specific_date = True
-            app.logger.info(f"NewsAPI: Fetching news specifically for date: {target_date_iso} (UTC range: {from_date_str_for_api} to {to_date_str_for_api})")
-        except ValueError:
-            app.logger.error(f"NewsAPI: Invalid date format for target_date_iso: {target_date_iso}. Falling back to default date range.")
-            # Fall through to default logic if date parsing fails by keeping fetch_for_specific_date = False
-            pass
-
-    if not fetch_for_specific_date:
-        from_datetime_utc_default = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-        from_date_str_for_api = from_datetime_utc_default.strftime('%Y-%m-%dT%H:%M:%S')
-        to_datetime_utc_default = datetime.now(timezone.utc)
-        to_date_str_for_api = to_datetime_utc_default.strftime('%Y-%m-%dT%H:%M:%S')
-        app.logger.info(f"NewsAPI: Fetching news for default range (last {app.config['NEWS_API_DAYS_AGO']} days): {from_date_str_for_api} to {to_date_str_for_api}")
-
+    from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
+    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+    to_date_utc = datetime.now(timezone.utc)
+    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
     all_raw_articles = []
-
-    # If not fetching for a specific past date, include current top headlines
-    if not fetch_for_specific_date:
-        try:
-            app.logger.info("NewsAPI: Attempt 1 (Default Range): Fetching top headlines from country: 'in'")
-            top_headlines_response = newsapi.get_top_headlines(country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE'])
-            status = top_headlines_response.get('status')
-            total_results = top_headlines_response.get('totalResults', 0)
-            app.logger.info(f"NewsAPI: Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0:
-                all_raw_articles.extend(top_headlines_response['articles'])
-            elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
-        except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException (Top-Headlines): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-        except Exception as e:
-            app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
-
-    # Always attempt get_everything with the determined date range
     try:
-        log_attempt_msg = "Specific Date" if fetch_for_specific_date else "Default Range"
-        app.logger.info(f"NewsAPI: Attempt ({log_attempt_msg}): Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} for range {from_date_str_for_api} to {to_date_str_for_api}")
+        app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
+        top_headlines_response = newsapi.get_top_headlines(country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE'])
+        status = top_headlines_response.get('status')
+        total_results = top_headlines_response.get('totalResults', 0)
+        app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
+        if status == 'ok' and total_results > 0: all_raw_articles.extend(top_headlines_response['articles'])
+        elif status == 'error': app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
+    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Top-Headlines): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+    except Exception as e: app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
+
+    try:
+        app.logger.info(f"Attempt 2: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_str} to {to_date_str}")
         everything_response = newsapi.get_everything(
-            q=app.config['NEWS_API_QUERY'],
-            from_param=from_date_str_for_api,
-            to=to_date_str_for_api,
-            language='en',
-            sort_by=app.config['NEWS_API_SORT_BY'], # 'publishedAt' is good for date ranges
-            page_size=app.config['NEWS_API_PAGE_SIZE']
-        )
+            q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
+            language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE'])
         status = everything_response.get('status')
         total_results = everything_response.get('totalResults', 0)
-        app.logger.info(f"NewsAPI: Everything API Response (Query) -> Status: {status}, TotalResults: {total_results}")
-        if status == 'ok' and total_results > 0:
-            all_raw_articles.extend(everything_response['articles'])
-        elif status == 'error':
-            app.logger.error(f"NewsAPI Error (Everything - Query): {everything_response.get('message')}")
-    except NewsAPIException as e:
-        app.logger.error(f"NewsAPIException (Everything - Query): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-    except Exception as e:
-        app.logger.error(f"Generic Exception (Everything - Query): {e}", exc_info=True)
-    
-    # If previous calls yielded no results OR if it's a specific date search (domains might have more for that day)
-    if not all_raw_articles or fetch_for_specific_date:
+        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
+        if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
+        elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
+    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Everything): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+    except Exception as e: app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
+
+    if not all_raw_articles:
         try:
-            log_attempt_msg_domain = "Specific Date (Domains)" if fetch_for_specific_date else "Fallback (Domains)"
-            app.logger.info(f"NewsAPI: Attempt ({log_attempt_msg_domain}): Fetching from domains: {app.config['NEWS_API_DOMAINS']} for range {from_date_str_for_api} to {to_date_str_for_api}")
+            app.logger.warning("No articles from primary calls. Trying Fallback with domains.")
+            domains_to_check = app.config['NEWS_API_DOMAINS']
+            app.logger.info(f"Attempt 3 (Fallback): Fetching from domains: {domains_to_check} from {from_date_str} to {to_date_str}")
             fallback_response = newsapi.get_everything(
-                domains=app.config['NEWS_API_DOMAINS'],
-                from_param=from_date_str_for_api,
-                to=to_date_str_for_api,
-                language='en',
-                sort_by=app.config['NEWS_API_SORT_BY'],
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
+                domains=domains_to_check, from_param=from_date_str, to=to_date_str,
+                language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE'])
             status = fallback_response.get('status')
             total_results = fallback_response.get('totalResults', 0)
-            app.logger.info(f"NewsAPI: Everything API Response (Domains) -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0:
-                all_raw_articles.extend(fallback_response['articles'])
-            elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Everything - Domains): {fallback_response.get('message')}")
-        except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException (Everything - Domains): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-        except Exception as e:
-            app.logger.error(f"Generic Exception (Everything - Domains): {e}", exc_info=True)
+            app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
+            if status == 'ok' and total_results > 0: all_raw_articles.extend(fallback_response['articles'])
+            elif status == 'error': app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
+        except NewsAPIException as e: app.logger.error(f"NewsAPIException (Fallback): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+        except Exception as e: app.logger.error(f"Generic Exception (Fallback): {e}", exc_info=True)
 
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
@@ -505,14 +428,12 @@ def fetch_and_parse_article_content(article_hash_id, url):
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
-    today_iso = datetime.now(INDIAN_TIMEZONE).strftime('%Y-%m-%d') # Get today's date in YYYY-MM-DD for date picker
     return {'categories': app.config['CATEGORIES'], 
             'current_year': datetime.utcnow().year, 
             'session': session, 
             'request': request,
-            'groq_client_configured': groq_client is not None, # Renamed for clarity
-            'today_iso': today_iso }
-    
+            'groq_client': groq_client is not None} # For JS to know if Groq is configured
+
 def get_paginated_articles(articles, page, per_page):
     total = len(articles)
     start = (page - 1) * per_page
@@ -546,54 +467,28 @@ def index(page=1, category_name='All Articles'):
     session['previous_list_page'] = request.full_path
     per_page = app.config['PER_PAGE']
     all_display_articles_raw = []
-    
-    selected_date_str = request.args.get('selected_date') # YYYY-MM-DD string or None
-    selected_date_obj = None
-    if selected_date_str:
-        try:
-            selected_date_obj = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
-            app.logger.info(f"Date filter selected: {selected_date_str}")
-        except ValueError:
-            app.logger.warning(f"Invalid date format received: {selected_date_str}. Ignoring date filter.")
-            selected_date_str = None # Reset if invalid
-            # Optionally, flash a message to the user about invalid date format
-
     if category_name == 'Community Hub':
-        query = CommunityArticle.query.options(joinedload(CommunityArticle.author))
-        if selected_date_obj:
-            # Filter by comparing the date part of published_at (assuming published_at is UTC)
-            # Convert selected_date_obj to datetime objects for start and end of day in UTC
-            start_of_day_utc = datetime.combine(selected_date_obj, datetime.min.time(), tzinfo=timezone.utc)
-            end_of_day_utc = datetime.combine(selected_date_obj, datetime.max.time(), tzinfo=timezone.utc)
-            query = query.filter(CommunityArticle.published_at >= start_of_day_utc, CommunityArticle.published_at <= end_of_day_utc)
-        
-        db_articles = query.order_by(CommunityArticle.published_at.desc()).all()
+        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
         for art in db_articles:
             art.is_community_article = True
             all_display_articles_raw.append(art)
-    else: # "All Articles"
-        # Pass selected_date_str (YYYY-MM-DD) to fetch_news_from_api
-        api_articles = fetch_news_from_api(target_date_iso=selected_date_str)
+    else:
+        api_articles = fetch_news_from_api()
         for art_dict in api_articles:
             art_dict['is_community_article'] = False
             all_display_articles_raw.append(art_dict)
-
     all_display_articles_raw.sort(key=get_sort_key, reverse=True)
     paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
-    
     paginated_display_articles_with_bookmark_status = []
     user_bookmarks_hashes = set()
     if 'user_id' in session:
         bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
         user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
-
     for art_item in paginated_display_articles_raw:
         current_article_hash_id = None
-        is_bookmarked = False
         if hasattr(art_item, 'is_community_article') and art_item.is_community_article: # CommunityArticle (DB Object)
             current_article_hash_id = art_item.article_hash_id
-            is_bookmarked = current_article_hash_id in user_bookmarks_hashes
-            art_item.is_bookmarked = is_bookmarked # Add to object directly
+            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
             paginated_display_articles_with_bookmark_status.append(art_item)
         elif isinstance(art_item, dict): # API Article (dictionary)
             current_article_hash_id = art_item.get('id')
@@ -601,17 +496,9 @@ def index(page=1, category_name='All Articles'):
             art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
             paginated_display_articles_with_bookmark_status.append(art_item_copy)
         else:
-            paginated_display_articles_with_bookmark_status.append(art_item) # Should not happen
-
-    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and not selected_date_str and paginated_display_articles_with_bookmark_status)
-    
-    return render_template("INDEX_HTML_TEMPLATE",
-                           articles=paginated_display_articles_with_bookmark_status,
-                           selected_category=category_name,
-                           current_page=page,
-                           total_pages=total_pages,
-                           featured_article_on_this_page=featured_article_on_this_page,
-                           selected_date_for_picker=selected_date_str) # Pass date for picker
+            paginated_display_articles_with_bookmark_status.append(art_item)
+    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and paginated_display_articles_with_bookmark_status)
+    return render_template("INDEX_HTML_TEMPLATE", articles=paginated_display_articles_with_bookmark_status, selected_category=category_name, current_page=page, total_pages=total_pages, featured_article_on_this_page=featured_article_on_this_page)
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
@@ -750,99 +637,22 @@ def vote_comment(comment_id):
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
-    # Initialize title early for logging in case of early exit
-    title_for_logging = request.form.get('title', 'N/A').strip()[:30]
-    app.logger.info(f"Attempting to post article. User: {session.get('user_name', 'Unknown')}, Initial Title: '{title_for_logging}...'")
-    try:
-        title, description, content, source_name, image_url = map(
-            lambda x: request.form.get(x, '').strip(),
-            ['title', 'description', 'content', 'sourceName', 'imageUrl']
-        )
-        source_name = source_name or 'Community Post'
-
-        app.logger.debug(f"Form data received - Title: '{title}', Description: '{description[:50]}...', Source: '{source_name}', ImageURL: '{image_url}'")
-
-        if not all([title, description, content, source_name]):
-            app.logger.warning(f"Post Article validation failed: Missing required fields. User: {session.get('user_name')}, Title: '{title}'")
-            flash("Title, Description, Full Content, and Source Name are required.", "danger")
-            return redirect(request.referrer or url_for('index'))
-
-        article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
-        app.logger.info(f"Generated article_hash_id: {article_hash_id} for title '{title}'")
-
-        groq_summary_text = None
-        groq_takeaways_json_str = None
-        
-        # Only attempt Groq analysis if the client is configured
-        if groq_client:
-            app.logger.info(f"Attempting Groq analysis for article: '{title[:50]}...'")
-            groq_analysis_result = get_article_analysis_with_groq(content, title)
-            if groq_analysis_result:
-                if groq_analysis_result.get("error"):
-                    app.logger.warning(f"Groq analysis error for '{title[:50]}...': {groq_analysis_result.get('error')}")
-                else:
-                    app.logger.info(f"Groq analysis successful for '{title[:50]}...'.")
-                    groq_summary_text = groq_analysis_result.get('groq_summary')
-                    takeaways_list = groq_analysis_result.get('groq_takeaways')
-                    if takeaways_list and isinstance(takeaways_list, list):
-                        try:
-                            groq_takeaways_json_str = json.dumps(takeaways_list)
-                        except TypeError as te:
-                            app.logger.error(f"TypeError during json.dumps for takeaways: {te}. Takeaways list: {takeaways_list}", exc_info=True)
-                            # Decide how to handle this - e.g., store as null or an error string
-                            groq_takeaways_json_str = json.dumps({"error": "Failed to serialize takeaways"})
-                    elif takeaways_list is not None: # It's not a list but not None
-                         app.logger.warning(f"Groq takeaways were not a list: {type(takeaways_list)}. Storing as null.")
-            else:
-                app.logger.warning(f"Groq analysis returned no result (None) for '{title[:50]}...'.")
-        else:
-            app.logger.info("Groq client not configured. Skipping AI analysis for new community article.")
-
-        # Ensure image_url is either a valid URL or the placeholder
-        # Default placeholder if image_url is empty or just whitespace
-        final_image_url = image_url if image_url and image_url.strip() else f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}'
-        
-        app.logger.info("Creating CommunityArticle database object...")
-        app.logger.debug(f"CommunityArticle data - hash: {article_hash_id}, title: {title}, user_id: {session['user_id']}, source: {source_name}, image: {final_image_url}")
-
-        new_article = CommunityArticle(
-            article_hash_id=article_hash_id,
-            title=title,
-            description=description,
-            full_text=content, # 'content' from form maps to 'full_text' in model
-            source_name=source_name,
-            image_url=final_image_url,
-            user_id=session['user_id'],
-            published_at=datetime.now(timezone.utc),
-            groq_summary=groq_summary_text,
-            groq_takeaways=groq_takeaways_json_str
-        )
-        
-        app.logger.info(f"Attempting to add article '{title[:50]}...' to DB session.")
-        db.session.add(new_article)
-        
-        app.logger.info(f"Attempting to commit DB session for article '{title[:50]}...'. Current DB URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
-        db.session.commit()
-        app.logger.info(f"Article '{new_article.title[:50]}' (ID: {new_article.id}, Hash: {new_article.article_hash_id}) committed successfully.")
-        
-        flash("Your article has been posted!", "success")
-        return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
-
-    except Exception as e:
-        # Log the exception with traceback
-        # Use title_for_logging as 'title' might not be defined if error occurred before its assignment
-        app.logger.error(f"Critical error in /post_article for user {session.get('user_name', 'Unknown')}, initial title '{title_for_logging}...': {str(e)}", exc_info=True)
-        
-        # Attempt to rollback the session
-        try:
-            db.session.rollback()
-            app.logger.info("Database session rolled back successfully after error.")
-        except Exception as rb_err:
-            app.logger.error(f"Error during session rollback: {str(rb_err)}", exc_info=True)
-            
-        flash("An unexpected error occurred while posting your article. Our team has been notified. Please try again later.", "danger")
-        # Redirect to referrer or a safe page like index
+    title, description, content, source_name, image_url = map(lambda x: request.form.get(x, '').strip(), ['title', 'description', 'content', 'sourceName', 'imageUrl'])
+    source_name = source_name or 'Community Post'
+    if not all([title, description, content, source_name]):
+        flash("Title, Description, Full Content, and Source Name are required.", "danger")
         return redirect(request.referrer or url_for('index'))
+    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
+    groq_analysis_result = get_article_analysis_with_groq(content, title)
+    groq_summary_text, groq_takeaways_json_str = None, None
+    if groq_analysis_result and not groq_analysis_result.get("error"):
+        groq_summary_text = groq_analysis_result.get('groq_summary')
+        takeaways_list = groq_analysis_result.get('groq_takeaways')
+        if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
+    new_article = CommunityArticle(article_hash_id=article_hash_id, title=title, description=description, full_text=content, source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}', user_id=session['user_id'], published_at=datetime.now(timezone.utc), groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str)
+    db.session.add(new_article); db.session.commit()
+    flash("Your article has been posted!", "success")
+    return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -972,7 +782,7 @@ BASE_HTML_TEMPLATE = """
     <style>
         :root {
             --primary-color: #0A2342; --primary-light: #1E3A5E;
-            --secondary-color: #B8860B; --secondary-light: #D4A017; /* Yellowish for bookmark */
+            --secondary-color: #B8860B; --secondary-light: #D4A017;
             --accent-color: #F07F2D; --text-color: #343a40;
             --text-muted-color: #6c757d; --light-bg: #F8F9FA;
             --white-bg: #FFFFFF; --card-border-color: #E0E0E0;
@@ -980,50 +790,22 @@ BASE_HTML_TEMPLATE = """
             --footer-link-hover: var(--secondary-color);
             --primary-gradient: linear-gradient(135deg, var(--primary-color), var(--primary-light));
             --primary-color-rgb: 10, 35, 66; --secondary-color-rgb: 184, 134, 11;
+            --bookmark-active-color: var(--accent-color);
         }
-        body { 
-            padding-top: 95px; /* Default padding for fixed top navbars */
-            font-family: 'Roboto', sans-serif; 
-            line-height: 1.65; 
-            color: var(--text-color); 
-            background-color: var(--light-bg); 
-            display: flex; 
-            flex-direction: column; 
-            min-height: 100vh; 
-            transition: background-color 0.3s ease, color 0.3s ease; 
-        }
+        body { padding-top: 145px; font-family: 'Roboto', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
-            --primary-color: #1E3A5E; --primary-light: #2A4B7C; 
-            --secondary-color: #D4A017; --secondary-light: #E7B400; /* Brighter Yellow for dark mode bookmark */ 
-            --accent-color: #FF983E; --text-color: #E9ECEF; 
-            --text-muted-color: #ADB5BD; --light-bg: #121212; 
-            --white-bg: #1E1E1E; --card-border-color: #333333; 
-            --footer-bg: #0A0A0A; --footer-text: rgba(255,255,255,0.7); 
-            --primary-color-rgb: 30, 58, 94; --secondary-color-rgb: 212, 160, 23;
+            --primary-color: #1E3A5E; --primary-light: #2A4B7C; --secondary-color: #D4A017; --secondary-light: #E7B400; --accent-color: #FF983E; --text-color: #E9ECEF; --text-muted-color: #ADB5BD; --light-bg: #121212; --white-bg: #1E1E1E; --card-border-color: #333333; --footer-bg: #0A0A0A; --footer-text: rgba(255,255,255,0.7); --primary-color-rgb: 30, 58, 94; --secondary-color-rgb: 212, 160, 23;
+            --bookmark-active-color: var(--secondary-light);
         }
         body.dark-mode .navbar-main { background: linear-gradient(135deg, #0A1A2F, #10233B); border-bottom: 1px solid #2A4B7C; }
         body.dark-mode .category-nav { background: #1A1A1A; border-bottom: 1px solid #2A2A2A; }
         body.dark-mode .category-link { color: var(--text-muted-color) !important; }
         body.dark-mode .category-link.active { background: var(--primary-color) !important; color: var(--white-bg) !important; }
         body.dark-mode .category-link:hover:not(.active) { background: #2C2C2C !important; color: var(--secondary-color) !important; }
-        body.dark-mode .article-card, 
-        body.dark-mode .featured-article, 
-        body.dark-mode .article-full-content-wrapper, 
-        body.dark-mode .auth-container, 
-        body.dark-mode .static-content-wrapper, 
-        body.dark-mode .profile-card { background-color: var(--white-bg); border-color: var(--card-border-color); }
-        body.dark-mode .article-title a, 
-        body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, body.dark-mode h4, body.dark-mode h5, 
-        body.dark-mode .auth-title, 
-        body.dark-mode .profile-card h2 { color: var(--text-color) !important; }
-        body.dark-mode .article-description, 
-        body.dark-mode .meta-item, 
-        body.dark-mode .content-text p, 
-        body.dark-mode .article-meta-detailed, 
-        body.dark-mode .comment-content, 
-        body.dark-mode .comment-date, 
-        body.dark-mode .profile-card p { color: var(--text-muted-color) !important; }
+        body.dark-mode .article-card, body.dark-mode .featured-article, body.dark-mode .article-full-content-wrapper, body.dark-mode .auth-container, body.dark-mode .static-content-wrapper, body.dark-mode .profile-card { background-color: var(--white-bg); border-color: var(--card-border-color); }
+        body.dark-mode .article-title a, body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, body.dark-mode h4, body.dark-mode h5, body.dark-mode .auth-title, body.dark-mode .profile-card h2 { color: var(--text-color) !important; }
+        body.dark-mode .article-description, body.dark-mode .meta-item, body.dark-mode .content-text p, body.dark-mode .article-meta-detailed, body.dark-mode .comment-content, body.dark-mode .comment-date, body.dark-mode .profile-card p { color: var(--text-muted-color) !important; }
         body.dark-mode .read-more { background: var(--secondary-color); color: #000 !important; }
         body.dark-mode .read-more:hover { background: var(--secondary-light); }
         body.dark-mode .btn-outline-primary { color: var(--secondary-color); border-color: var(--secondary-color); }
@@ -1044,21 +826,7 @@ BASE_HTML_TEMPLATE = """
         body.dark-mode .content-text a {color: var(--secondary-light);}
         body.dark-mode .content-text a:hover {color: var(--accent-color);}
         body.dark-mode .loader { border-top-color: var(--secondary-color); }
-        
-        .navbar-main { 
-            background: var(--primary-gradient); 
-            padding: 0.8rem 0; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
-            border-bottom: 2px solid rgba(255,255,255,0.15); 
-            transition: background 0.3s ease, border-bottom 0.3s ease; 
-            min-height: 95px; /* Use min-height for flexibility */
-            display: flex; 
-            align-items: center; 
-            position: fixed; /* Keep main navbar fixed */
-            top: 0;
-            width: 100%;
-            z-index: 1030; /* Higher than category nav */
-        }
+        .navbar-main { background: var(--primary-gradient); padding: 0.8rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-bottom: 2px solid rgba(255,255,255,0.15); transition: background 0.3s ease, border-bottom 0.3s ease; height: 95px; display: flex; align-items: center; }
         .navbar-brand-custom { color: white !important; font-weight: 800; font-size: 2.2rem; letter-spacing: 0.5px; font-family: 'Poppins', sans-serif; margin-bottom: 0; display: flex; align-items: center; gap: 12px; text-decoration: none !important; }
         .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.5rem; }
         .navbar-brand-custom:hover { text-decoration: none !important; }
@@ -1073,97 +841,146 @@ BASE_HTML_TEMPLATE = """
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.3); padding: 0.5rem 1rem; border-radius: 20px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: var(--secondary-color); border-color: var(--secondary-color); color: var(--primary-color); transform: translateY(-1px); }
         .dark-mode-toggle { font-size: 1.1rem; width: 40px; height: 40px; justify-content: center;}
-        
-        .category-nav { 
-            background: var(--white-bg); 
-            box-shadow: 0 3px 10px rgba(0,0,0,0.03); 
-            position: fixed; 
-            top: 95px; /* Position below the main navbar */
-            width: 100%; 
-            z-index: 1020; 
-            border-bottom: 1px solid var(--card-border-color); 
-            transition: background 0.3s ease, border-bottom 0.3s ease; 
-            padding: 0.5rem 0; /* Add some padding */
-        }
-        .categories-wrapper { display: flex; align-items: center; width: 100%; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--secondary-color) var(--light-bg); }
+        .category-nav { background: var(--white-bg); box-shadow: 0 3px 10px rgba(0,0,0,0.03); position: fixed; top: 95px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background 0.3s ease, border-bottom 0.3s ease; }
+        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0; scrollbar-width: thin; scrollbar-color: var(--secondary-color) var(--light-bg); }
         .categories-wrapper::-webkit-scrollbar { height: 6px; }
         .categories-wrapper::-webkit-scrollbar-thumb { background: var(--secondary-color); border-radius: 3px; }
         .category-link { color: var(--primary-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 20px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; font-family: 'Roboto', sans-serif; }
         .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: 0 3px 10px rgba(var(--primary-color-rgb), 0.2); border-color: var(--primary-light); }
         .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--secondary-color) !important; border-color: var(--secondary-color); }
-        
         .article-card, .featured-article, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--white-bg); border-radius: 10px; transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
-        /* ... (other general styles for cards, pagination, footer, modals etc. - NO CHANGE from your working version) ... */
-
-        /* Bookmark Button Styles */
-        .bookmark-btn {
-            background: none; border: none; font-size: 1.5rem; 
-            color: var(--text-muted-color); cursor: pointer; 
-            padding: 0.25rem 0.5rem; transition: color 0.2s ease, transform 0.2s ease;
-            vertical-align: middle; line-height: 1;
-        }
-        .bookmark-btn .fa-bookmark.solid-icon { display: none; color: var(--secondary-light); }
-        .bookmark-btn .fa-bookmark.regular-icon { display: inline-block; }
-        .bookmark-btn.active .fa-bookmark.solid-icon { display: inline-block; }
-        .bookmark-btn.active .fa-bookmark.regular-icon { display: none; }
-        .bookmark-btn:not(.active):hover .fa-bookmark.regular-icon { color: var(--primary-color); }
-        body.dark-mode .bookmark-btn:not(.active):hover .fa-bookmark.regular-icon { color: var(--secondary-light); }
-        .bookmark-btn:hover { transform: scale(1.1); }
-        .article-card .bookmark-btn { font-size: 1.2rem; padding: 0.1rem 0.3rem; }
-
-        /* Date Picker Styles */
-        .category-nav .date-filter-container {
-            display: flex;
-            align-items: center;
-            margin-left: auto; /* Pushes to the right of category links */
-            padding-left: 1rem; /* Spacing from category links or edge */
-        }
-        .category-nav .date-filter-label {
-            font-weight: 500;
-            color: var(--primary-color);
-            font-size: 0.9rem;
-            margin-right: 0.5rem;
-            white-space: nowrap; /* Prevent label from wrapping */
-        }
-        body.dark-mode .category-nav .date-filter-label { color: var(--text-muted-color); }
-        .category-nav #newsDatePicker {
-            padding: 0.3rem 0.5rem; /* Slightly more padding */
-            font-size: 0.875rem;
-            border-radius: 0.25rem; /* Bootstrap's default sm radius */
-            max-width: 180px; 
-            background-color: var(--white-bg);
-            color: var(--text-color);
-            border: 1px solid var(--card-border-color);
-            line-height: 1.5; /* Ensure text is vertically centered */
-        }
-        body.dark-mode .category-nav #newsDatePicker {
-            background-color: #2C2C2C; 
-            color: var(--text-color); 
-            border-color: #444;
-        }
-        body.dark-mode .category-nav #newsDatePicker::-webkit-calendar-picker-indicator {
-            filter: invert(1); 
-        }
-        
-        /* Responsive Adjustments for Navbars */
+        .article-card:hover, .featured-article:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+        .article-image-container { height: 200px; overflow: hidden; position: relative; border-top-left-radius: 9px; border-top-right-radius: 9px;}
+        .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
+        .article-card:hover .article-image { transform: scale(1.08); }
+        .category-tag { position: absolute; top: 10px; left: 10px; background: var(--secondary-color); color: var(--primary-color); font-size: 0.65rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 15px; z-index: 5; text-transform: uppercase; letter-spacing: 0.3px; }
+        body.dark-mode .category-tag { color: var(--white-bg); background-color: var(--primary-light); }
+        .article-body { padding: 1.25rem; flex-grow: 1; display: flex; flex-direction: column; }
+        .article-title { font-weight: 700; line-height: 1.35; margin-bottom: 0.6rem; font-size:1.1rem; } /* For cards */
+        .article-title a { color: var(--primary-color); text-decoration: none; }
+        .article-card:hover .article-title a { color: var(--primary-color) !important; } /* Keep color on hover */
+        body.dark-mode .article-card .article-title a { color: var(--text-color) !important; }
+        body.dark-mode .article-card:hover .article-title a { color: var(--secondary-color) !important; }
+        .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
+        .meta-item { display: flex; align-items: center; font-size: 0.8rem; color: var(--text-muted-color); }
+        .meta-item i { font-size: 0.9rem; margin-right: 0.3rem; color: var(--secondary-color); }
+        .article-description { color: var(--text-muted-color); margin-bottom: 1rem; font-size: 0.9rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.5rem 0; border-radius: 6px; font-weight: 600; font-size: 0.85rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
+        .read-more:hover { background: var(--primary-light); transform: translateY(-2px); color: white !important; }
+        body.dark-mode .read-more { background: var(--secondary-color); color: var(--primary-color) !important;}
+        body.dark-mode .read-more:hover { background: var(--secondary-light); }
+        .pagination { margin: 2rem 0; display: flex; justify-content: center; gap: 0.3rem; }
+        .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--primary-color); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; }
+        .page-item .page-link:hover { background-color: var(--light-bg); border-color: var(--secondary-color); color: var(--secondary-color); }
+        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.3); }
+        .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
+        .page-link-prev-next .page-link { width: auto; padding-left:1rem; padding-right:1rem; border-radius:20px; }
+        footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3rem 0 1.5rem; font-size:0.9rem; }
+        .footer-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 2rem; }
+        .footer-section h5 { color: var(--secondary-color); margin-bottom: 1rem; font-weight: 700; letter-spacing: 0.3px; position: relative; padding-bottom: 0.6rem; font-size: 1.1rem; }
+        .footer-section h5:after { content: ''; position: absolute; left: 0; bottom: 0; width: 35px; height: 2.5px; background: var(--secondary-light); }
+        .footer-links { display: flex; flex-direction: column; gap: 0.6rem; }
+        .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; display: flex; align-items: center; gap: 0.4rem; }
+        .footer-links a:hover { color: var(--footer-link-hover); transform: translateX(3px); }
+        .social-links { display: flex; gap: 0.8rem; margin-top: 0.5rem; }
+        .social-links a { color: var(--footer-text); font-size: 1.1rem; transition: all 0.2s ease; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.08); }
+        .social-links a:hover { color: var(--primary-color); background: var(--secondary-color); transform: translateY(-3px); }
+        .footer-brand-icon { color: var(--secondary-color); font-size: 1.8rem; }
+        .footer-brand-text { font-family: 'Poppins', sans-serif; font-weight: 700; color: white; }
+        .copyright { text-align: center; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.85rem; color: rgba(255,255,255,0.6); }
+        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
+        .add-article-btn { width: 55px; height: 55px; border-radius: 50%; background: var(--secondary-color); color: var(--primary-color); border: none; box-shadow: 0 4px 15px rgba(var(--secondary-color-rgb),0.3); display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; transition: all 0.3s ease; }
+        .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 7px 20px rgba(var(--secondary-color-rgb),0.4); background: var(--secondary-light); }
+        .add-article-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; }
+        .modal-content { width: 90%; max-width: 700px; background: var(--white-bg); border-radius: 10px; padding: 2rem; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); position: relative; animation: fadeInUp 0.3s ease-out; max-height: 90vh; overflow-y: auto;}
+        .close-modal { position: absolute; top: 12px; right: 12px; font-size: 20px; color: var(--text-muted-color); background: none; border: none; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .close-modal:hover { background: var(--light-bg); color: var(--text-color); }
+        .modal-form-group { margin-bottom: 1.2rem; }
+        .modal-form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; color: var(--text-color); font-size:0.9rem; }
+        .modal-form-control { width: 100%; padding: 0.65rem 0.9rem; border-radius: 6px; border: 1px solid var(--card-border-color); font-size: 0.95rem; transition: all 0.2s ease; background-color: var(--light-bg); }
+        .modal-form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb),0.15); outline: none; background-color: var(--white-bg); }
+        .modal-title {font-weight: 700; color: var(--primary-color); margin-bottom: 1.5rem !important;}
+        .btn-primary-modal { background-color: var(--primary-color); border-color: var(--primary-color); color:white; padding: 0.6rem 1.2rem; font-weight:600; }
+        .btn-primary-modal:hover { background-color: var(--primary-light); border-color: var(--primary-light); }
+        .btn-outline-secondary-modal { padding: 0.6rem 1.2rem; font-weight:600; border-color: var(--text-muted-color); color: var(--text-muted-color); }
+        body.dark-mode .btn-outline-secondary-modal { border-color: var(--text-muted-color); color: var(--text-muted-color); }
+        body.dark-mode .btn-outline-secondary-modal:hover { background-color: #333; color: var(--text-color); border-color: #444;}
+        .alert-top { position: fixed; top: 105px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: 0 3px 10px rgba(0,0,0,0.1);}
+        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(25px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in-delay-1 { animation-delay: 0.1s; } .fade-in-delay-2 { animation-delay: 0.2s; } .fade-in-delay-3 { animation-delay: 0.3s; }
+        .navbar-content-wrapper { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .static-content-wrapper { padding: 2rem; margin-top: 1rem; }
+        .static-content-wrapper h1, .static-content-wrapper h2 { color: var(--primary-color); font-family: 'Poppins', sans-serif; }
+        body.dark-mode .static-content-wrapper h1, body.dark-mode .static-content-wrapper h2 { color: var(--secondary-color); }
         @media (max-width: 991.98px) {
-            body { padding-top: calc(95px + 50px); } /* Main nav height + approx category nav height */
-            .navbar-main { min-height: auto; flex-wrap: wrap; /* Allow main nav to wrap if needed */ }
-            .navbar-content-wrapper { flex-direction: column; align-items: flex-start; gap: 0.5rem; width:100%;}
+            body { padding-top: 180px; }
+            .navbar-main { padding-bottom: 0.5rem; height: auto;}
+            .navbar-content-wrapper { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+            .navbar-brand-custom { margin-bottom: 0.5rem; }
             .search-form-container { width: 100%; order: 3; margin-top:0.5rem; padding: 0; }
-            .header-controls { position: static; order: 2; width:100%; justify-content: space-between; margin-top:0.5rem;}
-            .category-nav { top: auto; /* Becomes static below main nav */ position:relative; } /* No longer fixed */
-            .categories-wrapper { justify-content: flex-start; flex-wrap:wrap; }
-            .category-nav .date-filter-container { margin-left:0; margin-top: 0.5rem; width:100%; justify-content: flex-start;}
+            .header-controls { position: absolute; top: 0.9rem; right: 1rem; order: 2; }
+            .category-nav { top: 130px; }
         }
         @media (max-width: 767.98px) {
-            body { padding-top: 0; } /* Remove padding-top as navbars are now static */
-            .navbar-main { position: static; } /* Main nav becomes static */
-            .category-nav { position: static; } /* Category nav also static */
+            body { padding-top: 170px; } 
+            .category-nav { top: 120px; } 
             .featured-article .row { flex-direction: column; }
             .featured-image { margin-bottom: 1rem; height: 250px; }
         }
-        /* ... (other existing styles) ... */
+        @media (max-width: 575.98px) {
+            .navbar-brand-custom { font-size: 1.8rem;}
+            .header-controls { gap: 0.3rem; }
+            .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+            .dark-mode-toggle { font-size: 1rem; }
+        }
+        .auth-container { max-width: 450px; margin: 3rem auto; padding: 2rem; }
+        .auth-title { text-align: center; color: var(--primary-color); margin-bottom: 1.5rem; font-weight: 700;}
+        body.dark-mode .auth-title { color: var(--secondary-color); }
+
+        .comment-section { margin-top: 3rem; }
+        .comment-container { margin-bottom: 1.5rem; } 
+        .comment-card { display: flex; gap: 1rem; }
+        .comment-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+        body.dark-mode .comment-avatar { background: var(--primary-color); }
+        .comment-body { flex-grow: 1; border-bottom: 1px solid var(--card-border-color); padding-bottom: 1rem; }
+        .comment-container:last-child > .comment-card > .comment-body { border-bottom: none; } 
+        .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+        .comment-author { font-weight: 600; color: var(--primary-color); }
+        body.dark-mode .comment-author { color: var(--secondary-light); }
+        .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
+        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; } 
+        .comment-actions { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+        .comment-actions button { background: none; border: none; padding: 0.2rem 0.4rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; transition: color 0.2s ease, background-color 0.2s ease; border-radius: 4px; }
+        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
+        body.dark-mode .comment-actions button:hover { color: var(--secondary-light); background-color: rgba(var(--secondary-color-rgb),0.2); }
+        .comment-actions button.active { color: var(--primary-color); font-weight: 600; }
+        body.dark-mode .comment-actions button.active { color: var(--secondary-color); }
+        .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--primary-color); } 
+        .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); } 
+        body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--secondary-color); }
+        body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); }
+        .comment-actions .vote-count { font-weight: 500; min-width: 12px; text-align: center;}
+        .comment-replies { margin-left: 30px; padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); margin-top: 1rem; } 
+        .reply-form-container { display: none; margin-top: 0.75rem; padding: 0.75rem; background-color: rgba(var(--primary-color-rgb), 0.03); border-radius: 6px;}
+        body.dark-mode .reply-form-container { background-color: rgba(var(--secondary-color-rgb), 0.05); }
+        .add-comment-form textarea { min-height: 100px; }
+        
+        .profile-card { padding: 2rem; margin-bottom: 2rem; }
+        .profile-card .profile-avatar { width: 100px; height: 100px; border-radius: 50%; background-color: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 1rem; }
+        body.dark-mode .profile-card .profile-avatar { background-color: var(--secondary-color); }
+        .profile-card h2 { text-align: center; }
+        .profile-card p { text-align: center; margin-bottom: 0.5rem; }
+        .profile-tabs .nav-link { color: var(--primary-color); font-weight: 500; }
+        .profile-tabs .nav-link.active { color: var(--secondary-color); border-bottom: 2px solid var(--secondary-color); background: transparent; }
+        body.dark-mode .profile-tabs .nav-link { color: var(--text-muted-color); }
+        body.dark-mode .profile-tabs .nav-link.active { color: var(--secondary-light); border-bottom-color: var(--secondary-light); }
+        .bookmark-btn { background: none; border: none; font-size: 1.5rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: color 0.2s ease; vertical-align: middle; }
+        .bookmark-btn.active { color: var(--bookmark-active-color); }
+        .bookmark-btn:hover { color: var(--primary-color); }
+        body.dark-mode .bookmark-btn:hover { color: var(--secondary-light); }
+        .article-card .bookmark-btn { font-size: 1.2rem; padding: 0.1rem 0.3rem; } /* Smaller for cards */
     </style>
     {% block head_extra %}{% endblock %}
 </head>
@@ -1181,7 +998,7 @@ BASE_HTML_TEMPLATE = """
         {% endwith %}
     </div>
 
-    <nav class="navbar navbar-main navbar-expand-lg"> {# Removed fixed-top, handled by CSS #}
+    <nav class="navbar navbar-main navbar-expand-lg fixed-top">
         <div class="container">
             <div class="navbar-content-wrapper">
                 <a class="navbar-brand-custom animate-fade-in" href="{{ url_for('index') }}">
@@ -1220,25 +1037,15 @@ BASE_HTML_TEMPLATE = """
         </div>
     </nav>
 
-    <nav class="navbar navbar-expand-lg category-nav"> {# Removed fixed-top, handled by CSS #}
+    <nav class="navbar navbar-expand-lg category-nav">
         <div class="container">
-            <div class="d-flex flex-wrap justify-content-between align-items-center w-100"> {# Wrapper for categories and date picker #}
-                <div class="categories-wrapper"> {# Scrollable categories #}
-                    {% for cat_item in categories %}
-                        <a href="{{ url_for('index', category_name=cat_item, page=1, selected_date=request.args.get('selected_date')) }}" 
-                           class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                            <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
-                            {{ cat_item }}
-                        </a>
-                    {% endfor %}
-                </div>
-                
-                <div class="date-filter-container mt-2 mt-lg-0"> {# Date Filter Input Container #}
-                    <label for="newsDatePicker" class="date-filter-label mb-0">Date:</label>
-                    <input type="date" id="newsDatePicker" class="form-control form-control-sm" 
-                           value="{{ selected_date_for_picker if selected_date_for_picker else '' }}"
-                           max="{{ today_iso }}">
-                </div>
+            <div class="categories-wrapper">
+                {% for cat_item in categories %}
+                    <a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
+                        {{ cat_item }}
+                    </a>
+                {% endfor %}
             </div>
         </div>
     </nav>
@@ -1317,135 +1124,34 @@ BASE_HTML_TEMPLATE = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // --- GLOBAL BOOKMARK TOGGLE FUNCTION ---
-        function handleBookmarkToggle(buttonElement) {
-            const articleHashId = buttonElement.dataset.articleHashId;
-            const isCommunity = buttonElement.dataset.isCommunity;
-            const title = buttonElement.dataset.title;
-            const sourceName = buttonElement.dataset.sourceName;
-            const imageUrl = buttonElement.dataset.imageUrl;
-            const description = buttonElement.dataset.description;
-            const publishedAt = buttonElement.dataset.publishedAt;
-            const wasActive = buttonElement.classList.contains('active');
-
-            // Optimistic UI update
-            buttonElement.classList.toggle('active');
-            buttonElement.title = buttonElement.classList.contains('active') ? 'Remove Bookmark' : 'Add Bookmark';
-
-            fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    is_community_article: isCommunity,
-                    title: title, source_name: sourceName, image_url: imageUrl,
-                    description: description, published_at: publishedAt
-                })
-            })
-            .then(res => {
-                if (!res.ok) {
-                    buttonElement.classList.toggle('active', wasActive); // Revert
-                    buttonElement.title = wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-                    return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); });
-                }
-                return res.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    // Confirm UI state from server
-                    buttonElement.classList.toggle('active', data.status === 'added');
-                    buttonElement.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                    
-                    const alertPlaceholder = document.getElementById('alert-placeholder');
-                    if(alertPlaceholder) {
-                        const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
-                        existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
-                        const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                        alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
-                        const newAlert = alertPlaceholder.lastChild;
-                        if (newAlert && bootstrap.Alert.getOrCreateInstance(newAlert)) {
-                             setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert).close(); }, 3000);
-                        }
-                    }
-                } else {
-                    buttonElement.classList.toggle('active', wasActive); // Revert
-                    buttonElement.title = wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-                    console.warn('Bookmark toggle server error:', data.error);
-                }
-            })
-            .catch(err => {
-                buttonElement.classList.toggle('active', wasActive); // Revert
-                buttonElement.title = wasActive ? 'Remove Bookmark' : 'Add Bookmark';
-                console.error("Bookmark AJAX error:", err);
-            });
+    document.addEventListener('DOMContentLoaded', function () {
+        const darkModeToggle = document.querySelector('.dark-mode-toggle');
+        const body = document.body;
+        function updateThemeIcon() { if(darkModeToggle) { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; } }
+        function applyTheme(theme) {
+            if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
+            updateThemeIcon();
+            localStorage.setItem('darkMode', theme);
+            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
         }
-
-        document.addEventListener('DOMContentLoaded', function () {
-            const darkModeToggle = document.querySelector('.dark-mode-toggle');
-            const body = document.body;
-            function updateThemeIcon() { if(darkModeToggle) { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; } }
-            function applyTheme(theme) {
-                if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
-                updateThemeIcon();
-                localStorage.setItem('darkMode', theme);
-                document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
-            }
-            if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
-            let storedTheme = localStorage.getItem('darkMode');
-            if (!storedTheme) { const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1]; if (cookieTheme) storedTheme = cookieTheme; }
-            if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
-
-            const addArticleBtn = document.getElementById('addArticleBtn');
-            const addArticleModal = document.getElementById('addArticleModal');
-            const closeModalBtn = document.getElementById('closeModalBtn');
-            const cancelArticleBtn = document.getElementById('cancelArticleBtn');
-            if(addArticleBtn && addArticleModal) {
-                addArticleBtn.addEventListener('click', () => { addArticleModal.style.display = 'flex'; body.style.overflow = 'hidden'; });
-                const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; if(document.getElementById('addArticleForm')) document.getElementById('addArticleForm').reset(); };
-                if(closeModalBtn) closeModalBtn.addEventListener('click', closeModalFunction);
-                if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
-                addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
-            }
-            
-            const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert:not(.bookmark-alert)');
-            flashedAlerts.forEach(function(alert) { 
-                const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
-                if (bsAlert) {
-                    setTimeout(function() { bsAlert.close(); }, 7000);
-                }
-            });
-
-            // --- Date Picker Logic ---
-            const newsDatePicker = document.getElementById('newsDatePicker');
-            if (newsDatePicker) {
-                newsDatePicker.addEventListener('change', function() {
-                    const selectedDate = this.value; // YYYY-MM-DD
-                    const currentUrl = new URL(window.location.href);
-                    const params = new URLSearchParams(currentUrl.search);
-                    
-                    let currentCategory = "{{ selected_category | default('All Articles') | e }}";
-                    const pathSegments = currentUrl.pathname.split('/');
-                    if (pathSegments.length > 2 && pathSegments[1] === 'category') {
-                        try {
-                            currentCategory = decodeURIComponent(pathSegments[2]);
-                        } catch (e) { console.error("Error decoding category from URL:", e); }
-                    }
-                    
-                    params.set('page', '1'); 
-
-                    if (selectedDate) {
-                        params.set('selected_date', selectedDate);
-                    } else {
-                        params.delete('selected_date');
-                    }
-                    
-                    let basePath = "{{ url_for('index', category_name='__CAT__') }}";
-                    basePath = basePath.replace('__CAT__', encodeURIComponent(currentCategory));
-                    basePath = basePath.replace(/\/page\/\d+$/, ''); // Remove existing page number from base
-
-                    window.location.href = basePath + (params.toString() ? '?' + params.toString() : '');
-                });
-            }
-        });
+        if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
+        let storedTheme = localStorage.getItem('darkMode');
+        if (!storedTheme) { const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1]; if (cookieTheme) storedTheme = cookieTheme; }
+        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+        const addArticleBtn = document.getElementById('addArticleBtn');
+        const addArticleModal = document.getElementById('addArticleModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const cancelArticleBtn = document.getElementById('cancelArticleBtn');
+        if(addArticleBtn && addArticleModal) {
+            addArticleBtn.addEventListener('click', () => { addArticleModal.style.display = 'flex'; body.style.overflow = 'hidden'; });
+            const closeModalFunction = () => { addArticleModal.style.display = 'none'; body.style.overflow = 'auto'; if(document.getElementById('addArticleForm')) document.getElementById('addArticleForm').reset(); };
+            if(closeModalBtn) closeModalBtn.addEventListener('click', closeModalFunction);
+            if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
+            addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
+        }
+        const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
+        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
+    });
     </script>
     {% block scripts_extra %}{% endblock %}
 </body>
@@ -1455,25 +1161,9 @@ BASE_HTML_TEMPLATE = """
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
-    {% if request.args.get('selected_date') %}
-        News for {{ request.args.get('selected_date') | to_ist | replace(' at 12:00 AM IST', '') if request.args.get('selected_date') else "selected date" }} - {{ selected_category }}
-    {% elif query %}
-        Search: {{ query|truncate(30) }}
-    {% elif selected_category %}
-        {{selected_category}}
-    {% else %}
-        Home
-    {% endif %} - Briefly
+    {% if query %}Search: {{ query|truncate(30) }}{% elif selected_category %}{{selected_category}}{% else %}Home{% endif %} - Briefly (India News)
 {% endblock %}
 {% block content %}
-    {% if selected_date_for_picker %}
-        <h4 class="mb-3 text-center">
-            Showing articles for <mark>{{ selected_date_for_picker | to_ist | replace(' at 12:00 AM IST', '') }}</mark>
-            {% if selected_category != 'All Articles' %} in {{ selected_category }}{% endif %}
-        </h4>
-    {% endif %}
-
-    {# Featured Article Section #}
     {% if articles and articles[0] and featured_article_on_this_page %}
     <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
         <div class="row g-0 g-md-4">
@@ -1488,7 +1178,7 @@ INDEX_HTML_TEMPLATE = """
             </div>
             <div class="col-lg-6 d-flex flex-column ps-lg-3 pt-3 pt-lg-0">
                 <div class="d-flex justify-content-between align-items-start">
-                    <div>
+                    <div> {# Container for meta items except bookmark #}
                         <div class="article-meta mb-2">
                             <span class="badge bg-primary me-2" style="font-size:0.75rem;">{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|truncate(25) }}</span>
                             <span class="meta-item"><i class="far fa-calendar-alt"></i> {{ (art0.published_at | to_ist if art0.is_community_article else (art0.publishedAt | to_ist if art0.publishedAt else 'N/A')) }}</span>
@@ -1504,7 +1194,7 @@ INDEX_HTML_TEMPLATE = """
                             data-image-url="{{ (art0.image_url if art0.is_community_article else art0.urlToImage)|e }}"
                             data-description="{{ (art0.description if art0.description else '')|e }}"
                             data-published-at="{{ (art0.published_at.isoformat() if art0.is_community_article and art0.published_at else (art0.publishedAt if not art0.is_community_article and art0.publishedAt else ''))|e }}">
-                        <i class="fa-regular fa-bookmark regular-icon"></i><i class="fa-solid fa-bookmark solid-icon"></i>
+                        <i class="fa-solid fa-bookmark"></i>
                     </button>
                     {% endif %}
                 </div>
@@ -1514,14 +1204,12 @@ INDEX_HTML_TEMPLATE = """
             </div>
         </div>
     </article>
-    {% elif not articles and selected_category != 'Community Hub' and not query and not request.args.get('selected_date') %}
+    {% elif not articles and selected_category != 'Community Hub' and not query %}
         <div class="alert alert-warning text-center my-4 p-3 small">No recent Indian news found. Please check back later.</div>
-    {% elif not articles and selected_category == 'Community Hub' and not request.args.get('selected_date') %}
+    {% elif not articles and selected_category == 'Community Hub' %}
         <div class="alert alert-info text-center my-4 p-3"><h4><i class="fas fa-feather-alt me-2"></i>No Articles Penned Yet</h4><p>No articles in the Community Hub. {% if session.user_id %}Click the '+' button to share your insights!{% else %}Login to add articles.{% endif %}</p></div>
     {% elif not articles and query %}
         <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No results for "{{ query }}"</h4><p>Try different keywords or browse categories.</p></div>
-    {% elif not articles and request.args.get('selected_date') %}
-         <div class="alert alert-info text-center my-4 p-3"><h4><i class="far fa-calendar-times me-2"></i>No Articles Found</h4><p>No articles found for {{ request.args.get('selected_date') }} in {{selected_category}}.</p></div>
     {% endif %}
 
     <div class="row g-4">
@@ -1547,7 +1235,7 @@ INDEX_HTML_TEMPLATE = """
                             data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
                             data-description="{{ (art.description if art.description else '')|e }}"
                             data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
-                        <i class="fa-regular fa-bookmark regular-icon"></i><i class="fa-solid fa-bookmark solid-icon"></i>
+                        <i class="fa-solid fa-bookmark"></i>
                     </button>
                     {% endif %}
                 </div>
@@ -1565,12 +1253,12 @@ INDEX_HTML_TEMPLATE = """
 
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
-        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, selected_date=request.args.get('selected_date')) if current_page > 1 else '#' }}">&laquo; Prev</a></li>
+        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) if current_page > 1 else '#' }}">&laquo; Prev</a></li>
         {% set page_window = 1 %}{% set show_first = 1 %}{% set show_last = total_pages %}
-        {% if current_page - page_window > show_first %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, selected_date=request.args.get('selected_date')) }}">1</a></li>{% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endif %}
-        {% for p in range(1, total_pages + 1) %}{% if p == current_page %}<li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>{% elif p >= current_page - page_window and p <= current_page + page_window %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, selected_date=request.args.get('selected_date')) }}">{{ p }}</a></li>{% endif %}{% endfor %}
-        {% if current_page + page_window < show_last %}{% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, selected_date=request.args.get('selected_date')) }}">{{ total_pages }}</a></li>{% endif %}
-        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, selected_date=request.args.get('selected_date')) if current_page < total_pages else '#' }}">Next &raquo;</a></li>
+        {% if current_page - page_window > show_first %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) }}">1</a></li>{% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endif %}
+        {% for p in range(1, total_pages + 1) %}{% if p == current_page %}<li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>{% elif p >= current_page - page_window and p <= current_page + page_window %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) }}">{{ p }}</a></li>{% endif %}{% endfor %}
+        {% if current_page + page_window < show_last %}{% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) }}">{{ total_pages }}</a></li>{% endif %}
+        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) if current_page < total_pages else '#' }}">Next &raquo;</a></li>
     </ul></nav>
     {% endif %}
 {% endblock %}
@@ -1581,13 +1269,36 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
         if (isUserLoggedInForHomepage) {
             button.addEventListener('click', function(event) {
-                event.preventDefault(); 
-                event.stopPropagation();
-                if (typeof handleBookmarkToggle === 'function') {
-                    handleBookmarkToggle(this);
-                } else {
-                    console.error('Global handleBookmarkToggle function not found.');
-                }
+                event.preventDefault(); event.stopPropagation();
+                const articleHashId = this.dataset.articleHashId;
+                const isCommunity = this.dataset.isCommunity;
+                const title = this.dataset.title;
+                const sourceName = this.dataset.sourceName;
+                const imageUrl = this.dataset.imageUrl;
+                const description = this.dataset.description;
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
+                })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added');
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                        const alertPlaceholder = document.getElementById('alert-placeholder');
+                        if(alertPlaceholder) {
+                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
+                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
+                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
+                            const newAlert = alertPlaceholder.lastChild;
+                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
+                        }
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
             });
         }
     });
@@ -1601,10 +1312,10 @@ ARTICLE_HTML_TEMPLATE = """
 {% block title %}{{ article.title|truncate(50) if article else "Article" }} - Briefly{% endblock %}
 {% block head_extra %}
 <style>
-    /* Styles specific to article detail page, if any, otherwise base styles apply */
     .article-full-content-wrapper { background-color: var(--white-bg); padding: 2rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.07); margin-bottom: 2rem; margin-top: 1rem; }
     .article-full-content-wrapper .main-article-image { width: 100%; max-height: 480px; object-fit: cover; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .article-title-main {font-weight: 700; color: var(--primary-color); line-height:1.3; font-family: 'Poppins', sans-serif;}
+    .article-title-main {font-weight: 700; color: var(--primary-color); line-height:1.3; font-family: 'Poppins', sans-serif;} /* For article detail page */
+    .article-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
     .article-meta-detailed { font-size: 0.85rem; color: var(--text-muted-color); margin-bottom: 1.5rem; display:flex; flex-wrap:wrap; gap: 0.5rem 1.2rem; align-items:center; border-bottom: 1px solid var(--card-border-color); padding-bottom:1rem; }
     .article-meta-detailed .meta-item i { color: var(--secondary-color); margin-right: 0.4rem; font-size:0.95rem; }
     .summary-box { background-color: rgba(var(--primary-color-rgb), 0.04); padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border: 1px solid rgba(var(--primary-color-rgb), 0.1); }
@@ -1631,7 +1342,7 @@ ARTICLE_HTML_TEMPLATE = """
     <div class="mb-3 d-flex justify-content-between align-items-center">
         <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
         {% if session.user_id %}
-        <button id="bookmarkBtnDetail" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" 
+        <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" 
                 title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
                 data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}"
                 data-is-community="{{ 'true' if is_community_article else 'false' }}"
@@ -1640,7 +1351,7 @@ ARTICLE_HTML_TEMPLATE = """
                 data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}"
                 data-description="{{ (article.description if article.description else '')|e }}"
                 data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}">
-            <i class="fa-regular fa-bookmark regular-icon"></i><i class="fa-solid fa-bookmark solid-icon"></i>
+            <i class="fa-solid fa-bookmark"></i>
         </button>
         {% endif %}
     </div>
@@ -1654,29 +1365,80 @@ ARTICLE_HTML_TEMPLATE = """
     {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
 
     <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary...</div></div>
+
     <div id="articleAnalysisContainer">
     {% if is_community_article %}
         {% if article.groq_summary %}
             <div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
-        {% elif not article.groq_summary and groq_client_configured %} 
+        {% elif not article.groq_summary and groq_client %} 
             <div class="alert alert-secondary small p-3 mt-3">AI Summary not available for this community article.</div>
         {% endif %}
+
         {% if article.parsed_takeaways %}
             <div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
                 <ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul>
             </div>
-        {% elif not article.groq_takeaways and groq_client_configured %} 
+        {% elif not article.groq_takeaways and groq_client %} 
             <div class="alert alert-secondary small p-3 mt-3">AI Takeaways not available for this community article.</div>
         {% endif %}
         <hr class="my-4">
         <h4 class="mb-3">Full Article Content</h4>
         <div class="content-text">{{ article.full_text }}</div>
     {% else %}
+        {# API Article content will be loaded here by JavaScript #}
         <div id="apiArticleContent"></div>
     {% endif %}
     </div>
+
     <section class="comment-section" id="comment-section">
-         {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %} <div class="comment-container" id="comment-{{ comment.id }}"> <div class="comment-card"> <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}"> {{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }} </div> <div class="comment-body"> <div class="comment-header"> <span class="comment-author">{{ comment.author.name if comment.author else 'Anonymous' }}</span> <span class="comment-date">{{ comment.timestamp | to_ist }}</span> </div> <p class="comment-content mb-2">{{ comment.content }}</p> {% if is_logged_in %} <div class="comment-actions"> <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == 1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="1" title="Like"> <i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('likes', 0) }}</span> </button> <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == -1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="-1" title="Dislike"> <i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('dislikes', 0) }}</span> </button> <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply"> <i class="fas fa-reply"></i> Reply </button> </div> <div class="reply-form-container" id="reply-form-container-{{ comment.id }}"> <form class="reply-form mt-2"> <input type="hidden" name="article_hash_id" value="{{ article_hash_id_for_js }}"> <input type="hidden" name="parent_id" value="{{ comment.id }}"> <div class="mb-2"> <textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea> </div> <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button> <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button> </form> </div> {% endif %} </div> </div> <div class="comment-replies" id="replies-of-{{ comment.id }}"> {% for reply in comment.replies|sort(attribute='timestamp') %}  {{ render_comment_with_replies(reply, comment_data, is_logged_in, article_hash_id_for_js) }} {% endfor %} </div> </div> {% endmacro %} <div id="comments-list"> {% for comment in comments %}  {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }} {% else %} <p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p> {% endfor %} </div> {% if session.user_id %} <div class="add-comment-form mt-4 pt-4 border-top"> <h5 class="mb-3">Leave a Comment</h5> <form id="comment-form"> <input type="hidden" name="article_hash_id" value="{{ article.article_hash_id if is_community_article else article.id }}"> <div class="mb-3"> <textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea> </div> <button type="submit" class="btn btn-primary-modal">Post Comment</button> </form> </div> {% else %} <div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to join the discussion.</div> {% endif %}
+        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ comments|length }}</span>)</h3>
+        {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %}
+            <div class="comment-container" id="comment-{{ comment.id }}">
+                <div class="comment-card">
+                    <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}">{{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }}</div>
+                    <div class="comment-body">
+                        <div class="comment-header">
+                            <span class="comment-author">{{ comment.author.name if comment.author else 'Anonymous' }}</span>
+                            <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
+                        </div>
+                        <p class="comment-content mb-2">{{ comment.content }}</p>
+                        {% if is_logged_in %}
+                        <div class="comment-actions">
+                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == 1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('likes', 0) }}</span></button>
+                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == -1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('dislikes', 0) }}</span></button>
+                            <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
+                        </div>
+                        <div class="reply-form-container" id="reply-form-container-{{ comment.id }}">
+                            <form class="reply-form mt-2">
+                                <input type="hidden" name="article_hash_id" value="{{ article_hash_id_for_js }}">
+                                <input type="hidden" name="parent_id" value="{{ comment.id }}">
+                                <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
+                                <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="comment-replies" id="replies-of-{{ comment.id }}">
+                    {% for reply in comment.replies|sort(attribute='timestamp') %} {{ render_comment_with_replies(reply, comment_data, is_logged_in, article_hash_id_for_js) }} {% endfor %}
+                </div>
+            </div>
+        {% endmacro %}
+        <div id="comments-list">
+            {% for comment in comments %} {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }}
+            {% else %}<p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>{% endfor %}
+        </div>
+        {% if session.user_id %}
+            <div class="add-comment-form mt-4 pt-4 border-top">
+                <h5 class="mb-3">Leave a Comment</h5>
+                <form id="comment-form">
+                    <input type="hidden" name="article_hash_id" value="{{ article.article_hash_id if is_community_article else article.id }}">
+                    <div class="mb-3"><textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea></div>
+                    <button type="submit" class="btn btn-primary-modal">Post Comment</button>
+                </form>
+            </div>
+        {% else %}<div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to join the discussion.</div>{% endif %}
     </section>
 </article>
 {% endif %}
@@ -1685,10 +1447,10 @@ ARTICLE_HTML_TEMPLATE = """
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     {% if article %} 
-    const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
-    const groqConfiguredGlobal = {{ groq_client_configured | tojson }}; 
     const isCommunityArticle = {{ is_community_article | tojson }};
     const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
+    const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
+    const groqConfiguredGlobal = {{ groq_client | tojson }}; // Passed from inject_global_vars
 
     function convertUTCToIST(utcIsoString) {
         if (!utcIsoString) return "N/A";
@@ -1699,6 +1461,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!isCommunityArticle && articleHashIdGlobal) {
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContent = document.getElementById('apiArticleContent');
+
         fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
             .then(response => {
                 if (!response.ok) { throw new Error('Network response error: ' + response.statusText + ' (' + response.status + ')'); }
@@ -1707,6 +1470,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(data => {
                 if(contentLoader) contentLoader.style.display = 'none';
                 if (!apiArticleContent) return;
+
                 let html = '';
                 const articleUrl = {{ article.url | tojson if article and not is_community_article else 'null' }};
                 const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
@@ -1729,7 +1493,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`;
                                 contentAdded = true;
                             }
-                            if (!contentAdded && groqConfiguredGlobal) { 
+                            if (!contentAdded && groqConfiguredGlobal) {
                                 html += `<div class="alert alert-secondary small p-3 mt-3">AI-generated summary and takeaways for this article are currently empty or not available.</div>`;
                             } else if (!groqConfiguredGlobal && !contentAdded) {
                                  html += `<div class="alert alert-info small p-3 mt-3">AI analysis features are currently disabled.</div>`;
@@ -1759,29 +1523,29 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isUserLoggedIn) {
             actionsHTML = `
             <div class="comment-actions">
-                <button class="vote-btn ${comment.user_vote === 1 ? 'active' : ''}" data-comment-id="${comment.id}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-${comment.id}">${comment.likes || 0}</span></button>
-                <button class="vote-btn ${comment.user_vote === -1 ? 'active' : ''}" data-comment-id="${comment.id}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-${comment.id}">${comment.dislikes || 0}</span></button>
-                <button class="reply-btn" data-comment-id="${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
-            </div>
-            <div class="reply-form-container" id="reply-form-container-${comment.id}">
+                <button class="vote-btn <span class="math-inline">\{comment\.user\_vote \=\=\= 1 ? 'active' \: ''\}" data\-comment\-id\="</span>{comment.id}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-<span class="math-inline">\{comment\.id\}"\></span>{comment.likes || 0}</span></button>
+                <button class="vote-btn <span class="math-inline">\{comment\.user\_vote \=\=\= \-1 ? 'active' \: ''\}" data\-comment\-id\="</span>{comment.id}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-<span class="math-inline">\{comment\.id\}"\></span>{comment.dislikes || 0}</span></button>
+                <button class="reply-btn" data-comment-id="<span class="math-inline">\{comment\.id\}" title\="Reply"\><i class\="fas fa\-reply"\></i\> Reply</button\>
+</div\>
+<div class\="reply\-form\-container" id\="reply\-form\-container\-</span>{comment.id}">
                 <form class="reply-form mt-2">
-                    <input type="hidden" name="article_hash_id" value="${articleHashIdForJs}"><input type="hidden" name="parent_id" value="${comment.id}">
+                    <input type="hidden" name="article_hash_id" value="<span class="math-inline">\{articleHashIdForJs\}"\><input type\="hidden" name\="parent\_id" value\="</span>{comment.id}">
                     <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
                     <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button><button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
                 </form>
             </div>`;
         }
-        return \`<div class="comment-container" id="comment-${comment.id}"><div class="comment-card"><div class="comment-avatar" title="${authorName}">${userInitial}</div><div class="comment-body"><div class="comment-header"><span class="comment-author">${authorName}</span><span class="comment-date">${commentDate}</span></div><p class="comment-content mb-2">${comment.content}</p>${actionsHTML}</div></div><div class="comment-replies" id="replies-of-${comment.id}"></div></div>\`;
+        return `<div class="comment-container" id="comment-<span class="math-inline">\{comment\.id\}"\><div class\="comment\-card"\><div class\="comment\-avatar" title\="</span>{authorName}"><span class="math-inline">\{userInitial\}</div\><div class\="comment\-body"\><div class\="comment\-header"\><span class\="comment\-author"\></span>{authorName}</span><span class="comment-date"><span class="math-inline">\{commentDate\}</span\></div\><p class\="comment\-content mb\-2"\></span>{comment.content}</p><span class="math-inline">\{actionsHTML\}</div\></div\><div class\="comment\-replies" id\="replies\-of\-</span>{comment.id}"></div></div>`;
     }
     function handleCommentSubmit(form, articleHashId, parentId = null) {
         const content = form.querySelector('textarea[name="content"]').value; if (!content.trim()) return;
         const submitButton = form.querySelector('button[type="submit"]'); const originalButtonText = submitButton.innerHTML; submitButton.disabled = true; submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
-        fetch(\`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}\`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId }) })
-        .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || \`HTTP error! status: ${res.status}\`); }); } return res.json(); })
+        fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId }) })
+        .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
         .then(data => {
             if (data.success) {
                 const newCommentHTML = createCommentHTML(data.comment, articleHashId); const tempDiv = document.createElement('div'); tempDiv.innerHTML = newCommentHTML.trim(); const newCommentNode = tempDiv.firstChild;
-                if (parentId) { document.getElementById(\`replies-of-${parentId}\`).appendChild(newCommentNode); form.closest('.reply-form-container').style.display = 'none'; }
+                if (parentId) { document.getElementById(`replies-of-${parentId}`).appendChild(newCommentNode); form.closest('.reply-form-container').style.display = 'none'; }
                 else { const list = document.getElementById('comments-list'); const noCommentsMsg = document.getElementById('no-comments-msg'); if (noCommentsMsg) noCommentsMsg.remove(); list.appendChild(newCommentNode); const countEl = document.getElementById('comment-count'); countEl.textContent = parseInt(countEl.textContent) + 1; }
                 form.reset();
             } else { alert('Error: ' + (data.error || 'Unknown error posting comment.')); }
@@ -1796,21 +1560,21 @@ document.addEventListener('DOMContentLoaded', function () {
             const voteBtn = e.target.closest('.vote-btn');
             if (voteBtn && isUserLoggedIn) {
                 const commentId = voteBtn.dataset.commentId; const voteType = parseInt(voteBtn.dataset.voteType);
-                fetch(\`{{ url_for('vote_comment', comment_id=0) }}\`.replace('0', commentId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vote_type: voteType }) })
-                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || \`HTTP error! status: ${res.status}\`); }); } return res.json(); })
+                fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vote_type: voteType }) })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
                 .then(data => {
                     if(data.success) {
-                        document.getElementById(\`likes-count-${commentId}\`).textContent = data.likes; document.getElementById(\`dislikes-count-${commentId}\`).textContent = data.dislikes;
-                        const allVoteBtnsOnComment = document.querySelectorAll(\`.vote-btn[data-comment-id="${commentId}"]\`); allVoteBtnsOnComment.forEach(btn => btn.classList.remove('active'));
-                        if(data.user_vote === 1) { document.querySelector(\`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]\`).classList.add('active'); }
-                        else if (data.user_vote === -1) { document.querySelector(\`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]\`).classList.add('active'); }
+                        document.getElementById(`likes-count-${commentId}`).textContent = data.likes; document.getElementById(`dislikes-count-${commentId}`).textContent = data.dislikes;
+                        const allVoteBtnsOnComment = document.querySelectorAll(`.vote-btn[data-comment-id="${commentId}"]`); allVoteBtnsOnComment.forEach(btn => btn.classList.remove('active'));
+                        if(data.user_vote === 1) { document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`).classList.add('active'); }
+                        else if (data.user_vote === -1) { document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`).classList.add('active'); }
                     } else { alert('Error voting: ' + (data.error || 'Unknown error.')); }
                 }).catch(err => { console.error("Vote error:", err); alert("Could not process vote: " + err.message); });
             }
             const replyBtn = e.target.closest('.reply-btn');
             if (replyBtn && isUserLoggedIn) {
-                const commentId = replyBtn.dataset.commentId; const formContainer = document.getElementById(\`reply-form-container-${commentId}\`);
-                if (formContainer) { const isDisplayed = formContainer.style.display === 'block'; document.querySelectorAll('.reply-form-container').forEach(fc => { if (fc.id !== \`reply-form-container-${commentId}\`) fc.style.display = 'none'; }); formContainer.style.display = isDisplayed ? 'none' : 'block'; if(formContainer.style.display === 'block') { formContainer.querySelector('textarea').focus(); } }
+                const commentId = replyBtn.dataset.commentId; const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                if (formContainer) { const isDisplayed = formContainer.style.display === 'block'; document.querySelectorAll('.reply-form-container').forEach(fc => { if (fc.id !== `reply-form-container-${commentId}`) fc.style.display = 'none'; }); formContainer.style.display = isDisplayed ? 'none' : 'block'; if(formContainer.style.display === 'block') { formContainer.querySelector('textarea').focus(); } }
             }
             const cancelReplyBtn = e.target.closest('.cancel-reply-btn');
             if (cancelReplyBtn) { const formContainer = cancelReplyBtn.closest('.reply-form-container'); formContainer.style.display = 'none'; formContainer.querySelector('form').reset(); }
@@ -1820,15 +1584,20 @@ document.addEventListener('DOMContentLoaded', function () {
             if (replyForm) { e.preventDefault(); const articleHashIdFromForm = replyForm.querySelector('input[name="article_hash_id"]').value; const parentId = replyForm.querySelector('input[name="parent_id"]').value; handleCommentSubmit(replyForm, articleHashIdFromForm, parentId); }
         });
     }
-
-    const bookmarkBtnDetail = document.getElementById('bookmarkBtnDetail');
-    if (bookmarkBtnDetail && isUserLoggedIn) {
-        bookmarkBtnDetail.addEventListener('click', function() {
-            if (typeof handleBookmarkToggle === 'function') {
-                handleBookmarkToggle(this);
-            } else {
-                console.error('Global handleBookmarkToggle function not found.');
-            }
+    const bookmarkBtn = document.getElementById('bookmarkBtn');
+    if (bookmarkBtn && isUserLoggedIn) {
+        bookmarkBtn.addEventListener('click', function() {
+            const articleHashId = this.dataset.articleHashId; const isCommunity = this.dataset.isCommunity; const title = this.dataset.title; const sourceName = this.dataset.sourceName; const imageUrl = this.dataset.imageUrl; const description = this.dataset.description; const publishedAt = this.dataset.publishedAt;
+            fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt }) })
+            .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+            .then(data => {
+                if (data.success) {
+                    this.classList.toggle('active', data.status === 'added'); this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    const alertPlaceholder = document.getElementById('alert-placeholder');
+                    if(alertPlaceholder) { const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert'); existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close()); const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`; alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv); const newAlert = alertPlaceholder.lastChild; setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000); }
+                } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+            })
+            .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
         });
     }
     {% endif %} 
