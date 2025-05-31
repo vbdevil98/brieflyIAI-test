@@ -429,8 +429,8 @@ def fetch_news_from_api(target_date_str=None): # Added target_date_str parameter
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, URL):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
-    if not SCRAPER_API_KEY: return {"full_text": None, "groq_analysis": None, "error": "Content fetching service unavailable."}
-    params = {'api_key': SCRAPER_API_KEY, 'url': url}
+    if not SCRAPER_API_KEY: return {"full_text": None, "groq_analysis": None, "error": "Content fetching service unavailable."}
+        params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
         response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
         response.raise_for_status()
