@@ -1,5 +1,3 @@
-Profile Feature
-
 # Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AND AI DISPLAY FIXES
 
 #!/usr/bin/env python
