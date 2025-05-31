@@ -1,3 +1,5 @@
+Profile Feature
+
 # Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AND AI DISPLAY FIXES
 
 #!/usr/bin/env python
@@ -289,55 +291,105 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 # ==============================================================================
 # --- NEWS FETCHING ---
 # ==============================================================================
-@simple_cache()
-def fetch_news_from_api():
+@simple_cache() # Cache key will include target_date_str if provided
+def fetch_news_from_api(target_date_str=None): # Added target_date_str parameter
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
         return []
-    from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-    from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
-    to_date_utc = datetime.now(timezone.utc)
-    to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
-    all_raw_articles = []
-    try:
-        app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
-        top_headlines_response = newsapi.get_top_headlines(country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE'])
-        status = top_headlines_response.get('status')
-        total_results = top_headlines_response.get('totalResults', 0)
-        app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
-        if status == 'ok' and total_results > 0: all_raw_articles.extend(top_headlines_response['articles'])
-        elif status == 'error': app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
-    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Top-Headlines): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-    except Exception as e: app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
 
-    try:
-        app.logger.info(f"Attempt 2: Fetching 'everything' with query: {app.config['NEWS_API_QUERY']} from {from_date_str} to {to_date_str}")
-        everything_response = newsapi.get_everything(
-            q=app.config['NEWS_API_QUERY'], from_param=from_date_str, to=to_date_str,
-            language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE'])
-        status = everything_response.get('status')
-        total_results = everything_response.get('totalResults', 0)
-        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
-        if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
-        elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
-    except NewsAPIException as e: app.logger.error(f"NewsAPIException (Everything): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-    except Exception as e: app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
+    from_date_param = None
+    to_date_param = None
 
-    if not all_raw_articles:
+    if target_date_str:
         try:
-            app.logger.warning("No articles from primary calls. Trying Fallback with domains.")
-            domains_to_check = app.config['NEWS_API_DOMAINS']
-            app.logger.info(f"Attempt 3 (Fallback): Fetching from domains: {domains_to_check} from {from_date_str} to {to_date_str}")
-            fallback_response = newsapi.get_everything(
-                domains=domains_to_check, from_param=from_date_str, to=to_date_str,
+            # Validate target_date_str format (YYYY-MM-DD)
+            datetime.strptime(target_date_str, '%Y-%m-%d')
+            # For NewsAPI, specify the whole day in UTC.
+            from_date_param = f"{target_date_str}T00:00:00Z"
+            to_date_param = f"{target_date_str}T23:59:59Z"
+            app.logger.info(f"Fetching news specifically for date: {target_date_str} (UTC {from_date_param} to {to_date_param})")
+        except ValueError:
+            app.logger.error(f"Invalid date format for target_date_str: {target_date_str}. Falling back to default range.")
+            target_date_str = None # Clear invalid date string
+            # Fallback to default if date format is wrong
+            from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
+            from_date_param = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            to_date_utc = datetime.now(timezone.utc)
+            to_date_param = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            app.logger.info(f"Fetching news with default date range (last {app.config['NEWS_API_DAYS_AGO']} days).")
+    else:
+        from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
+        from_date_param = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+        to_date_utc = datetime.now(timezone.utc)
+        to_date_param = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+        app.logger.info(f"Fetching news with default date range (last {app.config['NEWS_API_DAYS_AGO']} days).")
+
+    all_raw_articles = []
+
+    if target_date_str:
+        # Only use get_everything for a specific date for focused results
+        try:
+            app.logger.info(f"Attempt (specific date): Fetching 'everything' for {target_date_str} with query: \"{app.config['NEWS_API_QUERY']}\" from {from_date_param} to {to_date_param}")
+            everything_response = newsapi.get_everything(
+                q=app.config['NEWS_API_QUERY'],
+                from_param=from_date_param,
+                to=to_date_param,
+                language='en',
+                sort_by=app.config['NEWS_API_SORT_BY'], # 'publishedAt' is good for chronological
+                page_size=app.config['NEWS_API_PAGE_SIZE']
+            )
+            status = everything_response.get('status')
+            total_results = everything_response.get('totalResults', 0)
+            app.logger.info(f"Everything API Response (specific date) -> Status: {status}, TotalResults: {total_results}")
+            if status == 'ok' and total_results > 0:
+                all_raw_articles.extend(everything_response['articles'])
+            elif status == 'error':
+                app.logger.error(f"NewsAPI Error (Everything - specific date): {everything_response.get('message')}")
+        except NewsAPIException as e:
+            app.logger.error(f"NewsAPIException (Everything - specific date): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+        except Exception as e:
+            app.logger.error(f"Generic Exception (Everything - specific date): {e}", exc_info=True)
+    else:
+        # Original logic for fetching news (top_headlines, everything for range, fallback)
+        try:
+            app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
+            top_headlines_response = newsapi.get_top_headlines(country='in', language='en', page_size=app.config['NEWS_API_PAGE_SIZE'])
+            status = top_headlines_response.get('status')
+            total_results = top_headlines_response.get('totalResults', 0)
+            app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
+            if status == 'ok' and total_results > 0: all_raw_articles.extend(top_headlines_response['articles'])
+            elif status == 'error': app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
+        except NewsAPIException as e: app.logger.error(f"NewsAPIException (Top-Headlines): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+        except Exception as e: app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
+
+        try:
+            app.logger.info(f"Attempt 2: Fetching 'everything' with query: \"{app.config['NEWS_API_QUERY']}\" from {from_date_param} to {to_date_param}")
+            everything_response = newsapi.get_everything(
+                q=app.config['NEWS_API_QUERY'], from_param=from_date_param, to=to_date_param,
                 language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE'])
-            status = fallback_response.get('status')
-            total_results = fallback_response.get('totalResults', 0)
-            app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0: all_raw_articles.extend(fallback_response['articles'])
-            elif status == 'error': app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
-        except NewsAPIException as e: app.logger.error(f"NewsAPIException (Fallback): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-        except Exception as e: app.logger.error(f"Generic Exception (Fallback): {e}", exc_info=True)
+            status = everything_response.get('status')
+            total_results = everything_response.get('totalResults', 0)
+            app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
+            if status == 'ok' and total_results > 0: all_raw_articles.extend(everything_response['articles'])
+            elif status == 'error': app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
+        except NewsAPIException as e: app.logger.error(f"NewsAPIException (Everything): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+        except Exception as e: app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
+
+        if not all_raw_articles: # Only try fallback if primary methods for general fetch yield nothing
+            try:
+                app.logger.warning("No articles from primary calls. Trying Fallback with domains.")
+                domains_to_check = app.config['NEWS_API_DOMAINS']
+                app.logger.info(f"Attempt 3 (Fallback): Fetching from domains: {domains_to_check} from {from_date_param} to {to_date_param}")
+                fallback_response = newsapi.get_everything(
+                    domains=domains_to_check, from_param=from_date_param, to=to_date_param,
+                    language='en', sort_by=app.config['NEWS_API_SORT_BY'], page_size=app.config['NEWS_API_PAGE_SIZE'])
+                status = fallback_response.get('status')
+                total_results = fallback_response.get('totalResults', 0)
+                app.logger.info(f"Fallback API Response -> Status: {status}, TotalResults: {total_results}")
+                if status == 'ok' and total_results > 0: all_raw_articles.extend(fallback_response['articles'])
+                elif status == 'error': app.logger.error(f"NewsAPI Error (Fallback): {fallback_response.get('message')}")
+            except NewsAPIException as e: app.logger.error(f"NewsAPIException (Fallback): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+            except Exception as e: app.logger.error(f"Generic Exception (Fallback): {e}", exc_info=True)
 
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
@@ -357,335 +409,396 @@ def fetch_news_from_api():
                 published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
             except ValueError:
                 app.logger.warning(f"Could not parse publishedAt date for article: {title}")
-                published_at_dt = datetime.now(timezone.utc) 
+                published_at_dt = datetime.now(timezone.utc)
         else:
             published_at_dt = datetime.now(timezone.utc)
 
         standardized_article = {
             'id': article_id, 'title': title, 'description': description,
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-            'publishedAt': published_at_dt.isoformat(), 
+            'publishedAt': published_at_dt.isoformat(),
             'source': {'name': source_name}, 'is_community_article': False,
-            'groq_summary': None, 'groq_takeaways': None
+            'groq_summary': None, 'groq_takeaways': None # These are populated on demand later
         }
-        MASTER_ARTICLE_STORE[article_id] = standardized_article
+        MASTER_ARTICLE_STORE[article_id] = standardized_article # Update MASTER_ARTICLE_STORE
         processed_articles.append(standardized_article)
     
+    # Sort the articles fetched in this specific call
     processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
-    app.logger.info(f"Total unique articles processed and ready to serve: {len(processed_articles)}.")
+    app.logger.info(f"Total unique articles processed in this call and ready to serve: {len(processed_articles)}.")
     return processed_articles
 
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
-    app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
-    if not SCRAPER_API_KEY: return {"full_text": None, "groq_analysis": None, "error": "Content fetching service unavailable."}
-    params = {'api_key': SCRAPER_API_KEY, 'url': url}
-    try:
-        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
-        response.raise_for_status()
-        config = Config()
-        config.fetch_images = False
-        config.memoize_articles = False
-        article_scraper = Article(url, config=config)
-        article_scraper.download(input_html=response.text)
-        article_scraper.parse()
-        if not article_scraper.text: return {"full_text": None, "groq_analysis": None, "error": "Could not extract text from the article."}
-        
-        article_title_for_groq = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
-        
-        # Check MASTER_ARTICLE_STORE for pre-cached analysis to avoid re-analysis by get_article_analysis_with_groq
-        if MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('groq_summary') is not None and \
-           MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('groq_takeaways') is not None:
-             app.logger.info(f"Using pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id}")
-             groq_analysis = {
-                 "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
-                 "groq_takeaways": MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'],
-                 "error": None # Assume no error if summary and takeaways are present
-             }
-        else:
-            groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_title_for_groq)
-            if article_hash_id in MASTER_ARTICLE_STORE and groq_analysis: # Always store, even if there's an error from Groq, or nulls
-                MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'] = groq_analysis.get("groq_summary")
-                MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis.get("groq_takeaways")
-                # We don't store groq_analysis.get("error") in MASTER_ARTICLE_STORE, error is part of the groq_analysis dict itself.
+    app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
+    if not SCRAPER_API_KEY: return {"full_text": None, "groq_analysis": None, "error": "Content fetching service unavailable."}
+    params = {'api_key': SCRAPER_API_KEY, 'url': url}
+    try:
+        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
+        response.raise_for_status()
+        config = Config()
+        config.fetch_images = False
+        config.memoize_articles = False
+        article_scraper = Article(url, config=config)
+        article_scraper.download(input_html=response.text)
+        article_scraper.parse()
+        if not article_scraper.text: return {"full_text": None, "groq_analysis": None, "error": "Could not extract text from the article."}
+        
+        article_title_for_groq = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
+        
+        # Check MASTER_ARTICLE_STORE for pre-cached analysis to avoid re-analysis by get_article_analysis_with_groq
+        if MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('groq_summary') is not None and \
+           MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('groq_takeaways') is not None:
+             app.logger.info(f"Using pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id}")
+             groq_analysis = {
+                 "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
+                 "groq_takeaways": MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'],
+                 "error": None 
+             }
+        else:
+            groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_title_for_groq)
+            if article_hash_id in MASTER_ARTICLE_STORE and groq_analysis: 
+                MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'] = groq_analysis.get("groq_summary")
+                MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis.get("groq_takeaways")
 
-        return {
-            "full_text": article_scraper.text,
-            "groq_analysis": groq_analysis, # This contains summary, takeaways, and a potential error key from Groq
-            "error": None # This top-level error is for issues in fetch_and_parse itself, not Groq's analysis
-        }
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
-        return {"full_text": None, "groq_analysis": None, "error": f"Failed to fetch article content: {str(e)}"}
-    except Exception as e:
-        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
-        return {"full_text": None, "groq_analysis": None, "error": f"Failed to parse article content: {str(e)}"}
+        return {
+            "full_text": article_scraper.text,
+            "groq_analysis": groq_analysis, 
+            "error": None 
+        }
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
+        return {"full_text": None, "groq_analysis": None, "error": f"Failed to fetch article content: {str(e)}"}
+    except Exception as e:
+        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
+        return {"full_text": None, "groq_analysis": None, "error": f"Failed to parse article content: {str(e)}"}
 
 # ==============================================================================
 # --- 6. Flask Routes ---
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
-    return {'categories': app.config['CATEGORIES'], 
-            'current_year': datetime.utcnow().year, 
-            'session': session, 
-            'request': request,
-            'groq_client': groq_client is not None} # For JS to know if Groq is configured
+    return {'categories': app.config['CATEGORIES'], 
+            'current_year': datetime.utcnow().year, 
+            'session': session, 
+            'request': request,
+            'groq_client': groq_client is not None} # For JS to know if Groq is configured
 
 def get_paginated_articles(articles, page, per_page):
-    total = len(articles)
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated_items = articles[start:end]
-    total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
-    return paginated_items, total_pages
+    total = len(articles)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_items = articles[start:end]
+    total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+    return paginated_items, total_pages
 
 def get_sort_key(article):
-    date_val = None
-    if isinstance(article, dict): date_val = article.get('publishedAt')
-    elif hasattr(article, 'published_at'): date_val = article.published_at
-    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
-    if isinstance(date_val, str):
-        try:
-            if date_val.endswith('Z'): date_val_dt = datetime.fromisoformat(date_val[:-1] + '+00:00')
-            elif '+' in date_val or '-' in date_val[10:]: date_val_dt = datetime.fromisoformat(date_val)
-            else: date_val_dt = datetime.fromisoformat(date_val).replace(tzinfo=timezone.utc)
-            return date_val_dt
-        except ValueError:
-            app.logger.warning(f"Could not parse date string: {date_val}")
-            return datetime.min.replace(tzinfo=timezone.utc)
-    elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
-    return datetime.min.replace(tzinfo=timezone.utc)
+    date_val = None
+    if isinstance(article, dict): date_val = article.get('publishedAt')
+    elif hasattr(article, 'published_at'): date_val = article.published_at
+    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
+    if isinstance(date_val, str):
+        try:
+            if date_val.endswith('Z'): date_val_dt = datetime.fromisoformat(date_val[:-1] + '+00:00')
+            elif '+' in date_val or '-' in date_val[10:]: date_val_dt = datetime.fromisoformat(date_val)
+            else: date_val_dt = datetime.fromisoformat(date_val).replace(tzinfo=timezone.utc)
+            return date_val_dt
+        except ValueError:
+            app.logger.warning(f"Could not parse date string: {date_val}")
+            return datetime.min.replace(tzinfo=timezone.utc)
+    elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/category/<category_name>')
 @app.route('/category/<category_name>/page/<int:page>')
 def index(page=1, category_name='All Articles'):
-    session['previous_list_page'] = request.full_path
-    per_page = app.config['PER_PAGE']
-    all_display_articles_raw = []
-    if category_name == 'Community Hub':
-        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
-        for art in db_articles:
-            art.is_community_article = True
-            all_display_articles_raw.append(art)
-    else:
-        api_articles = fetch_news_from_api()
-        for art_dict in api_articles:
-            art_dict['is_community_article'] = False
-            all_display_articles_raw.append(art_dict)
-    all_display_articles_raw.sort(key=get_sort_key, reverse=True)
-    paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
-    paginated_display_articles_with_bookmark_status = []
-    user_bookmarks_hashes = set()
-    if 'user_id' in session:
-        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
-        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
-    for art_item in paginated_display_articles_raw:
-        current_article_hash_id = None
-        if hasattr(art_item, 'is_community_article') and art_item.is_community_article: # CommunityArticle (DB Object)
-            current_article_hash_id = art_item.article_hash_id
-            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
-            paginated_display_articles_with_bookmark_status.append(art_item)
-        elif isinstance(art_item, dict): # API Article (dictionary)
-            current_article_hash_id = art_item.get('id')
-            art_item_copy = art_item.copy()
-            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
-            paginated_display_articles_with_bookmark_status.append(art_item_copy)
-        else:
-            paginated_display_articles_with_bookmark_status.append(art_item)
-    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not request.args.get('query') and paginated_display_articles_with_bookmark_status)
-    return render_template("INDEX_HTML_TEMPLATE", articles=paginated_display_articles_with_bookmark_status, selected_category=category_name, current_page=page, total_pages=total_pages, featured_article_on_this_page=featured_article_on_this_page)
+    session['previous_list_page'] = request.full_path
+    per_page = app.config['PER_PAGE']
+    all_display_articles_raw = []
+    query_str = request.args.get('query') # For search, not used directly here but good to be aware
+    filter_date_str = request.args.get('filter_date')
+    selected_date_obj = None
+
+    if category_name == 'All Articles' and filter_date_str:
+        try:
+            selected_date_obj = datetime.strptime(filter_date_str, '%Y-%m-%d').date()
+            app.logger.info(f"Attempting to filter 'All Articles' for date: {selected_date_obj}")
+        except ValueError:
+            app.logger.warning(f"Invalid filter_date format: {filter_date_str}. Ignoring filter.")
+            flash("Invalid date format for filter. Showing all latest articles instead.", "warning")
+            filter_date_str = None # Clear invalid date string
+
+    if category_name == 'Community Hub':
+        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
+        for art in db_articles:
+            art.is_community_article = True
+            all_display_articles_raw.append(art)
+    else: # 'All Articles' or any other future category that might source from API
+        api_articles = fetch_news_from_api() # Fetches latest N days
+        if selected_date_obj and category_name == 'All Articles':
+            filtered_api_articles = []
+            for art_dict in api_articles:
+                try:
+                    published_at_str = art_dict.get('publishedAt')
+                    if published_at_str:
+                        published_at_dt = datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
+                        if published_at_dt.date() == selected_date_obj:
+                            filtered_api_articles.append(art_dict)
+                except ValueError:
+                    app.logger.warning(f"Could not parse date for filtering article '{art_dict.get('title', 'N/A')}': {published_at_str}")
+            api_articles = filtered_api_articles
+            app.logger.info(f"Found {len(api_articles)} API articles for date: {selected_date_obj}")
+
+        for art_dict in api_articles:
+            art_dict['is_community_article'] = False
+            all_display_articles_raw.append(art_dict)
+
+    all_display_articles_raw.sort(key=get_sort_key, reverse=True)
+    paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
+    paginated_display_articles_with_bookmark_status = []
+    user_bookmarks_hashes = set()
+    if 'user_id' in session:
+        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
+        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
+
+    for art_item in paginated_display_articles_raw:
+        current_article_hash_id = None
+        if hasattr(art_item, 'is_community_article') and art_item.is_community_article: # CommunityArticle (DB Object)
+            current_article_hash_id = art_item.article_hash_id
+            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
+            paginated_display_articles_with_bookmark_status.append(art_item)
+        elif isinstance(art_item, dict): # API Article (dictionary)
+            current_article_hash_id = art_item.get('id')
+            art_item_copy = art_item.copy()
+            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
+            paginated_display_articles_with_bookmark_status.append(art_item_copy)
+        else:
+            paginated_display_articles_with_bookmark_status.append(art_item)
+
+    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str and paginated_display_articles_with_bookmark_status)
+    return render_template("INDEX_HTML_TEMPLATE",
+                           articles=paginated_display_articles_with_bookmark_status,
+                           selected_category=category_name,
+                           current_page=page,
+                           total_pages=total_pages,
+                           featured_article_on_this_page=featured_article_on_this_page,
+                           current_filter_date=filter_date_str, # Pass the date string to the template
+                           query=query_str) # Pass query for search results title
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
-    session['previous_list_page'] = request.full_path
-    query_str = request.args.get('query', '').strip()
-    per_page = app.config['PER_PAGE']
-    if not query_str: return redirect(url_for('index'))
-    app.logger.info(f"Search query: '{query_str}'")
-    api_results = []
-    if not MASTER_ARTICLE_STORE: fetch_news_from_api()
-    for art_id, art_data in MASTER_ARTICLE_STORE.items():
-        if query_str.lower() in art_data.get('title', '').lower() or query_str.lower() in art_data.get('description', '').lower():
-            art_copy = art_data.copy()
-            art_copy['is_community_article'] = False
-            api_results.append(art_copy)
-    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
-        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))).order_by(CommunityArticle.published_at.desc())
-    community_db_articles = []
-    for art in community_db_articles_query.all():
-        art.is_community_article = True
-        community_db_articles.append(art)
-    all_search_results_raw = api_results + community_db_articles
-    all_search_results_raw.sort(key=get_sort_key, reverse=True)
-    paginated_search_articles_raw, total_pages = get_paginated_articles(all_search_results_raw, page, per_page)
-    paginated_search_articles_with_bookmark_status = []
-    user_bookmarks_hashes = set()
-    if 'user_id' in session:
-        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
-        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
-    for art_item in paginated_search_articles_raw:
-        current_article_hash_id = None
-        if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
-            current_article_hash_id = art_item.article_hash_id
-            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
-            paginated_search_articles_with_bookmark_status.append(art_item)
-        elif isinstance(art_item, dict):
-            current_article_hash_id = art_item.get('id')
-            art_item_copy = art_item.copy()
-            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
-            paginated_search_articles_with_bookmark_status.append(art_item_copy)
-        else:
-             paginated_search_articles_with_bookmark_status.append(art_item)
-    return render_template("INDEX_HTML_TEMPLATE", articles=paginated_search_articles_with_bookmark_status, selected_category=f"Search: {query_str}", current_page=page, total_pages=total_pages, featured_article_on_this_page=False, query=query_str)
+    session['previous_list_page'] = request.full_path
+    query_str = request.args.get('query', '').strip()
+    per_page = app.config['PER_PAGE']
+    current_filter_date = request.args.get('filter_date') # Search does not use date filter, but keep for template consistency
+
+    if not query_str: return redirect(url_for('index'))
+    app.logger.info(f"Search query: '{query_str}'")
+    api_results = []
+    if not MASTER_ARTICLE_STORE: fetch_news_from_api()
+
+    for art_id, art_data in MASTER_ARTICLE_STORE.items():
+        if query_str.lower() in art_data.get('title', '').lower() or query_str.lower() in art_data.get('description', '').lower():
+            art_copy = art_data.copy()
+            art_copy['is_community_article'] = False
+            api_results.append(art_copy)
+
+    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
+        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))).order_by(CommunityArticle.published_at.desc())
+    community_db_articles = []
+    for art in community_db_articles_query.all():
+        art.is_community_article = True
+        community_db_articles.append(art)
+
+    all_search_results_raw = api_results + community_db_articles
+    all_search_results_raw.sort(key=get_sort_key, reverse=True)
+    paginated_search_articles_raw, total_pages = get_paginated_articles(all_search_results_raw, page, per_page)
+
+    paginated_search_articles_with_bookmark_status = []
+    user_bookmarks_hashes = set()
+    if 'user_id' in session:
+        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
+        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
+
+    for art_item in paginated_search_articles_raw:
+        current_article_hash_id = None
+        if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
+            current_article_hash_id = art_item.article_hash_id
+            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
+            paginated_search_articles_with_bookmark_status.append(art_item)
+        elif isinstance(art_item, dict):
+            current_article_hash_id = art_item.get('id')
+            art_item_copy = art_item.copy()
+            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
+            paginated_search_articles_with_bookmark_status.append(art_item_copy)
+        else:
+             paginated_search_articles_with_bookmark_status.append(art_item)
+             
+    return render_template("INDEX_HTML_TEMPLATE",
+                           articles=paginated_search_articles_with_bookmark_status,
+                           selected_category=f"Search: {query_str}",
+                           current_page=page,
+                           total_pages=total_pages,
+                           featured_article_on_this_page=False,
+                           query=query_str,
+                           current_filter_date=None) # Search results don't use date filter
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
-    article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
-    previous_list_page = session.get('previous_list_page', url_for('index'))
-    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
-    is_bookmarked = False
-    if article_db:
-        article_data = article_db
-        is_community_article = True
-        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
-        except json.JSONDecodeError:
-            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
-            article_data.parsed_takeaways = []
-        all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
-        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
-    else:
-        if not MASTER_ARTICLE_STORE: fetch_news_from_api()
-        article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
-        if article_api_dict:
-            article_data = article_api_dict.copy()
-            is_community_article = False
-            all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
-            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
-        else:
-            flash("Article not found.", "danger"); return redirect(previous_list_page)
-    if 'user_id' in session and article_data:
-        existing_bookmark = BookmarkedArticle.query.filter_by(user_id=session['user_id'], article_hash_id=article_hash_id).first()
-        if existing_bookmark: is_bookmarked = True
-    if all_article_comments_list:
-        comment_ids = [c.id for c in all_article_comments_list]
-        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
-        vote_counts_query = db.session.query(CommentVote.comment_id, func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'), func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
-        for c_id, likes, dislikes in vote_counts_query:
-            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
-        if 'user_id' in session:
-            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
-            for vote in user_votes:
-                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
-    if isinstance(article_data, dict): article_data['is_community_article'] = False
-    elif article_data: article_data.is_community_article = True
-    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page, is_bookmarked=is_bookmarked)
+    article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
+    previous_list_page = session.get('previous_list_page', url_for('index'))
+    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
+    is_bookmarked = False
+    if article_db:
+        article_data = article_db
+        is_community_article = True
+        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
+        except json.JSONDecodeError:
+            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
+            article_data.parsed_takeaways = []
+        all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
+        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+    else:
+        if not MASTER_ARTICLE_STORE: fetch_news_from_api()
+        article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
+        if article_api_dict:
+            article_data = article_api_dict.copy()
+            is_community_article = False
+            all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
+            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+        else:
+            flash("Article not found.", "danger"); return redirect(previous_list_page)
+    if 'user_id' in session and article_data:
+        existing_bookmark = BookmarkedArticle.query.filter_by(user_id=session['user_id'], article_hash_id=article_hash_id).first()
+        if existing_bookmark: is_bookmarked = True
+    if all_article_comments_list:
+        comment_ids = [c.id for c in all_article_comments_list]
+        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
+        vote_counts_query = db.session.query(CommentVote.comment_id, func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'), func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
+        for c_id, likes, dislikes in vote_counts_query:
+            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
+        if 'user_id' in session:
+            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
+            for vote in user_votes:
+                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
+    if isinstance(article_data, dict): article_data['is_community_article'] = False
+    elif article_data: article_data.is_community_article = True
+    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page, is_bookmarked=is_bookmarked)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
-    if not MASTER_ARTICLE_STORE and not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): fetch_news_from_api()
-    article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
-    if not article_data or 'url' not in article_data: return jsonify({"error": "Article data or URL not found in API cache"}), 404
-    if article_data.get('groq_summary') is not None and article_data.get('groq_takeaways') is not None:
-        app.logger.info(f"Returning cached Groq analysis from MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
-        return jsonify({"groq_analysis": {"groq_summary": article_data['groq_summary'], "groq_takeaways": article_data['groq_takeaways'], "error": None}, "error": None})
-    processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
-    return jsonify(processed_content)
+    if not MASTER_ARTICLE_STORE and not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): fetch_news_from_api()
+    article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
+    if not article_data or 'url' not in article_data: return jsonify({"error": "Article data or URL not found in API cache"}), 404
+    if article_data.get('groq_summary') is not None and article_data.get('groq_takeaways') is not None:
+        app.logger.info(f"Returning cached Groq analysis from MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
+        return jsonify({"groq_analysis": {"groq_summary": article_data['groq_summary'], "groq_takeaways": article_data['groq_takeaways'], "error": None}, "error": None})
+    processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
+    return jsonify(processed_content)
 
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
-    content = request.json.get('content', '').strip()
-    parent_id = request.json.get('parent_id')
-    if not content: return jsonify({"error": "Comment cannot be empty."}), 400
-    user = User.query.get(session['user_id'])
-    if not user: app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}"); return jsonify({"error": "User not found."}), 401
-    new_comment = None
-    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
-    if community_article: new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
-    elif article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
-    else:
-        fetch_news_from_api()
-        if article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
-        else: return jsonify({"error": "Article not found to comment on."}), 404
-    db.session.add(new_comment); db.session.commit(); db.session.refresh(new_comment)
-    author_name = new_comment.author.name if new_comment.author else "Anonymous"
-    return jsonify({"success": True, "comment": {"id": new_comment.id, "content": new_comment.content, "timestamp": new_comment.timestamp.isoformat() + 'Z', "author": {"name": author_name }, "parent_id": new_comment.parent_id, "likes": 0, "dislikes": 0, "user_vote": 0}}), 201
+    content = request.json.get('content', '').strip()
+    parent_id = request.json.get('parent_id')
+    if not content: return jsonify({"error": "Comment cannot be empty."}), 400
+    user = User.query.get(session['user_id'])
+    if not user: app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}"); return jsonify({"error": "User not found."}), 401
+    new_comment = None
+    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+    if community_article: new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
+    elif article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
+    else:
+        fetch_news_from_api() # Attempt to populate MASTER_ARTICLE_STORE if article not found initially
+        if article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
+        else: return jsonify({"error": "Article not found to comment on."}), 404
+    db.session.add(new_comment); db.session.commit(); db.session.refresh(new_comment)
+    author_name = new_comment.author.name if new_comment.author else "Anonymous"
+    return jsonify({"success": True, "comment": {"id": new_comment.id, "content": new_comment.content, "timestamp": new_comment.timestamp.isoformat() + 'Z', "author": {"name": author_name }, "parent_id": new_comment.parent_id, "likes": 0, "dislikes": 0, "user_vote": 0}}), 201
 
 @app.route('/vote_comment/<int:comment_id>', methods=['POST'])
 @login_required
 def vote_comment(comment_id):
-    comment = Comment.query.get_or_404(comment_id)
-    vote_type = request.json.get('vote_type')
-    if vote_type not in [1, -1]: return jsonify({"error": "Invalid vote type."}), 400
-    existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
-    new_user_vote_status = 0
-    if existing_vote:
-        if existing_vote.vote_type == vote_type: db.session.delete(existing_vote); new_user_vote_status = 0
-        else: existing_vote.vote_type = vote_type; new_user_vote_status = vote_type
-    else: db.session.add(CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type)); new_user_vote_status = vote_type
-    db.session.commit()
-    likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
-    dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
-    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": new_user_vote_status}), 200
+    comment = Comment.query.get_or_404(comment_id)
+    vote_type = request.json.get('vote_type')
+    if vote_type not in [1, -1]: return jsonify({"error": "Invalid vote type."}), 400
+    existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
+    new_user_vote_status = 0
+    if existing_vote:
+        if existing_vote.vote_type == vote_type: db.session.delete(existing_vote); new_user_vote_status = 0 # Undoing vote
+        else: existing_vote.vote_type = vote_type; new_user_vote_status = vote_type # Changing vote
+    else: db.session.add(CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type)); new_user_vote_status = vote_type # New vote
+    db.session.commit()
+    likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
+    dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
+    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": new_user_vote_status}), 200
 
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
-    title, description, content, source_name, image_url = map(lambda x: request.form.get(x, '').strip(), ['title', 'description', 'content', 'sourceName', 'imageUrl'])
-    source_name = source_name or 'Community Post'
-    if not all([title, description, content, source_name]):
-        flash("Title, Description, Full Content, and Source Name are required.", "danger")
-        return redirect(request.referrer or url_for('index'))
-    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
-    groq_analysis_result = get_article_analysis_with_groq(content, title)
-    groq_summary_text, groq_takeaways_json_str = None, None
-    if groq_analysis_result and not groq_analysis_result.get("error"):
-        groq_summary_text = groq_analysis_result.get('groq_summary')
-        takeaways_list = groq_analysis_result.get('groq_takeaways')
-        if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
-    new_article = CommunityArticle(article_hash_id=article_hash_id, title=title, description=description, full_text=content, source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}', user_id=session['user_id'], published_at=datetime.now(timezone.utc), groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str)
-    db.session.add(new_article); db.session.commit()
-    flash("Your article has been posted!", "success")
-    return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
+    title, description, content, source_name, image_url = map(lambda x: request.form.get(x, '').strip(), ['title', 'description', 'content', 'sourceName', 'imageUrl'])
+    source_name = source_name or 'Community Post' # Default if empty
+    if not all([title, description, content, source_name]): # Source name is now required
+        flash("Title, Description, Full Content, and Source Name are required.", "danger")
+        return redirect(request.referrer or url_for('index'))
+    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time())) # Unique enough for user posts
+    groq_analysis_result = get_article_analysis_with_groq(content, title)
+    groq_summary_text, groq_takeaways_json_str = None, None
+    if groq_analysis_result and not groq_analysis_result.get("error"):
+        groq_summary_text = groq_analysis_result.get('groq_summary')
+        takeaways_list = groq_analysis_result.get('groq_takeaways')
+        if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
+    new_article = CommunityArticle(
+        article_hash_id=article_hash_id, title=title, description=description, full_text=content,
+        source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
+        user_id=session['user_id'], published_at=datetime.now(timezone.utc),
+        groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str
+    )
+    db.session.add(new_article); db.session.commit()
+    flash("Your article has been posted!", "success")
+    return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if 'user_id' in session: return redirect(url_for('index'))
-    if request.method == 'POST':
-        name, username, password = request.form.get('name', '').strip(), request.form.get('username', '').strip().lower(), request.form.get('password', '')
-        if not all([name, username, password]): flash('All fields are required.', 'danger')
-        elif len(username) < 3: flash('Username must be at least 3 characters.', 'warning')
-        elif len(password) < 6: flash('Password must be at least 6 characters.', 'warning')
-        elif User.query.filter_by(username=username).first(): flash('Username already exists. Please choose another.', 'warning')
-        else:
-            new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
-            db.session.add(new_user); db.session.commit()
-            flash(f'Registration successful, {name}! Please log in.', 'success')
-            return redirect(url_for('login'))
-        return redirect(url_for('register'))
-    return render_template("REGISTER_HTML_TEMPLATE")
+    if 'user_id' in session: return redirect(url_for('index'))
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '')
+        if not all([name, username, password]): flash('All fields are required.', 'danger')
+        elif len(username) < 3: flash('Username must be at least 3 characters.', 'warning')
+        elif len(password) < 6: flash('Password must be at least 6 characters.', 'warning')
+        elif User.query.filter_by(username=username).first(): flash('Username already exists. Please choose another.', 'warning')
+        else:
+            new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
+            db.session.add(new_user); db.session.commit()
+            flash(f'Registration successful, {name}! Please log in.', 'success')
+            return redirect(url_for('login'))
+        return redirect(url_for('register')) # Redirect to clear form on failed POST fields
+    return render_template("REGISTER_HTML_TEMPLATE")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if 'user_id' in session: return redirect(url_for('index'))
-    if request.method == 'POST':
-        username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password_hash, password):
-            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
-            flash(f"Welcome back, {user.name}!", "success")
-            next_url = request.args.get('next')
-            session.pop('previous_list_page', None) 
-            return redirect(next_url or url_for('index'))
-        else: flash('Invalid username or password.', 'danger')
-    return render_template("LOGIN_HTML_TEMPLATE")
+    if 'user_id' in session: return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
+            flash(f"Welcome back, {user.name}!", "success")
+            next_url = request.args.get('next')
+            session.pop('previous_list_page', None) # Clear previous list page on login
+            return redirect(next_url or url_for('index'))
+        else: flash('Invalid username or password.', 'danger')
+    return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
 def logout(): session.clear(); flash("You have been successfully logged out.", "info"); return redirect(url_for('index'))
+
 @app.route('/about')
 def about(): return render_template("ABOUT_US_HTML_TEMPLATE")
 @app.route('/contact')
@@ -695,74 +808,94 @@ def privacy(): return render_template("PRIVACY_POLICY_HTML_TEMPLATE")
 
 @app.route('/subscribe', methods=['POST'])
 def subscribe():
-    email = request.form.get('email', '').strip().lower()
-    if not email: flash('Email is required to subscribe.', 'warning')
-    elif Subscriber.query.filter_by(email=email).first(): flash('You are already subscribed to our newsletter.', 'info')
-    else:
-        try: db.session.add(Subscriber(email=email)); db.session.commit(); flash('Thank you for subscribing!', 'success')
-        except Exception as e: db.session.rollback(); app.logger.error(f"Error subscribing email {email}: {e}"); flash('Could not subscribe at this time. Please try again later.', 'danger')
-    return redirect(request.referrer or url_for('index'))
+    email = request.form.get('email', '').strip().lower()
+    if not email: flash('Email is required to subscribe.', 'warning')
+    elif Subscriber.query.filter_by(email=email).first(): flash('You are already subscribed to our newsletter.', 'info')
+    else:
+        try: db.session.add(Subscriber(email=email)); db.session.commit(); flash('Thank you for subscribing!', 'success')
+        except Exception as e: db.session.rollback(); app.logger.error(f"Error subscribing email {email}: {e}"); flash('Could not subscribe at this time. Please try again later.', 'danger')
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/toggle_bookmark/<article_hash_id>', methods=['POST'])
 @login_required
 def toggle_bookmark(article_hash_id):
-    user_id = session['user_id']
-    is_community_str = request.json.get('is_community_article', 'false').lower()
-    is_community = True if is_community_str == 'true' else False
-    article_title_cache = request.json.get('title', 'Bookmarked Article')
-    article_source_cache = request.json.get('source_name', 'Unknown Source')
-    article_image_cache = request.json.get('image_url', None)
-    article_desc_cache = request.json.get('description', None)
-    article_published_at_cache_str = request.json.get('published_at', None)
-    article_published_at_dt = None
-    if article_published_at_cache_str:
-        try:
-            if article_published_at_cache_str.endswith('Z'): article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
-            else: article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
-            if article_published_at_dt.tzinfo is None: article_published_at_dt = pytz.utc.localize(article_published_at_dt)
-        except ValueError: app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}"); article_published_at_dt = None
-    existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
-    if existing_bookmark:
-        db.session.delete(existing_bookmark); db.session.commit()
-        return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
-    else:
-        if is_community:
-            if not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): return jsonify({"success": False, "error": "Community article not found."}), 404
-        else:
-            if article_hash_id not in MASTER_ARTICLE_STORE:
-                fetch_news_from_api()
-                if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
-        new_bookmark = BookmarkedArticle(user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community, title_cache=article_title_cache, source_name_cache=article_source_cache, image_url_cache=article_image_cache, description_cache=article_desc_cache, published_at_cache=article_published_at_dt if not is_community else None)
-        db.session.add(new_bookmark); db.session.commit()
-        return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
+    user_id = session['user_id']
+    is_community_str = request.json.get('is_community_article', 'false').lower()
+    is_community = True if is_community_str == 'true' else False
+    article_title_cache = request.json.get('title', 'Bookmarked Article')
+    article_source_cache = request.json.get('source_name', 'Unknown Source')
+    article_image_cache = request.json.get('image_url', None)
+    article_desc_cache = request.json.get('description', None)
+    article_published_at_cache_str = request.json.get('published_at', None)
+    article_published_at_dt = None
+    if article_published_at_cache_str:
+        try:
+            if article_published_at_cache_str.endswith('Z'): article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
+            else: article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
+            if article_published_at_dt.tzinfo is None: article_published_at_dt = pytz.utc.localize(article_published_at_dt) # Ensure timezone if naive
+        except ValueError: app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}"); article_published_at_dt = None
+
+    existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
+    if existing_bookmark:
+        db.session.delete(existing_bookmark); db.session.commit()
+        return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
+    else:
+        if is_community:
+            if not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): return jsonify({"success": False, "error": "Community article not found."}), 404
+        else: # API Article
+            if article_hash_id not in MASTER_ARTICLE_STORE:
+                fetch_news_from_api() # Attempt to populate if not found
+                if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
+        
+        new_bookmark = BookmarkedArticle(
+            user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community,
+            title_cache=article_title_cache, source_name_cache=article_source_cache,
+            image_url_cache=article_image_cache, description_cache=article_desc_cache,
+            published_at_cache=article_published_at_dt # Store datetime object for API, or None for community (as it's in DB)
+        )
+        db.session.add(new_bookmark); db.session.commit()
+        return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
 
 @app.route('/profile')
 @login_required
 def profile():
-    user = User.query.get_or_404(session['user_id'])
-    page = request.args.get('page', 1, type=int)
-    per_page = app.config['PER_PAGE']
-    user_posted_articles = CommunityArticle.query.filter_by(user_id=user.id).order_by(CommunityArticle.published_at.desc()).all()
-    bookmarks_query = BookmarkedArticle.query.filter_by(user_id=user.id).order_by(BookmarkedArticle.bookmarked_at.desc())
-    user_bookmarks_paginated_query = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
-    user_bookmarked_articles_data = []
-    for bookmark in user_bookmarks_paginated_query.items:
-        article_detail_data = None
-        if bookmark.is_community_article:
-            comm_art = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
-            if comm_art: article_detail_data = {'id': comm_art.article_hash_id, 'title': comm_art.title, 'description': comm_art.description, 'urlToImage': comm_art.image_url, 'publishedAt': comm_art.published_at.isoformat() if comm_art.published_at else None, 'source': {'name': comm_art.author.name if comm_art.author else comm_art.source_name}, 'is_community_article': True, 'article_url': url_for('article_detail', article_hash_id=comm_art.article_hash_id)}
-        else:
-            api_art = MASTER_ARTICLE_STORE.get(bookmark.article_hash_id)
-            if api_art: article_detail_data = {'id': api_art['id'], 'title': api_art['title'], 'description': api_art['description'], 'urlToImage': api_art['urlToImage'], 'publishedAt': api_art['publishedAt'], 'source': {'name': api_art['source']['name']}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=api_art['id'])}
-            else: article_detail_data = {'id': bookmark.article_hash_id, 'title': bookmark.title_cache or "Bookmarked Article (Details N/A)", 'description': bookmark.description_cache or "Description not available.", 'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A', 'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None, 'source': {'name': bookmark.source_name_cache or "Unknown Source"}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id), 'is_stale_bookmark': True}
-        if article_detail_data: user_bookmarked_articles_data.append(article_detail_data)
-    return render_template("PROFILE_HTML_TEMPLATE", user=user, posted_articles=user_posted_articles, bookmarked_articles=user_bookmarked_articles_data, bookmarks_pagination=user_bookmarks_paginated_query, current_page=page)
+    user = User.query.get_or_404(session['user_id'])
+    page = request.args.get('page', 1, type=int)
+    per_page = app.config['PER_PAGE'] # Or a different value for profile page, e.g., 6
+    user_posted_articles = CommunityArticle.query.filter_by(user_id=user.id).order_by(CommunityArticle.published_at.desc()).all() # Not paginated for now
+    bookmarks_query = BookmarkedArticle.query.filter_by(user_id=user.id).order_by(BookmarkedArticle.bookmarked_at.desc())
+    user_bookmarks_paginated_query = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
+    user_bookmarked_articles_data = []
+    for bookmark in user_bookmarks_paginated_query.items:
+        article_detail_data = None
+        if bookmark.is_community_article:
+            comm_art = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
+            if comm_art: article_detail_data = {'id': comm_art.article_hash_id, 'title': comm_art.title, 'description': comm_art.description, 'urlToImage': comm_art.image_url, 'publishedAt': comm_art.published_at.isoformat() if comm_art.published_at else None, 'source': {'name': comm_art.author.name if comm_art.author else comm_art.source_name}, 'is_community_article': True, 'article_url': url_for('article_detail', article_hash_id=comm_art.article_hash_id)}
+        else: # API Article
+            api_art = MASTER_ARTICLE_STORE.get(bookmark.article_hash_id)
+            if api_art: article_detail_data = {'id': api_art['id'], 'title': api_art['title'], 'description': api_art['description'], 'urlToImage': api_art['urlToImage'], 'publishedAt': api_art['publishedAt'], 'source': {'name': api_art['source']['name']}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=api_art['id'])}
+            else: # Stale bookmark or article no longer in MASTER_ARTICLE_STORE, use cached data
+                article_detail_data = {
+                    'id': bookmark.article_hash_id,
+                    'title': bookmark.title_cache or "Bookmarked Article (Details N/A)",
+                    'description': bookmark.description_cache or "Description not available.",
+                    'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A',
+                    'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None, # Ensure published_at_cache is datetime
+                    'source': {'name': bookmark.source_name_cache or "Unknown Source"},
+                    'is_community_article': False,
+                    'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id),
+                    'is_stale_bookmark': True
+                }
+        if article_detail_data: user_bookmarked_articles_data.append(article_detail_data)
+
+    return render_template("PROFILE_HTML_TEMPLATE", user=user, posted_articles=user_posted_articles, bookmarked_articles=user_bookmarked_articles_data, bookmarks_pagination=user_bookmarks_paginated_query, current_page=page)
 
 @app.errorhandler(404)
 def page_not_found(e): return render_template("404_TEMPLATE"), 404
 @app.errorhandler(500)
 def internal_server_error(e): db.session.rollback(); app.logger.error(f"500 error at {request.url}: {e}", exc_info=True); return render_template("500_TEMPLATE"), 500
 
+{# Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AI DISPLAY FIXES, AND DATE FILTER #}
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
@@ -824,6 +957,13 @@ BASE_HTML_TEMPLATE = """
         body.dark-mode .content-text a {color: var(--secondary-light);}
         body.dark-mode .content-text a:hover {color: var(--accent-color);}
         body.dark-mode .loader { border-top-color: var(--secondary-color); }
+        body.dark-mode #dateFilterForm .form-control-sm { background-color: #2c2c2c; color: var(--text-color); border-color: #444; }
+        body.dark-mode #dateFilterForm .btn-outline-secondary { color: var(--text-muted-color); border-color: #444; }
+        body.dark-mode #dateFilterForm .btn-outline-secondary:hover { background-color: #333; color: var(--text-color); }
+        body.dark-mode #dateFilterForm .btn-outline-danger { color: #f5c6cb; border-color: #dc3545; }
+        body.dark-mode #dateFilterForm .btn-outline-danger:hover { background-color: #dc3545; color: #fff; }
+
+
         .navbar-main { background: var(--primary-gradient); padding: 0.8rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-bottom: 2px solid rgba(255,255,255,0.15); transition: background 0.3s ease, border-bottom 0.3s ease; height: 95px; display: flex; align-items: center; }
         .navbar-brand-custom { color: white !important; font-weight: 800; font-size: 2.2rem; letter-spacing: 0.5px; font-family: 'Poppins', sans-serif; margin-bottom: 0; display: flex; align-items: center; gap: 12px; text-decoration: none !important; }
         .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.5rem; }
@@ -840,12 +980,14 @@ BASE_HTML_TEMPLATE = """
         .header-btn:hover { background: var(--secondary-color); border-color: var(--secondary-color); color: var(--primary-color); transform: translateY(-1px); }
         .dark-mode-toggle { font-size: 1.1rem; width: 40px; height: 40px; justify-content: center;}
         .category-nav { background: var(--white-bg); box-shadow: 0 3px 10px rgba(0,0,0,0.03); position: fixed; top: 95px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background 0.3s ease, border-bottom 0.3s ease; }
-        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0; scrollbar-width: thin; scrollbar-color: var(--secondary-color) var(--light-bg); }
+        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: thin; scrollbar-color: var(--secondary-color) var(--light-bg); flex-wrap: nowrap; } /* Ensure no wrapping for links + form */
         .categories-wrapper::-webkit-scrollbar { height: 6px; }
         .categories-wrapper::-webkit-scrollbar-thumb { background: var(--secondary-color); border-radius: 3px; }
+        .category-links-container { display: flex; flex-shrink: 0; } /* Prevent category links from shrinking too much */
         .category-link { color: var(--primary-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 20px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; font-family: 'Roboto', sans-serif; }
         .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: 0 3px 10px rgba(var(--primary-color-rgb), 0.2); border-color: var(--primary-light); }
         .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--secondary-color) !important; border-color: var(--secondary-color); }
+        #dateFilterForm { flex-shrink: 0; /* Prevent form from shrinking too much */ }
         .article-card, .featured-article, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--white-bg); border-radius: 10px; transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
         .article-card:hover, .featured-article:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
         .article-image-container { height: 200px; overflow: hidden; position: relative; border-top-left-radius: 9px; border-top-right-radius: 9px;}
@@ -912,18 +1054,20 @@ BASE_HTML_TEMPLATE = """
         .static-content-wrapper { padding: 2rem; margin-top: 1rem; }
         .static-content-wrapper h1, .static-content-wrapper h2 { color: var(--primary-color); font-family: 'Poppins', sans-serif; }
         body.dark-mode .static-content-wrapper h1, body.dark-mode .static-content-wrapper h2 { color: var(--secondary-color); }
-        @media (max-width: 991.98px) {
-            body { padding-top: 180px; }
+        @media (max-width: 991.98px) { /* Effects navbar and category-nav top position */
+            body { padding-top: 180px; } /* Adjusted padding-top */
             .navbar-main { padding-bottom: 0.5rem; height: auto;}
             .navbar-content-wrapper { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
             .navbar-brand-custom { margin-bottom: 0.5rem; }
             .search-form-container { width: 100%; order: 3; margin-top:0.5rem; padding: 0; }
             .header-controls { position: absolute; top: 0.9rem; right: 1rem; order: 2; }
-            .category-nav { top: 130px; }
+            .category-nav { top: 130px; } /* Adjusted top for category nav based on new navbar height */
+            .categories-wrapper { flex-wrap: wrap; justify-content: flex-start; } /* Allow wrapping for form on smaller screens */
+            #dateFilterForm { width: 100%; margin-left: 0 !important; margin-top: 0.5rem; } /* Full width for form */
         }
         @media (max-width: 767.98px) {
-            body { padding-top: 170px; } 
-            .category-nav { top: 120px; } 
+            body { padding-top: 170px; } /* Fine-tune as needed */
+            .category-nav { top: 120px; } /* Fine-tune as needed */
             .featured-article .row { flex-direction: column; }
             .featured-image { margin-bottom: 1rem; height: 250px; }
         }
@@ -936,35 +1080,33 @@ BASE_HTML_TEMPLATE = """
         .auth-container { max-width: 450px; margin: 3rem auto; padding: 2rem; }
         .auth-title { text-align: center; color: var(--primary-color); margin-bottom: 1.5rem; font-weight: 700;}
         body.dark-mode .auth-title { color: var(--secondary-color); }
-
         .comment-section { margin-top: 3rem; }
-        .comment-container { margin-bottom: 1.5rem; } 
+        .comment-container { margin-bottom: 1.5rem; }
         .comment-card { display: flex; gap: 1rem; }
         .comment-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
         body.dark-mode .comment-avatar { background: var(--primary-color); }
         .comment-body { flex-grow: 1; border-bottom: 1px solid var(--card-border-color); padding-bottom: 1rem; }
-        .comment-container:last-child > .comment-card > .comment-body { border-bottom: none; } 
+        .comment-container:last-child > .comment-card > .comment-body { border-bottom: none; }
         .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
         .comment-author { font-weight: 600; color: var(--primary-color); }
         body.dark-mode .comment-author { color: var(--secondary-light); }
         .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
-        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; } 
+        .comment-content { font-size: 0.95rem; color: var(--text-color); margin-bottom: 0.5rem; white-space: pre-wrap; }
         .comment-actions { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
         .comment-actions button { background: none; border: none; padding: 0.2rem 0.4rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; transition: color 0.2s ease, background-color 0.2s ease; border-radius: 4px; }
         .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
         body.dark-mode .comment-actions button:hover { color: var(--secondary-light); background-color: rgba(var(--secondary-color-rgb),0.2); }
         .comment-actions button.active { color: var(--primary-color); font-weight: 600; }
         body.dark-mode .comment-actions button.active { color: var(--secondary-color); }
-        .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--primary-color); } 
-        .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); } 
+        .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--primary-color); }
+        .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); }
         body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-up { color: var(--secondary-color); }
         body.dark-mode .comment-actions .vote-btn.active .fa-thumbs-down { color: var(--accent-color); }
         .comment-actions .vote-count { font-weight: 500; min-width: 12px; text-align: center;}
-        .comment-replies { margin-left: 30px; padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); margin-top: 1rem; } 
+        .comment-replies { margin-left: 30px; padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); margin-top: 1rem; }
         .reply-form-container { display: none; margin-top: 0.75rem; padding: 0.75rem; background-color: rgba(var(--primary-color-rgb), 0.03); border-radius: 6px;}
         body.dark-mode .reply-form-container { background-color: rgba(var(--secondary-color-rgb), 0.05); }
         .add-comment-form textarea { min-height: 100px; }
-        
         .profile-card { padding: 2rem; margin-bottom: 2rem; }
         .profile-card .profile-avatar { width: 100px; height: 100px; border-radius: 50%; background-color: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 1rem; }
         body.dark-mode .profile-card .profile-avatar { background-color: var(--secondary-color); }
@@ -1038,12 +1180,33 @@ BASE_HTML_TEMPLATE = """
     <nav class="navbar navbar-expand-lg category-nav">
         <div class="container">
             <div class="categories-wrapper">
+                <div class="category-links-container">
                 {% for cat_item in categories %}
-                    <a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                    {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
+                    {# Preserve filter_date only if current category is 'All Articles' and filter is active #}
+                    {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
+                        {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
+                    {% endif %}
+                    <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
                         <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
                         {{ cat_item }}
                     </a>
                 {% endfor %}
+                </div>
+                
+                <form id="dateFilterForm" class="ms-2 ms-md-3" style="min-width: 200px;">
+                    <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
+                    <div class="input-group input-group-sm">
+                        <input type="date" id="articleDateFilter" class="form-control form-control-sm" 
+                               value="{{ current_filter_date | default('', true) }}" 
+                               aria-label="Filter by date for All Articles"
+                               title="Filter 'All Articles' by date">
+                        <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter"><i class="fas fa-filter"></i></button>
+                        {% if current_filter_date %}
+                        <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
+                        {% endif %}
+                    </div>
+                </form>
             </div>
         </div>
     </nav>
@@ -1136,6 +1299,7 @@ BASE_HTML_TEMPLATE = """
         let storedTheme = localStorage.getItem('darkMode');
         if (!storedTheme) { const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1]; if (cookieTheme) storedTheme = cookieTheme; }
         if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+        
         const addArticleBtn = document.getElementById('addArticleBtn');
         const addArticleModal = document.getElementById('addArticleModal');
         const closeModalBtn = document.getElementById('closeModalBtn');
@@ -1147,8 +1311,47 @@ BASE_HTML_TEMPLATE = """
             if(cancelArticleBtn) cancelArticleBtn.addEventListener('click', closeModalFunction);
             addArticleModal.addEventListener('click', (e) => { if (e.target === addArticleModal) closeModalFunction(); });
         }
+        
         const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
         flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
+
+        // Date Filter Logic
+        const dateFilterForm = document.getElementById('dateFilterForm');
+        if (dateFilterForm) {
+            dateFilterForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                const dateInput = document.getElementById('articleDateFilter');
+                const selectedDate = dateInput.value;
+                let baseUrl = "{{ url_for('index', category_name='All Articles', page=1) }}";
+                if (selectedDate) {
+                    window.location.href = baseUrl + (baseUrl.includes('?') ? '&' : '?') + `filter_date=${selectedDate}`;
+                } else {
+                    // If date is cleared from input and submitted (though clear button is better)
+                    // Remove filter_date from URL if it exists
+                     const currentUrl = new URL(window.location.href);
+                     currentUrl.searchParams.delete('filter_date');
+                     // Ensure it still points to All Articles, page 1
+                     currentUrl.pathname = "{{ url_for('index', category_name='All Articles', page=1).split('?')[0] }}";
+                     currentUrl.searchParams.delete('page'); // Reset page if clearing filter
+                     window.location.href = currentUrl.toString();
+                }
+            });
+
+            const clearDateFilterBtn = document.getElementById('clearDateFilter');
+            if (clearDateFilterBtn) {
+                clearDateFilterBtn.addEventListener('click', function() {
+                    document.getElementById('articleDateFilter').value = '';
+                    let baseUrl = "{{ url_for('index', category_name='All Articles', page=1) }}";
+                    // Remove filter_date from URL if it exists
+                     const currentUrl = new URL(window.location.href);
+                     currentUrl.searchParams.delete('filter_date');
+                     // Ensure it still points to All Articles, page 1
+                     currentUrl.pathname = "{{ url_for('index', category_name='All Articles', page=1).split('?')[0] }}";
+                     currentUrl.searchParams.delete('page'); // Reset page to 1
+                     window.location.href = currentUrl.toString().replace(/&?\bfilter_date=[^&]*/gi, ''); // Fallback regex removal just in case
+                });
+            }
+        }
     });
     </script>
     {% block scripts_extra %}{% endblock %}
@@ -1159,10 +1362,19 @@ BASE_HTML_TEMPLATE = """
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
-    {% if query %}Search: {{ query|truncate(30) }}{% elif selected_category %}{{selected_category}}{% else %}Home{% endif %} - Briefly (India News)
+    {% if query %}Search: {{ query|truncate(30) }}
+    {% elif selected_category == 'All Articles' and current_filter_date %}Articles for {{ current_filter_date }}
+    {% elif selected_category %}{{selected_category}}
+    {% else %}Home{% endif %} - Briefly (India News)
 {% endblock %}
+
 {% block content %}
+    {% if selected_category == 'All Articles' and current_filter_date %}
+        <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
+    {% endif %}
+
     {% if articles and articles[0] and featured_article_on_this_page %}
+    {# ... (featured article section remains unchanged from your original file) ... #}
     <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
         <div class="row g-0 g-md-4">
             {% set art0 = articles[0] %}
@@ -1202,6 +1414,8 @@ INDEX_HTML_TEMPLATE = """
             </div>
         </div>
     </article>
+    {% elif not articles and selected_category == 'All Articles' and current_filter_date %}
+        <div class="alert alert-info text-center my-4 p-3 small">No articles found for <strong>{{ current_filter_date }}</strong>. Please try a different date or clear the date filter.</div>
     {% elif not articles and selected_category != 'Community Hub' and not query %}
         <div class="alert alert-warning text-center my-4 p-3 small">No recent Indian news found. Please check back later.</div>
     {% elif not articles and selected_category == 'Community Hub' %}
@@ -1249,17 +1463,42 @@ INDEX_HTML_TEMPLATE = """
         {% endfor %}
     </div>
 
+    {# Pagination - Updated to include filter_date #}
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
-        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) if current_page > 1 else '#' }}">&laquo; Prev</a></li>
+        {% set filter_date_for_url = request.args.get('filter_date') if selected_category == 'All Articles' and request.args.get('filter_date') else None %}
+        
+        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page > 1 else '#' }}">&laquo; Prev</a>
+        </li>
+        
         {% set page_window = 1 %}{% set show_first = 1 %}{% set show_last = total_pages %}
-        {% if current_page - page_window > show_first %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) }}">1</a></li>{% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endif %}
-        {% for p in range(1, total_pages + 1) %}{% if p == current_page %}<li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>{% elif p >= current_page - page_window and p <= current_page + page_window %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) }}">{{ p }}</a></li>{% endif %}{% endfor %}
-        {% if current_page + page_window < show_last %}{% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) }}">{{ total_pages }}</a></li>{% endif %}
-        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}"><a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None) if current_page < total_pages else '#' }}">Next &raquo;</a></li>
+        
+        {% if current_page - page_window > show_first %}
+            <li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">1</a></li>
+            {% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+        {% endif %}
+        
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == current_page %}
+                <li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>
+            {% elif p >= current_page - page_window and p <= current_page + page_window %}
+                <li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ p }}</a></li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if current_page + page_window < show_last %}
+            {% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+            <li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ total_pages }}</a></li>
+        {% endif %}
+        
+        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page < total_pages else '#' }}">Next &raquo;</a>
+        </li>
     </ul></nav>
     {% endif %}
 {% endblock %}
+
 {% block scripts_extra %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
