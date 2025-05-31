@@ -311,9 +311,9 @@ def fetch_news_from_api(target_date_str=None): # Added target_date_str parameter
             target_date_str = None # Clear invalid date string
             # Fallback to default if date format is wrong
             from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-            from_date_param = from_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            from_date_param = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
             to_date_utc = datetime.now(timezone.utc)
-            to_date_param = to_date_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            to_date_param = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
             app.logger.info(f"Fetching news with default date range (last {app.config['NEWS_API_DAYS_AGO']} days).")
     else:
         from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
