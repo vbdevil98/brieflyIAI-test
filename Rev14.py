@@ -316,8 +316,11 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
     if not is_specific_date_fetch: # Default range logic or fallback
         from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
         api_call_from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
-        to_date_utc = datetime.now(timezone.utc)
-        api_call_to_date_str = to_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
+        
+        # MODIFICATION: Ensure 'to' date for default fetch covers the entire current day UTC
+        current_day_utc_end = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=0)
+        api_call_to_date_str = current_day_utc_end.strftime('%Y-%m-%dT%H:%M:%S')
+        
         app.logger.info(f"Fetching news with default date range (last {app.config['NEWS_API_DAYS_AGO']} days): from {api_call_from_date_str} to {api_call_to_date_str}")
 
     all_raw_articles = []
@@ -369,7 +372,7 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
     # Attempt 3: Fallback with domains (only if previous attempts yielded nothing OR if it's a specific date fetch where more sources are good)
     if not all_raw_articles or is_specific_date_fetch: # Try fallback if no articles yet, or always try for specific date to maximize results for that day
         if not all_raw_articles: # Log this only if it's a true fallback scenario
-             app.logger.warning("No articles from primary calls or specific query. Trying Fallback with domains.")
+            app.logger.warning("No articles from primary calls or specific query. Trying Fallback with domains.")
         else: # If is_specific_date_fetch and we already have some, this is an additional attempt
             app.logger.info("Performing domain-specific search for selected date to augment results.")
 
@@ -427,17 +430,13 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
             'source': {'name': source_name}, 'is_community_article': False,
             'groq_summary': None, 'groq_takeaways': None
         }
-        # Update MASTER_ARTICLE_STORE only if this article is newer or not present for this specific ID
-        # This prevents an older fetch for a specific date overwriting a newer full fetch's article details IF IDs collide (unlikely with hash of URL)
-        # However, for simplicity and given URL-based hashing, direct assignment is usually fine.
-        # If a specific date fetch returns an article already in MASTER_ARTICLE_STORE from a wider fetch, it will be the same.
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
     
     processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
     app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)}.")
     return processed_articles
-
+    
 # fetch_and_parse_article_content remains unchanged from the previous version.
 # Ensure it's present in your Cell 5 as provided before.
 @simple_cache(expiry_seconds_default=3600 * 6)
