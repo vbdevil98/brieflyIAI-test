@@ -77,20 +77,31 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s -
 app.logger.setLevel(logging.INFO)
 
 # Data Persistence
-database_url = os.environ.get('DATABASE_URL')
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    app.logger.info("Connecting to persistent PostgreSQL database.")
+app.logger.info("Attempting to configure database...")
+database_url_env = os.environ.get('DATABASE_URL')
+app.logger.info(f"DATABASE_URL from environment: {database_url_env}") # Log the raw env var
+
+if database_url_env and database_url_env.startswith("postgres://"):
+    app.logger.info("PostgreSQL DATABASE_URL found. Processing for SQLAlchemy.")
+    # Correctly replace postgres:// with postgresql:// for SQLAlchemy
+    final_database_url = database_url_env.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = final_database_url
+    app.logger.info(f"Connecting to persistent PostgreSQL database. URI set to: {final_database_url}")
+elif database_url_env and database_url_env.startswith("postgresql://"):
+    app.logger.info("PostgreSQL DATABASE_URL (already in postgresql:// format) found.")
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url_env
+    app.logger.info(f"Connecting to persistent PostgreSQL database. URI set to: {database_url_env}")
 else:
+    app.logger.warning("DATABASE_URL not found or not a PostgreSQL URL.")
     db_file_name = 'app_data.db'
     project_root_for_db = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(project_root_for_db, db_file_name)
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.logger.info(f"Using local SQLite database for development at {db_path}.")
+    app.logger.warning(f"FALLING BACK to local SQLite database for development at {db_path}. DATA WILL BE EPHEMERAL ON MOST DEPLOYMENT PLATFORMS.")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+app.logger.info("SQLAlchemy instance created.")
 
 # ==============================================================================
 # --- 3. API Client Initialization ---
@@ -180,10 +191,23 @@ class BookmarkedArticle(db.Model):
 
 def init_db():
     with app.app_context():
-        app.logger.info("Attempting to create database tables...")
-        db.create_all()
-        app.logger.info("Database tables should be ready.")
+        app.logger.info("Inside init_db function.")
+        current_db_uri = app.config.get('SQLALCHEMY_DATABASE_URI')
+        app.logger.info(f"Current SQLALCHEMY_DATABASE_URI before create_all: {current_db_uri}")
+        
+        if 'sqlite' in current_db_uri:
+            app.logger.warning("WARNING: init_db is about to operate on an SQLite database. Data might be ephemeral depending on the environment.")
+        else:
+            app.logger.info("init_db is operating on a non-SQLite (presumably PostgreSQL) database.")
 
+        app.logger.info("Attempting to call db.create_all()...")
+        try:
+            db.create_all()
+            app.logger.info("db.create_all() executed successfully. Database tables should be ready or ensured to exist.")
+        except Exception as e:
+            app.logger.error(f"Error during db.create_all(): {e}", exc_info=True)
+            # Depending on the error, you might want to sys.exit or handle differently
+            # For now, just logging the error.
 # ==============================================================================
 # --- 5. Helper Functions ---
 # ==============================================================================
