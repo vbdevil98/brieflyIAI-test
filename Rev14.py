@@ -472,328 +472,332 @@ def fetch_and_parse_article_content(article_hash_id, url):
         app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
         return {"full_text": None, "groq_analysis": None, "error": f"Failed to parse article content: {str(e)}"}
 
+# Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AI DISPLAY FIXES, AND DATE FILTER
+
+# ... (previous code from Cell 1 to 5 remains unchanged) ...
+
 # ==============================================================================
 # --- 6. Flask Routes ---
 # ==============================================================================
 @app.context_processor
 def inject_global_vars():
-    return {'categories': app.config['CATEGORIES'], 
-            'current_year': datetime.utcnow().year, 
-            'session': session, 
-            'request': request,
-            'groq_client': groq_client is not None} # For JS to know if Groq is configured
+    return {'categories': app.config['CATEGORIES'],
+            'current_year': datetime.utcnow().year,
+            'session': session,
+            'request': request,
+            'groq_client': groq_client is not None} # For JS to know if Groq is configured
 
 def get_paginated_articles(articles, page, per_page):
-    total = len(articles)
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated_items = articles[start:end]
-    total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
-    return paginated_items, total_pages
+    total = len(articles)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_items = articles[start:end]
+    total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+    return paginated_items, total_pages
 
 def get_sort_key(article):
-    date_val = None
-    if isinstance(article, dict): date_val = article.get('publishedAt')
-    elif hasattr(article, 'published_at'): date_val = article.published_at
-    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
-    if isinstance(date_val, str):
-        try:
-            if date_val.endswith('Z'): date_val_dt = datetime.fromisoformat(date_val[:-1] + '+00:00')
-            elif '+' in date_val or '-' in date_val[10:]: date_val_dt = datetime.fromisoformat(date_val)
-            else: date_val_dt = datetime.fromisoformat(date_val).replace(tzinfo=timezone.utc)
-            return date_val_dt
-        except ValueError:
-            app.logger.warning(f"Could not parse date string: {date_val}")
-            return datetime.min.replace(tzinfo=timezone.utc)
-    elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
-    return datetime.min.replace(tzinfo=timezone.utc)
+    date_val = None
+    if isinstance(article, dict): date_val = article.get('publishedAt')
+    elif hasattr(article, 'published_at'): date_val = article.published_at
+    if not date_val: return datetime.min.replace(tzinfo=timezone.utc)
+    if isinstance(date_val, str):
+        try:
+            if date_val.endswith('Z'): date_val_dt = datetime.fromisoformat(date_val[:-1] + '+00:00')
+            elif '+' in date_val or '-' in date_val[10:]: date_val_dt = datetime.fromisoformat(date_val)
+            else: date_val_dt = datetime.fromisoformat(date_val).replace(tzinfo=timezone.utc)
+            return date_val_dt
+        except ValueError:
+            app.logger.warning(f"Could not parse date string: {date_val}")
+            return datetime.min.replace(tzinfo=timezone.utc)
+    elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/category/<category_name>')
 @app.route('/category/<category_name>/page/<int:page>')
 def index(page=1, category_name='All Articles'):
-    session['previous_list_page'] = request.full_path
-    per_page = app.config['PER_PAGE']
-    all_display_articles_raw = []
-    query_str = request.args.get('query') # For search, not used directly here but good to be aware
-    filter_date_str = request.args.get('filter_date')
-    selected_date_obj = None
+    session['previous_list_page'] = request.full_path
+    per_page = app.config['PER_PAGE']
+    all_display_articles_raw = []
+    query_str = request.args.get('query') # For search, not used directly here but good to be aware
+    filter_date_str = request.args.get('filter_date')
+    selected_date_obj = None
 
-    if category_name == 'All Articles' and filter_date_str:
-        try:
-            selected_date_obj = datetime.strptime(filter_date_str, '%Y-%m-%d').date()
-            app.logger.info(f"Attempting to filter 'All Articles' for date: {selected_date_obj}")
-        except ValueError:
-            app.logger.warning(f"Invalid filter_date format: {filter_date_str}. Ignoring filter.")
-            flash("Invalid date format for filter. Showing all latest articles instead.", "warning")
-            filter_date_str = None # Clear invalid date string
+    if category_name == 'All Articles' and filter_date_str:
+        try:
+            selected_date_obj = datetime.strptime(filter_date_str, '%Y-%m-%d').date()
+            app.logger.info(f"Attempting to filter 'All Articles' for date: {selected_date_obj}")
+        except ValueError:
+            app.logger.warning(f"Invalid filter_date format: {filter_date_str}. Ignoring filter.")
+            flash("Invalid date format for filter. Showing all latest articles instead.", "warning")
+            filter_date_str = None # Clear invalid date string
 
-    if category_name == 'Community Hub':
-        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
-        for art in db_articles:
-            art.is_community_article = True
-            all_display_articles_raw.append(art)
-    else: # 'All Articles' or any other future category that might source from API
-        api_articles = fetch_news_from_api() # Fetches latest N days
-        if selected_date_obj and category_name == 'All Articles':
-            filtered_api_articles = []
-            for art_dict in api_articles:
-                try:
-                    published_at_str = art_dict.get('publishedAt')
-                    if published_at_str:
-                        published_at_dt = datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
-                        if published_at_dt.date() == selected_date_obj:
-                            filtered_api_articles.append(art_dict)
-                except ValueError:
-                    app.logger.warning(f"Could not parse date for filtering article '{art_dict.get('title', 'N/A')}': {published_at_str}")
-            api_articles = filtered_api_articles
-            app.logger.info(f"Found {len(api_articles)} API articles for date: {selected_date_obj}")
+    if category_name == 'Community Hub':
+        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
+        for art in db_articles:
+            art.is_community_article = True
+            all_display_articles_raw.append(art)
+    else: # 'All Articles' or any other future category that might source from API
+        api_articles = fetch_news_from_api() # Fetches latest N days
+        if selected_date_obj and category_name == 'All Articles':
+            filtered_api_articles = []
+            for art_dict in api_articles:
+                try:
+                    published_at_str = art_dict.get('publishedAt')
+                    if published_at_str:
+                        published_at_dt = datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
+                        if published_at_dt.date() == selected_date_obj:
+                            filtered_api_articles.append(art_dict)
+                except ValueError:
+                    app.logger.warning(f"Could not parse date for filtering article '{art_dict.get('title', 'N/A')}': {published_at_str}")
+            api_articles = filtered_api_articles
+            app.logger.info(f"Found {len(api_articles)} API articles for date: {selected_date_obj}")
 
-        for art_dict in api_articles:
-            art_dict['is_community_article'] = False
-            all_display_articles_raw.append(art_dict)
+        for art_dict in api_articles:
+            art_dict['is_community_article'] = False
+            all_display_articles_raw.append(art_dict)
 
-    all_display_articles_raw.sort(key=get_sort_key, reverse=True)
-    paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
-    paginated_display_articles_with_bookmark_status = []
-    user_bookmarks_hashes = set()
-    if 'user_id' in session:
-        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
-        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
+    all_display_articles_raw.sort(key=get_sort_key, reverse=True)
+    paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
+    paginated_display_articles_with_bookmark_status = []
+    user_bookmarks_hashes = set()
+    if 'user_id' in session:
+        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
+        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
-    for art_item in paginated_display_articles_raw:
-        current_article_hash_id = None
-        if hasattr(art_item, 'is_community_article') and art_item.is_community_article: # CommunityArticle (DB Object)
-            current_article_hash_id = art_item.article_hash_id
-            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
-            paginated_display_articles_with_bookmark_status.append(art_item)
-        elif isinstance(art_item, dict): # API Article (dictionary)
-            current_article_hash_id = art_item.get('id')
-            art_item_copy = art_item.copy()
-            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
-            paginated_display_articles_with_bookmark_status.append(art_item_copy)
-        else:
-            paginated_display_articles_with_bookmark_status.append(art_item)
+    for art_item in paginated_display_articles_raw:
+        current_article_hash_id = None
+        if hasattr(art_item, 'is_community_article') and art_item.is_community_article: # CommunityArticle (DB Object)
+            current_article_hash_id = art_item.article_hash_id
+            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
+            paginated_display_articles_with_bookmark_status.append(art_item)
+        elif isinstance(art_item, dict): # API Article (dictionary)
+            current_article_hash_id = art_item.get('id')
+            art_item_copy = art_item.copy()
+            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
+            paginated_display_articles_with_bookmark_status.append(art_item_copy)
+        else:
+            paginated_display_articles_with_bookmark_status.append(art_item)
 
-    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str and paginated_display_articles_with_bookmark_status)
-    return render_template("INDEX_HTML_TEMPLATE",
-                           articles=paginated_display_articles_with_bookmark_status,
-                           selected_category=category_name,
-                           current_page=page,
-                           total_pages=total_pages,
-                           featured_article_on_this_page=featured_article_on_this_page,
-                           current_filter_date=filter_date_str, # Pass the date string to the template
-                           query=query_str) # Pass query for search results title
+    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str and paginated_display_articles_with_bookmark_status)
+    return render_template("INDEX_HTML_TEMPLATE",
+                           articles=paginated_display_articles_with_bookmark_status,
+                           selected_category=category_name,
+                           current_page=page,
+                           total_pages=total_pages,
+                           featured_article_on_this_page=featured_article_on_this_page,
+                           current_filter_date=filter_date_str, # Pass the date string to the template
+                           query=query_str) # Pass query for search results title
 
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
-    session['previous_list_page'] = request.full_path
-    query_str = request.args.get('query', '').strip()
-    per_page = app.config['PER_PAGE']
-    current_filter_date = request.args.get('filter_date') # Search does not use date filter, but keep for template consistency
+    session['previous_list_page'] = request.full_path
+    query_str = request.args.get('query', '').strip()
+    per_page = app.config['PER_PAGE']
+    # current_filter_date = request.args.get('filter_date') # Search does not use date filter
 
-    if not query_str: return redirect(url_for('index'))
-    app.logger.info(f"Search query: '{query_str}'")
-    api_results = []
-    if not MASTER_ARTICLE_STORE: fetch_news_from_api()
+    if not query_str: return redirect(url_for('index'))
+    app.logger.info(f"Search query: '{query_str}'")
+    api_results = []
+    if not MASTER_ARTICLE_STORE: fetch_news_from_api()
 
-    for art_id, art_data in MASTER_ARTICLE_STORE.items():
-        if query_str.lower() in art_data.get('title', '').lower() or query_str.lower() in art_data.get('description', '').lower():
-            art_copy = art_data.copy()
-            art_copy['is_community_article'] = False
-            api_results.append(art_copy)
+    for art_id, art_data in MASTER_ARTICLE_STORE.items():
+        if query_str.lower() in art_data.get('title', '').lower() or query_str.lower() in art_data.get('description', '').lower():
+            art_copy = art_data.copy()
+            art_copy['is_community_article'] = False
+            api_results.append(art_copy)
 
-    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
-        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))).order_by(CommunityArticle.published_at.desc())
-    community_db_articles = []
-    for art in community_db_articles_query.all():
-        art.is_community_article = True
-        community_db_articles.append(art)
+    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
+        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))).order_by(CommunityArticle.published_at.desc())
+    community_db_articles = []
+    for art in community_db_articles_query.all():
+        art.is_community_article = True
+        community_db_articles.append(art)
 
-    all_search_results_raw = api_results + community_db_articles
-    all_search_results_raw.sort(key=get_sort_key, reverse=True)
-    paginated_search_articles_raw, total_pages = get_paginated_articles(all_search_results_raw, page, per_page)
+    all_search_results_raw = api_results + community_db_articles
+    all_search_results_raw.sort(key=get_sort_key, reverse=True)
+    paginated_search_articles_raw, total_pages = get_paginated_articles(all_search_results_raw, page, per_page)
 
-    paginated_search_articles_with_bookmark_status = []
-    user_bookmarks_hashes = set()
-    if 'user_id' in session:
-        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
-        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
+    paginated_search_articles_with_bookmark_status = []
+    user_bookmarks_hashes = set()
+    if 'user_id' in session:
+        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
+        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
-    for art_item in paginated_search_articles_raw:
-        current_article_hash_id = None
-        if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
-            current_article_hash_id = art_item.article_hash_id
-            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
-            paginated_search_articles_with_bookmark_status.append(art_item)
-        elif isinstance(art_item, dict):
-            current_article_hash_id = art_item.get('id')
-            art_item_copy = art_item.copy()
-            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
-            paginated_search_articles_with_bookmark_status.append(art_item_copy)
-        else:
-             paginated_search_articles_with_bookmark_status.append(art_item)
-             
-    return render_template("INDEX_HTML_TEMPLATE",
-                           articles=paginated_search_articles_with_bookmark_status,
-                           selected_category=f"Search: {query_str}",
-                           current_page=page,
-                           total_pages=total_pages,
-                           featured_article_on_this_page=False,
-                           query=query_str,
-                           current_filter_date=None) # Search results don't use date filter
+    for art_item in paginated_search_articles_raw:
+        current_article_hash_id = None
+        if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
+            current_article_hash_id = art_item.article_hash_id
+            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
+            paginated_search_articles_with_bookmark_status.append(art_item)
+        elif isinstance(art_item, dict):
+            current_article_hash_id = art_item.get('id')
+            art_item_copy = art_item.copy()
+            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
+            paginated_search_articles_with_bookmark_status.append(art_item_copy)
+        else:
+            paginated_search_articles_with_bookmark_status.append(art_item)
+
+    return render_template("INDEX_HTML_TEMPLATE",
+                           articles=paginated_search_articles_with_bookmark_status,
+                           selected_category=f"Search: {query_str}",
+                           current_page=page,
+                           total_pages=total_pages,
+                           featured_article_on_this_page=False,
+                           query=query_str,
+                           current_filter_date=None) # Search results don't use date filter
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
-    article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
-    previous_list_page = session.get('previous_list_page', url_for('index'))
-    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
-    is_bookmarked = False
-    if article_db:
-        article_data = article_db
-        is_community_article = True
-        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
-        except json.JSONDecodeError:
-            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
-            article_data.parsed_takeaways = []
-        all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
-        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
-    else:
-        if not MASTER_ARTICLE_STORE: fetch_news_from_api()
-        article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
-        if article_api_dict:
-            article_data = article_api_dict.copy()
-            is_community_article = False
-            all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
-            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
-        else:
-            flash("Article not found.", "danger"); return redirect(previous_list_page)
-    if 'user_id' in session and article_data:
-        existing_bookmark = BookmarkedArticle.query.filter_by(user_id=session['user_id'], article_hash_id=article_hash_id).first()
-        if existing_bookmark: is_bookmarked = True
-    if all_article_comments_list:
-        comment_ids = [c.id for c in all_article_comments_list]
-        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
-        vote_counts_query = db.session.query(CommentVote.comment_id, func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'), func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
-        for c_id, likes, dislikes in vote_counts_query:
-            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
-        if 'user_id' in session:
-            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
-            for vote in user_votes:
-                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
-    if isinstance(article_data, dict): article_data['is_community_article'] = False
-    elif article_data: article_data.is_community_article = True
-    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page, is_bookmarked=is_bookmarked)
+    article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
+    previous_list_page = session.get('previous_list_page', url_for('index'))
+    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
+    is_bookmarked = False
+    if article_db:
+        article_data = article_db
+        is_community_article = True
+        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
+        except json.JSONDecodeError:
+            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
+            article_data.parsed_takeaways = []
+        all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
+        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+    else:
+        if not MASTER_ARTICLE_STORE: fetch_news_from_api()
+        article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
+        if article_api_dict:
+            article_data = article_api_dict.copy()
+            is_community_article = False
+            all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
+            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+        else:
+            flash("Article not found.", "danger"); return redirect(previous_list_page)
+    if 'user_id' in session and article_data:
+        existing_bookmark = BookmarkedArticle.query.filter_by(user_id=session['user_id'], article_hash_id=article_hash_id).first()
+        if existing_bookmark: is_bookmarked = True
+    if all_article_comments_list:
+        comment_ids = [c.id for c in all_article_comments_list]
+        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
+        vote_counts_query = db.session.query(CommentVote.comment_id, func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'), func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
+        for c_id, likes, dislikes in vote_counts_query:
+            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
+        if 'user_id' in session:
+            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
+            for vote in user_votes:
+                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
+    if isinstance(article_data, dict): article_data['is_community_article'] = False
+    elif article_data: article_data.is_community_article = True
+    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page, is_bookmarked=is_bookmarked)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
-    if not MASTER_ARTICLE_STORE and not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): fetch_news_from_api()
-    article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
-    if not article_data or 'url' not in article_data: return jsonify({"error": "Article data or URL not found in API cache"}), 404
-    if article_data.get('groq_summary') is not None and article_data.get('groq_takeaways') is not None:
-        app.logger.info(f"Returning cached Groq analysis from MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
-        return jsonify({"groq_analysis": {"groq_summary": article_data['groq_summary'], "groq_takeaways": article_data['groq_takeaways'], "error": None}, "error": None})
-    processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
-    return jsonify(processed_content)
+    if not MASTER_ARTICLE_STORE and not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): fetch_news_from_api()
+    article_data = MASTER_ARTICLE_STORE.get(article_hash_id)
+    if not article_data or 'url' not in article_data: return jsonify({"error": "Article data or URL not found in API cache"}), 404
+    if article_data.get('groq_summary') is not None and article_data.get('groq_takeaways') is not None:
+        app.logger.info(f"Returning cached Groq analysis from MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
+        return jsonify({"groq_analysis": {"groq_summary": article_data['groq_summary'], "groq_takeaways": article_data['groq_takeaways'], "error": None}, "error": None})
+    processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
+    return jsonify(processed_content)
 
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
-    content = request.json.get('content', '').strip()
-    parent_id = request.json.get('parent_id')
-    if not content: return jsonify({"error": "Comment cannot be empty."}), 400
-    user = User.query.get(session['user_id'])
-    if not user: app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}"); return jsonify({"error": "User not found."}), 401
-    new_comment = None
-    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
-    if community_article: new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
-    elif article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
-    else:
-        fetch_news_from_api() # Attempt to populate MASTER_ARTICLE_STORE if article not found initially
-        if article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
-        else: return jsonify({"error": "Article not found to comment on."}), 404
-    db.session.add(new_comment); db.session.commit(); db.session.refresh(new_comment)
-    author_name = new_comment.author.name if new_comment.author else "Anonymous"
-    return jsonify({"success": True, "comment": {"id": new_comment.id, "content": new_comment.content, "timestamp": new_comment.timestamp.isoformat() + 'Z', "author": {"name": author_name }, "parent_id": new_comment.parent_id, "likes": 0, "dislikes": 0, "user_vote": 0}}), 201
+    content = request.json.get('content', '').strip()
+    parent_id = request.json.get('parent_id')
+    if not content: return jsonify({"error": "Comment cannot be empty."}), 400
+    user = User.query.get(session['user_id'])
+    if not user: app.logger.error(f"User not found in add_comment for user_id {session.get('user_id')}"); return jsonify({"error": "User not found."}), 401
+    new_comment = None
+    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+    if community_article: new_comment = Comment(content=content, user_id=user.id, community_article_id=community_article.id, parent_id=parent_id)
+    elif article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
+    else:
+        fetch_news_from_api() # Attempt to populate MASTER_ARTICLE_STORE if article not found initially
+        if article_hash_id in MASTER_ARTICLE_STORE: new_comment = Comment(content=content, user_id=user.id, api_article_hash_id=article_hash_id, parent_id=parent_id)
+        else: return jsonify({"error": "Article not found to comment on."}), 404
+    db.session.add(new_comment); db.session.commit(); db.session.refresh(new_comment)
+    author_name = new_comment.author.name if new_comment.author else "Anonymous"
+    return jsonify({"success": True, "comment": {"id": new_comment.id, "content": new_comment.content, "timestamp": new_comment.timestamp.isoformat() + 'Z', "author": {"name": author_name }, "parent_id": new_comment.parent_id, "likes": 0, "dislikes": 0, "user_vote": 0}}), 201
 
 @app.route('/vote_comment/<int:comment_id>', methods=['POST'])
 @login_required
 def vote_comment(comment_id):
-    comment = Comment.query.get_or_404(comment_id)
-    vote_type = request.json.get('vote_type')
-    if vote_type not in [1, -1]: return jsonify({"error": "Invalid vote type."}), 400
-    existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
-    new_user_vote_status = 0
-    if existing_vote:
-        if existing_vote.vote_type == vote_type: db.session.delete(existing_vote); new_user_vote_status = 0 # Undoing vote
-        else: existing_vote.vote_type = vote_type; new_user_vote_status = vote_type # Changing vote
-    else: db.session.add(CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type)); new_user_vote_status = vote_type # New vote
-    db.session.commit()
-    likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
-    dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
-    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": new_user_vote_status}), 200
+    comment = Comment.query.get_or_404(comment_id)
+    vote_type = request.json.get('vote_type')
+    if vote_type not in [1, -1]: return jsonify({"error": "Invalid vote type."}), 400
+    existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
+    new_user_vote_status = 0
+    if existing_vote:
+        if existing_vote.vote_type == vote_type: db.session.delete(existing_vote); new_user_vote_status = 0 # Undoing vote
+        else: existing_vote.vote_type = vote_type; new_user_vote_status = vote_type # Changing vote
+    else: db.session.add(CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type)); new_user_vote_status = vote_type # New vote
+    db.session.commit()
+    likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
+    dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
+    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": new_user_vote_status}), 200
 
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
-    title, description, content, source_name, image_url = map(lambda x: request.form.get(x, '').strip(), ['title', 'description', 'content', 'sourceName', 'imageUrl'])
-    source_name = source_name or 'Community Post' # Default if empty
-    if not all([title, description, content, source_name]): # Source name is now required
-        flash("Title, Description, Full Content, and Source Name are required.", "danger")
-        return redirect(request.referrer or url_for('index'))
-    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time())) # Unique enough for user posts
-    groq_analysis_result = get_article_analysis_with_groq(content, title)
-    groq_summary_text, groq_takeaways_json_str = None, None
-    if groq_analysis_result and not groq_analysis_result.get("error"):
-        groq_summary_text = groq_analysis_result.get('groq_summary')
-        takeaways_list = groq_analysis_result.get('groq_takeaways')
-        if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
-    new_article = CommunityArticle(
-        article_hash_id=article_hash_id, title=title, description=description, full_text=content,
-        source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
-        user_id=session['user_id'], published_at=datetime.now(timezone.utc),
-        groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str
-    )
-    db.session.add(new_article); db.session.commit()
-    flash("Your article has been posted!", "success")
-    return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
+    title, description, content, source_name, image_url = map(lambda x: request.form.get(x, '').strip(), ['title', 'description', 'content', 'sourceName', 'imageUrl'])
+    source_name = source_name or 'Community Post' # Default if empty
+    if not all([title, description, content, source_name]): # Source name is now required
+        flash("Title, Description, Full Content, and Source Name are required.", "danger")
+        return redirect(request.referrer or url_for('index'))
+    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time())) # Unique enough for user posts
+    groq_analysis_result = get_article_analysis_with_groq(content, title)
+    groq_summary_text, groq_takeaways_json_str = None, None
+    if groq_analysis_result and not groq_analysis_result.get("error"):
+        groq_summary_text = groq_analysis_result.get('groq_summary')
+        takeaways_list = groq_analysis_result.get('groq_takeaways')
+        if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
+    new_article = CommunityArticle(
+        article_hash_id=article_hash_id, title=title, description=description, full_text=content,
+        source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}',
+        user_id=session['user_id'], published_at=datetime.now(timezone.utc),
+        groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str
+    )
+    db.session.add(new_article); db.session.commit()
+    flash("Your article has been posted!", "success")
+    return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if 'user_id' in session: return redirect(url_for('index'))
-    if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        username = request.form.get('username', '').strip().lower()
-        password = request.form.get('password', '')
-        if not all([name, username, password]): flash('All fields are required.', 'danger')
-        elif len(username) < 3: flash('Username must be at least 3 characters.', 'warning')
-        elif len(password) < 6: flash('Password must be at least 6 characters.', 'warning')
-        elif User.query.filter_by(username=username).first(): flash('Username already exists. Please choose another.', 'warning')
-        else:
-            new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
-            db.session.add(new_user); db.session.commit()
-            flash(f'Registration successful, {name}! Please log in.', 'success')
-            return redirect(url_for('login'))
-        return redirect(url_for('register')) # Redirect to clear form on failed POST fields
-    return render_template("REGISTER_HTML_TEMPLATE")
+    if 'user_id' in session: return redirect(url_for('index'))
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '')
+        if not all([name, username, password]): flash('All fields are required.', 'danger')
+        elif len(username) < 3: flash('Username must be at least 3 characters.', 'warning')
+        elif len(password) < 6: flash('Password must be at least 6 characters.', 'warning')
+        elif User.query.filter_by(username=username).first(): flash('Username already exists. Please choose another.', 'warning')
+        else:
+            new_user = User(name=name, username=username, password_hash=generate_password_hash(password))
+            db.session.add(new_user); db.session.commit()
+            flash(f'Registration successful, {name}! Please log in.', 'success')
+            return redirect(url_for('login'))
+        return redirect(url_for('register')) # Redirect to clear form on failed POST fields
+    return render_template("REGISTER_HTML_TEMPLATE")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if 'user_id' in session: return redirect(url_for('index'))
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip().lower()
-        password = request.form.get('password', '')
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password_hash, password):
-            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
-            flash(f"Welcome back, {user.name}!", "success")
-            next_url = request.args.get('next')
-            session.pop('previous_list_page', None) # Clear previous list page on login
-            return redirect(next_url or url_for('index'))
-        else: flash('Invalid username or password.', 'danger')
-    return render_template("LOGIN_HTML_TEMPLATE")
+    if 'user_id' in session: return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
+            flash(f"Welcome back, {user.name}!", "success")
+            next_url = request.args.get('next')
+            session.pop('previous_list_page', None) # Clear previous list page on login
+            return redirect(next_url or url_for('index'))
+        else: flash('Invalid username or password.', 'danger')
+    return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
 def logout(): session.clear(); flash("You have been successfully logged out.", "info"); return redirect(url_for('index'))
@@ -807,94 +811,96 @@ def privacy(): return render_template("PRIVACY_POLICY_HTML_TEMPLATE")
 
 @app.route('/subscribe', methods=['POST'])
 def subscribe():
-    email = request.form.get('email', '').strip().lower()
-    if not email: flash('Email is required to subscribe.', 'warning')
-    elif Subscriber.query.filter_by(email=email).first(): flash('You are already subscribed to our newsletter.', 'info')
-    else:
-        try: db.session.add(Subscriber(email=email)); db.session.commit(); flash('Thank you for subscribing!', 'success')
-        except Exception as e: db.session.rollback(); app.logger.error(f"Error subscribing email {email}: {e}"); flash('Could not subscribe at this time. Please try again later.', 'danger')
-    return redirect(request.referrer or url_for('index'))
+    email = request.form.get('email', '').strip().lower()
+    if not email: flash('Email is required to subscribe.', 'warning')
+    elif Subscriber.query.filter_by(email=email).first(): flash('You are already subscribed to our newsletter.', 'info')
+    else:
+        try: db.session.add(Subscriber(email=email)); db.session.commit(); flash('Thank you for subscribing!', 'success')
+        except Exception as e: db.session.rollback(); app.logger.error(f"Error subscribing email {email}: {e}"); flash('Could not subscribe at this time. Please try again later.', 'danger')
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/toggle_bookmark/<article_hash_id>', methods=['POST'])
 @login_required
 def toggle_bookmark(article_hash_id):
-    user_id = session['user_id']
-    is_community_str = request.json.get('is_community_article', 'false').lower()
-    is_community = True if is_community_str == 'true' else False
-    article_title_cache = request.json.get('title', 'Bookmarked Article')
-    article_source_cache = request.json.get('source_name', 'Unknown Source')
-    article_image_cache = request.json.get('image_url', None)
-    article_desc_cache = request.json.get('description', None)
-    article_published_at_cache_str = request.json.get('published_at', None)
-    article_published_at_dt = None
-    if article_published_at_cache_str:
-        try:
-            if article_published_at_cache_str.endswith('Z'): article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
-            else: article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
-            if article_published_at_dt.tzinfo is None: article_published_at_dt = pytz.utc.localize(article_published_at_dt) # Ensure timezone if naive
-        except ValueError: app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}"); article_published_at_dt = None
+    user_id = session['user_id']
+    is_community_str = request.json.get('is_community_article', 'false').lower()
+    is_community = True if is_community_str == 'true' else False
+    article_title_cache = request.json.get('title', 'Bookmarked Article')
+    article_source_cache = request.json.get('source_name', 'Unknown Source')
+    article_image_cache = request.json.get('image_url', None)
+    article_desc_cache = request.json.get('description', None)
+    article_published_at_cache_str = request.json.get('published_at', None)
+    article_published_at_dt = None
+    if article_published_at_cache_str:
+        try:
+            if article_published_at_cache_str.endswith('Z'): article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
+            else: article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
+            if article_published_at_dt.tzinfo is None: article_published_at_dt = pytz.utc.localize(article_published_at_dt) # Ensure timezone if naive
+        except ValueError: app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}"); article_published_at_dt = None
 
-    existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
-    if existing_bookmark:
-        db.session.delete(existing_bookmark); db.session.commit()
-        return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
-    else:
-        if is_community:
-            if not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): return jsonify({"success": False, "error": "Community article not found."}), 404
-        else: # API Article
-            if article_hash_id not in MASTER_ARTICLE_STORE:
-                fetch_news_from_api() # Attempt to populate if not found
-                if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
-        
-        new_bookmark = BookmarkedArticle(
-            user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community,
-            title_cache=article_title_cache, source_name_cache=article_source_cache,
-            image_url_cache=article_image_cache, description_cache=article_desc_cache,
-            published_at_cache=article_published_at_dt # Store datetime object for API, or None for community (as it's in DB)
-        )
-        db.session.add(new_bookmark); db.session.commit()
-        return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
+    existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
+    if existing_bookmark:
+        db.session.delete(existing_bookmark); db.session.commit()
+        return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
+    else:
+        if is_community:
+            if not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): return jsonify({"success": False, "error": "Community article not found."}), 404
+        else: # API Article
+            if article_hash_id not in MASTER_ARTICLE_STORE:
+                fetch_news_from_api() # Attempt to populate if not found
+                if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
+        
+        new_bookmark = BookmarkedArticle(
+            user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community,
+            title_cache=article_title_cache, source_name_cache=article_source_cache,
+            image_url_cache=article_image_cache, description_cache=article_desc_cache,
+            published_at_cache=article_published_at_dt # Store datetime object for API, or None for community (as it's in DB)
+        )
+        db.session.add(new_bookmark); db.session.commit()
+        return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
 
 @app.route('/profile')
 @login_required
 def profile():
-    user = User.query.get_or_404(session['user_id'])
-    page = request.args.get('page', 1, type=int)
-    per_page = app.config['PER_PAGE'] # Or a different value for profile page, e.g., 6
-    user_posted_articles = CommunityArticle.query.filter_by(user_id=user.id).order_by(CommunityArticle.published_at.desc()).all() # Not paginated for now
-    bookmarks_query = BookmarkedArticle.query.filter_by(user_id=user.id).order_by(BookmarkedArticle.bookmarked_at.desc())
-    user_bookmarks_paginated_query = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
-    user_bookmarked_articles_data = []
-    for bookmark in user_bookmarks_paginated_query.items:
-        article_detail_data = None
-        if bookmark.is_community_article:
-            comm_art = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
-            if comm_art: article_detail_data = {'id': comm_art.article_hash_id, 'title': comm_art.title, 'description': comm_art.description, 'urlToImage': comm_art.image_url, 'publishedAt': comm_art.published_at.isoformat() if comm_art.published_at else None, 'source': {'name': comm_art.author.name if comm_art.author else comm_art.source_name}, 'is_community_article': True, 'article_url': url_for('article_detail', article_hash_id=comm_art.article_hash_id)}
-        else: # API Article
-            api_art = MASTER_ARTICLE_STORE.get(bookmark.article_hash_id)
-            if api_art: article_detail_data = {'id': api_art['id'], 'title': api_art['title'], 'description': api_art['description'], 'urlToImage': api_art['urlToImage'], 'publishedAt': api_art['publishedAt'], 'source': {'name': api_art['source']['name']}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=api_art['id'])}
-            else: # Stale bookmark or article no longer in MASTER_ARTICLE_STORE, use cached data
-                article_detail_data = {
-                    'id': bookmark.article_hash_id,
-                    'title': bookmark.title_cache or "Bookmarked Article (Details N/A)",
-                    'description': bookmark.description_cache or "Description not available.",
-                    'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A',
-                    'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None, # Ensure published_at_cache is datetime
-                    'source': {'name': bookmark.source_name_cache or "Unknown Source"},
-                    'is_community_article': False,
-                    'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id),
-                    'is_stale_bookmark': True
-                }
-        if article_detail_data: user_bookmarked_articles_data.append(article_detail_data)
+    user = User.query.get_or_404(session['user_id'])
+    page = request.args.get('page', 1, type=int)
+    per_page = app.config['PER_PAGE'] 
+    user_posted_articles = CommunityArticle.query.filter_by(user_id=user.id).order_by(CommunityArticle.published_at.desc()).all() # Not paginated for now
+    bookmarks_query = BookmarkedArticle.query.filter_by(user_id=user.id).order_by(BookmarkedArticle.bookmarked_at.desc())
+    user_bookmarks_paginated_query = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
+    user_bookmarked_articles_data = []
+    for bookmark in user_bookmarks_paginated_query.items:
+        article_detail_data = None
+        if bookmark.is_community_article:
+            comm_art = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
+            if comm_art: article_detail_data = {'id': comm_art.article_hash_id, 'title': comm_art.title, 'description': comm_art.description, 'urlToImage': comm_art.image_url, 'publishedAt': comm_art.published_at.isoformat() if comm_art.published_at else None, 'source': {'name': comm_art.author.name if comm_art.author else comm_art.source_name}, 'is_community_article': True, 'article_url': url_for('article_detail', article_hash_id=comm_art.article_hash_id)}
+        else: # API Article
+            api_art = MASTER_ARTICLE_STORE.get(bookmark.article_hash_id)
+            if api_art: article_detail_data = {'id': api_art['id'], 'title': api_art['title'], 'description': api_art['description'], 'urlToImage': api_art['urlToImage'], 'publishedAt': api_art['publishedAt'], 'source': {'name': api_art['source']['name']}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=api_art['id'])}
+            else: # Stale bookmark or article no longer in MASTER_ARTICLE_STORE, use cached data
+                article_detail_data = {
+                    'id': bookmark.article_hash_id,
+                    'title': bookmark.title_cache or "Bookmarked Article (Details N/A)",
+                    'description': bookmark.description_cache or "Description not available.",
+                    'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A',
+                    'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None, 
+                    'source': {'name': bookmark.source_name_cache or "Unknown Source"},
+                    'is_community_article': False,
+                    'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id),
+                    'is_stale_bookmark': True
+                }
+        if article_detail_data: user_bookmarked_articles_data.append(article_detail_data)
 
-    return render_template("PROFILE_HTML_TEMPLATE", user=user, posted_articles=user_posted_articles, bookmarked_articles=user_bookmarked_articles_data, bookmarks_pagination=user_bookmarks_paginated_query, current_page=page)
+    return render_template("PROFILE_HTML_TEMPLATE", user=user, posted_articles=user_posted_articles, bookmarked_articles=user_bookmarked_articles_data, bookmarks_pagination=user_bookmarks_paginated_query, current_page=page)
 
 @app.errorhandler(404)
 def page_not_found(e): return render_template("404_TEMPLATE"), 404
 @app.errorhandler(500)
-def internal_server_error(e): db.session.rollback(); app.logger.error(f"500 error at {request.url}: {e}", exc_info=True); return render_template("500_TEMPLATE"), 500
-
-{# Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AI DISPLAY FIXES, AND DATE FILTER #}
+def internal_server_error(e):
+    db.session.rollback()
+    app.logger.error(f"500 error at {request.url}: {e}", exc_info=True)
+    return render_template("500_TEMPLATE"), 500
+    
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
