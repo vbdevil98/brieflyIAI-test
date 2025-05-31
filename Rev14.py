@@ -77,57 +77,67 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s -
 app.logger.setLevel(logging.INFO)
 
 # Data Persistence
-database_url = os.environ.get('DATABASE_URL')
+using_postgres_flag = False
+
+# --- MODIFIED Data Persistence ---
 app.logger.info(f"--- Database Configuration ---")
 app.logger.info(f"Attempting to read DATABASE_URL environment variable...")
-if database_url_env:
-    app.logger.info(f"DATABASE_URL found. Raw value (prefix): '{database_url_env[:30]}...'") # Log prefix for security
+database_url = os.environ.get('DATABASE_URL') # Using 'database_url' for the value from environment
+
+if database_url: 
+    app.logger.info(f"DATABASE_URL found. Raw value (prefix): '{database_url[:30]}...'") # Log prefix for security
 else:
-    app.logger.info("DATABASE_URL environment variable NOT FOUND.")
+    app.logger.info("DATABASE_URL environment variable NOT FOUND or is empty.")
 
 configured_db_uri = None
-using_postgres_flag = False # To track if we intend to use PostgreSQL
+# using_postgres_flag is already initialized to False above
 
-if database_url_env and (database_url_env.startswith("postgres://") or database_url_env.startswith("postgresql://")):
+if database_url and (database_url.startswith("postgres://") or database_url.startswith("postgresql://")):
     app.logger.info(f"DATABASE_URL indicates a PostgreSQL connection.")
-    if database_url_env.startswith("postgres://"):
-        configured_db_uri = database_url_env.replace("postgres://", "postgresql://", 1)
+    if database_url.startswith("postgres://"):
+        configured_db_uri = database_url.replace("postgres://", "postgresql://", 1)
         app.logger.info(f"Converted DATABASE_URL from 'postgres://' to 'postgresql://'.")
     else: # Already starts with "postgresql://"
-        configured_db_uri = database_url_env
+        configured_db_uri = database_url
         app.logger.info(f"DATABASE_URL already uses 'postgresql://' scheme.")
     
     app.config['SQLALCHEMY_DATABASE_URI'] = configured_db_uri
-    # Log a safe part of the URI to confirm it's being set, e.g., excluding user:pass
     uri_to_log = configured_db_uri
     try:
         parsed_uri = urllib.parse.urlparse(configured_db_uri)
-        if parsed_uri.username or parsed_uri.password:
-            uri_to_log = f"{parsed_uri.scheme}://********:********@{parsed_uri.hostname}:{parsed_uri.port}{parsed_uri.path}"
+        if parsed_uri.username or parsed_uri.password: # Mask credentials
+            # Ensure port is handled correctly if present
+            host_port = parsed_uri.hostname
+            if parsed_uri.port:
+                host_port += f":{parsed_uri.port}"
+            uri_to_log = f"{parsed_uri.scheme}://********:********@{host_port}{parsed_uri.path}"
     except Exception:
         pass # Keep original if parsing fails
     app.logger.info(f"SQLAlchemy URI configured for PostgreSQL: {uri_to_log}")
-    using_postgres_flag = True
+    using_postgres_flag = True # Set flag to True
 else:
-    if database_url_env:
-        app.logger.warning(f"DATABASE_URL found ('{database_url_env[:30]}...') but it does not seem to be a PostgreSQL URL (expected 'postgres://' or 'postgresql://').")
-    app.logger.info("Falling back to local SQLite database for development.")
+    # This block is entered if database_url (from env) is None, empty, or not a valid Postgres URL format
+    if database_url: # It existed but wasn't a postgres URL
+        app.logger.warning(f"DATABASE_URL found ('{database_url[:30]}...') but it does not seem to be a PostgreSQL URL (expected 'postgres://' or 'postgresql://').")
+    
+    app.logger.info("Falling back to local SQLite database.")
     
     db_file_name = 'app_data.db'
-    # Ensure project_root is defined for SQLite path (it's defined earlier for NLTK)
-    # If not, use a simpler relative path or ensure os.path.dirname is robust
+    # Ensure project_root_for_db is correctly determined
+    project_root_for_db = ""
     try:
         project_root_for_db = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(project_root_for_db, db_file_name)
-    except NameError: # __file__ might not be defined in some execution contexts
-        app.logger.warning("__file__ not defined, using relative path for SQLite DB.")
+    except NameError: # __file__ might not be defined in some execution contexts (e.g. interactive)
+        app.logger.warning("__file__ not defined when setting SQLite path, using relative path for DB.")
         db_path = db_file_name # Fallback to relative path if absolute path fails
         
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.logger.info(f"SQLAlchemy URI configured for SQLite: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    # using_postgres_flag remains False (as initialized)
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app) # SQLAlchemy is the ORM. It uses the URI set above.
+db = SQLAlchemy(app) 
 app.logger.info(f"SQLAlchemy instance created.")
 app.logger.info(f"--- End of Database Configuration ---")
 
@@ -218,27 +228,28 @@ class BookmarkedArticle(db.Model):
     __table_args__ = (db.UniqueConstraint('user_id', 'article_hash_id', name='_user_article_bookmark_uc'),)
 
 def init_db():
+    # To access the global 'using_postgres_flag' set earlier
+    global using_postgres_flag
     with app.app_context():
         app.logger.info("--- Database Initialization (init_db) ---")
         try:
-            # Log the actual dialect being used by SQLAlchemy's engine
             engine = db.get_engine()
-            engine_url_str = str(engine.url) # Get the URL string from the engine
+            engine_url_str = str(engine.url) 
             dialect_name = engine.dialect.name
             app.logger.info(f"SQLAlchemy engine is configured with URL (actual): {engine_url_str}")
             app.logger.info(f"SQLAlchemy dialect in use: {dialect_name}")
 
-            if using_postgres_flag: # Check the flag set during initial config
+            # Check the flag set during initial config
+            if using_postgres_flag: 
                 if dialect_name == "postgresql":
                     app.logger.info("CONFIRMED: SQLAlchemy is using PostgreSQL dialect as intended.")
                 else:
-                    app.logger.warning(f"WARNING: Intended to use PostgreSQL, but SQLAlchemy dialect is '{dialect_name}'. Check DATABASE_URL and configuration.")
+                    app.logger.warning(f"WARNING: Intended to use PostgreSQL (using_postgres_flag=True), but SQLAlchemy dialect is '{dialect_name}'. Check DATABASE_URL and configuration.")
             else: # Intended to use SQLite (fallback)
                 if dialect_name == "sqlite":
-                    app.logger.info("CONFIRMED: SQLAlchemy is using SQLite dialect as intended (fallback).")
+                    app.logger.info("CONFIRMED: SQLAlchemy is using SQLite dialect as intended (fallback or no valid DATABASE_URL).")
                 else:
-                    app.logger.warning(f"WARNING: Intended to use SQLite (fallback), but SQLAlchemy dialect is '{dialect_name}'.")
-
+                    app.logger.warning(f"WARNING: Intended to use SQLite (using_postgres_flag=False), but SQLAlchemy dialect is '{dialect_name}'.")
         except Exception as e:
             app.logger.error(f"Error during SQLAlchemy engine/dialect logging: {e}", exc_info=True)
 
@@ -248,8 +259,6 @@ def init_db():
             app.logger.info("db.create_all() executed successfully. Tables should be ready or already exist.")
         except Exception as e:
             app.logger.error(f"Error during db.create_all(): {e}", exc_info=True)
-            # Depending on the error, you might want to exit or handle it more gracefully
-            # For Render deployments, persistent DB connection errors here are critical.
         app.logger.info("--- End of Database Initialization (init_db) ---")
 
 # ==============================================================================
@@ -370,30 +379,24 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
     if target_date_str:
         try:
             target_dt = datetime.strptime(target_date_str, '%Y-%m-%d')
-            # API calls should use from=target_dt (start of day) to to=target_dt (end of day)
-            # NewsAPI uses the 'from' and 'to' parameters to define a window.
-            # For a single day, set 'from' to the start of the day and 'to' to the end of the day.
             api_call_from_date_str = target_dt.strftime('%Y-%m-%dT00:00:00')
             api_call_to_date_str = target_dt.strftime('%Y-%m-%dT23:59:59')
             app.logger.info(f"Fetching news specifically for date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
             is_specific_date_fetch = True
         except ValueError:
             app.logger.warning(f"Invalid target_date_str '{target_date_str}', falling back to default range.")
-            target_date_str = None # Ensure fallback if parsing failed
+            target_date_str = None 
 
-    if not is_specific_date_fetch: # Default range logic or fallback
+    if not is_specific_date_fetch: 
         from_date_utc = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
         api_call_from_date_str = from_date_utc.strftime('%Y-%m-%dT%H:%M:%S')
-        
-        # MODIFICATION: Ensure 'to' date for default fetch covers the entire current day UTC
         current_day_utc_end = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=0)
         api_call_to_date_str = current_day_utc_end.strftime('%Y-%m-%dT%H:%M:%S')
-        
         app.logger.info(f"Fetching news with default date range (last {app.config['NEWS_API_DAYS_AGO']} days): from {api_call_from_date_str} to {api_call_to_date_str}")
 
     all_raw_articles = []
 
-    # Attempt 1: Top Headlines (only if not fetching for a specific historical date)
+    # Attempt 1: Top Headlines (only if not fetching for a specific historical date, or for default range)
     if not is_specific_date_fetch:
         try:
             app.logger.info("Attempt 1: Fetching top headlines from country: 'in'")
@@ -408,7 +411,9 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
             if status == 'ok' and total_results > 0:
                 all_raw_articles.extend(top_headlines_response['articles'])
             elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Top-Headlines): {top_headlines_response.get('message')}")
+                app.logger.error(f"NewsAPI Error (Top-Headlines): Code: {top_headlines_response.get('code')}, Message: {top_headlines_response.get('message')}. Full response: {top_headlines_response}")
+            elif total_results == 0:
+                app.logger.info(f"NewsAPI (Top-Headlines) returned 0 results. Response: {top_headlines_response}")
         except NewsAPIException as e:
             app.logger.error(f"NewsAPIException (Top-Headlines): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
         except Exception as e:
@@ -416,13 +421,15 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
 
     # Attempt 2: Everything query
     try:
-        app.logger.info(f"Attempt 2: Fetching 'everything' with query: \"{app.config['NEWS_API_QUERY']}\" for period: {api_call_from_date_str} to {api_call_to_date_str}")
+        current_query = app.config['NEWS_API_QUERY']
+        current_sort_by = app.config['NEWS_API_SORT_BY']
+        app.logger.info(f"Attempt 2: Fetching 'everything' with query: \"{current_query}\" for period: {api_call_from_date_str} to {api_call_to_date_str}, sort_by: {current_sort_by}")
         everything_response = newsapi.get_everything(
-            q=app.config['NEWS_API_QUERY'],
+            q=current_query,
             from_param=api_call_from_date_str,
             to=api_call_to_date_str,
             language='en',
-            sort_by=app.config['NEWS_API_SORT_BY'], # 'publishedAt' for chronological, 'relevancy' if q is very specific
+            sort_by=current_sort_by,
             page_size=app.config['NEWS_API_PAGE_SIZE']
         )
         status = everything_response.get('status')
@@ -431,28 +438,32 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
         if status == 'ok' and total_results > 0:
             all_raw_articles.extend(everything_response['articles'])
         elif status == 'error':
-            app.logger.error(f"NewsAPI Error (Everything): {everything_response.get('message')}")
+            app.logger.error(f"NewsAPI Error (Everything Query): Code: {everything_response.get('code')}, Message: {everything_response.get('message')}. Parameters used: q='{current_query}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by}'. Full response: {everything_response}")
+        elif total_results == 0:
+            app.logger.info(f"NewsAPI (Everything Query) returned 0 results for q='{current_query}' from '{api_call_from_date_str}' to '{api_call_to_date_str}', sort_by='{current_sort_by}'. Response: {everything_response}")
     except NewsAPIException as e:
-        app.logger.error(f"NewsAPIException (Everything): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+        app.logger.error(f"NewsAPIException (Everything Query): {e.get_message() if hasattr(e, 'get_message') else str(e)}. Parameters used: q='{current_query}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by}'.", exc_info=False)
     except Exception as e:
-        app.logger.error(f"Generic Exception (Everything): {e}", exc_info=True)
+        app.logger.error(f"Generic Exception (Everything Query): {e}", exc_info=True)
 
     # Attempt 3: Fallback with domains (only if previous attempts yielded nothing OR if it's a specific date fetch where more sources are good)
-    if not all_raw_articles or is_specific_date_fetch: # Try fallback if no articles yet, or always try for specific date to maximize results for that day
-        if not all_raw_articles: # Log this only if it's a true fallback scenario
+    # Note: `domains` parameter is problematic on NewsAPI free plan for /everything endpoint
+    if not all_raw_articles or is_specific_date_fetch:
+        if not all_raw_articles: 
             app.logger.warning("No articles from primary calls or specific query. Trying Fallback with domains.")
-        else: # If is_specific_date_fetch and we already have some, this is an additional attempt
-            app.logger.info("Performing domain-specific search for selected date to augment results.")
+        else: 
+            app.logger.info("Performing domain-specific search for selected date to augment results (or as primary for specific date if query returned none).")
 
         try:
             domains_to_check = app.config['NEWS_API_DOMAINS']
-            app.logger.info(f"Attempt 3 (Fallback/Augment): Fetching from domains: {domains_to_check} for period: {api_call_from_date_str} to {api_call_to_date_str}")
+            current_sort_by_fallback = app.config['NEWS_API_SORT_BY']
+            app.logger.info(f"Attempt 3 (Fallback/Augment): Fetching from domains: {domains_to_check} for period: {api_call_from_date_str} to {api_call_to_date_str}, sort_by: {current_sort_by_fallback}")
             fallback_response = newsapi.get_everything(
                 domains=domains_to_check,
                 from_param=api_call_from_date_str,
                 to=api_call_to_date_str,
                 language='en',
-                sort_by=app.config['NEWS_API_SORT_BY'],
+                sort_by=current_sort_by_fallback,
                 page_size=app.config['NEWS_API_PAGE_SIZE']
             )
             status = fallback_response.get('status')
@@ -461,17 +472,19 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
             if status == 'ok' and total_results > 0:
                 all_raw_articles.extend(fallback_response['articles'])
             elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Fallback/Augment): {fallback_response.get('message')}")
+                app.logger.error(f"NewsAPI Error (Everything Domains): Code: {fallback_response.get('code')}, Message: {fallback_response.get('message')}. Parameters used: domains='{domains_to_check}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by_fallback}'. Full response: {fallback_response}")
+            elif total_results == 0:
+                app.logger.info(f"NewsAPI (Everything Domains) returned 0 results for domains='{domains_to_check}' from '{api_call_from_date_str}' to '{api_call_to_date_str}', sort_by='{current_sort_by_fallback}'. Response: {fallback_response}")
         except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException (Fallback/Augment): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
+            app.logger.error(f"NewsAPIException (Everything Domains): {e.get_message() if hasattr(e, 'get_message') else str(e)}. Parameters used: domains='{domains_to_check}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by_fallback}'.", exc_info=False)
         except Exception as e:
-            app.logger.error(f"Generic Exception (Fallback/Augment): {e}", exc_info=True)
+            app.logger.error(f"Generic Exception (Everything Domains): {e}", exc_info=True)
 
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
     for art_data in all_raw_articles:
         url = art_data.get('url')
-        if not url or url in unique_urls: continue # Deduplicate by URL
+        if not url or url in unique_urls: continue
         title = art_data.get('title')
         description = art_data.get('description')
 
@@ -487,14 +500,18 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
                 published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
             except ValueError:
                 app.logger.warning(f"Could not parse publishedAt date for article: {title} - Date: {art_data.get('publishedAt')}")
-                published_at_dt = datetime.now(timezone.utc)
+                published_at_dt = datetime.now(timezone.utc) # Fallback if parsing fails
         else:
+            # If publishedAt is missing, which can happen, use current time as a fallback.
+            # Or decide if such articles should be skipped. For now, using current time.
+            app.logger.warning(f"Missing 'publishedAt' for article: {title}. Using current UTC time.")
             published_at_dt = datetime.now(timezone.utc)
+
 
         standardized_article = {
             'id': article_id, 'title': title, 'description': description,
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-            'publishedAt': published_at_dt.isoformat(),
+            'publishedAt': published_at_dt.isoformat(), # Store as ISO string
             'source': {'name': source_name}, 'is_community_article': False,
             'groq_summary': None, 'groq_takeaways': None
         }
@@ -502,60 +519,9 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
         processed_articles.append(standardized_article)
     
     processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
-    app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)}.")
+    app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)} for period from {api_call_from_date_str} to {api_call_to_date_str}.")
     return processed_articles
     
-# fetch_and_parse_article_content remains unchanged from the previous version.
-# Ensure it's present in your Cell 5 as provided before.
-@simple_cache(expiry_seconds_default=3600 * 6)
-def fetch_and_parse_article_content(article_hash_id, url):
-    app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
-    if not SCRAPER_API_KEY:
-        return {"full_text": None, "groq_analysis": None, "error": "Content fetching service unavailable."}
-    
-    params = {'api_key': SCRAPER_API_KEY, 'url': url}
-    try:
-        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
-        response.raise_for_status()
-
-        config = Config()
-        config.fetch_images = False
-        config.memoize_articles = False
-        article_scraper = Article(url, config=config)
-        article_scraper.download(input_html=response.text)
-        article_scraper.parse()
-
-        if not article_scraper.text:
-            return {"full_text": None, "groq_analysis": None, "error": "Could not extract text from the article."}
-        
-        article_title_for_groq = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
-        
-        if MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('groq_summary') is not None and \
-           MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('groq_takeaways') is not None:
-            app.logger.info(f"Using pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id}")
-            groq_analysis = {
-                "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
-                "groq_takeaways": MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'],
-                "error": None 
-            }
-        else:
-            groq_analysis = get_article_analysis_with_groq(article_scraper.text, article_title_for_groq)
-            if article_hash_id in MASTER_ARTICLE_STORE and groq_analysis: 
-                MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'] = groq_analysis.get("groq_summary")
-                MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis.get("groq_takeaways")
-
-        return {
-            "full_text": article_scraper.text,
-            "groq_analysis": groq_analysis, 
-            "error": None
-        }
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
-        return {"full_text": None, "groq_analysis": None, "error": f"Failed to fetch article content: {str(e)}"}
-    except Exception as e:
-        app.logger.error(f"Failed to parse article content for {url}: {e}", exc_info=True)
-        return {"full_text": None, "groq_analysis": None, "error": f"Failed to parse article content: {str(e)}"}
-
 # ==============================================================================
 # --- 6. Flask Routes ---
 # ==============================================================================
