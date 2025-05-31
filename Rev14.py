@@ -659,22 +659,99 @@ def vote_comment(comment_id):
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
-    title, description, content, source_name, image_url = map(lambda x: request.form.get(x, '').strip(), ['title', 'description', 'content', 'sourceName', 'imageUrl'])
-    source_name = source_name or 'Community Post'
-    if not all([title, description, content, source_name]):
-        flash("Title, Description, Full Content, and Source Name are required.", "danger")
+    # Initialize title early for logging in case of early exit
+    title_for_logging = request.form.get('title', 'N/A').strip()[:30]
+    app.logger.info(f"Attempting to post article. User: {session.get('user_name', 'Unknown')}, Initial Title: '{title_for_logging}...'")
+    try:
+        title, description, content, source_name, image_url = map(
+            lambda x: request.form.get(x, '').strip(),
+            ['title', 'description', 'content', 'sourceName', 'imageUrl']
+        )
+        source_name = source_name or 'Community Post'
+
+        app.logger.debug(f"Form data received - Title: '{title}', Description: '{description[:50]}...', Source: '{source_name}', ImageURL: '{image_url}'")
+
+        if not all([title, description, content, source_name]):
+            app.logger.warning(f"Post Article validation failed: Missing required fields. User: {session.get('user_name')}, Title: '{title}'")
+            flash("Title, Description, Full Content, and Source Name are required.", "danger")
+            return redirect(request.referrer or url_for('index'))
+
+        article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
+        app.logger.info(f"Generated article_hash_id: {article_hash_id} for title '{title}'")
+
+        groq_summary_text = None
+        groq_takeaways_json_str = None
+        
+        # Only attempt Groq analysis if the client is configured
+        if groq_client:
+            app.logger.info(f"Attempting Groq analysis for article: '{title[:50]}...'")
+            groq_analysis_result = get_article_analysis_with_groq(content, title)
+            if groq_analysis_result:
+                if groq_analysis_result.get("error"):
+                    app.logger.warning(f"Groq analysis error for '{title[:50]}...': {groq_analysis_result.get('error')}")
+                else:
+                    app.logger.info(f"Groq analysis successful for '{title[:50]}...'.")
+                    groq_summary_text = groq_analysis_result.get('groq_summary')
+                    takeaways_list = groq_analysis_result.get('groq_takeaways')
+                    if takeaways_list and isinstance(takeaways_list, list):
+                        try:
+                            groq_takeaways_json_str = json.dumps(takeaways_list)
+                        except TypeError as te:
+                            app.logger.error(f"TypeError during json.dumps for takeaways: {te}. Takeaways list: {takeaways_list}", exc_info=True)
+                            # Decide how to handle this - e.g., store as null or an error string
+                            groq_takeaways_json_str = json.dumps({"error": "Failed to serialize takeaways"})
+                    elif takeaways_list is not None: # It's not a list but not None
+                         app.logger.warning(f"Groq takeaways were not a list: {type(takeaways_list)}. Storing as null.")
+            else:
+                app.logger.warning(f"Groq analysis returned no result (None) for '{title[:50]}...'.")
+        else:
+            app.logger.info("Groq client not configured. Skipping AI analysis for new community article.")
+
+        # Ensure image_url is either a valid URL or the placeholder
+        # Default placeholder if image_url is empty or just whitespace
+        final_image_url = image_url if image_url and image_url.strip() else f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}'
+        
+        app.logger.info("Creating CommunityArticle database object...")
+        app.logger.debug(f"CommunityArticle data - hash: {article_hash_id}, title: {title}, user_id: {session['user_id']}, source: {source_name}, image: {final_image_url}")
+
+        new_article = CommunityArticle(
+            article_hash_id=article_hash_id,
+            title=title,
+            description=description,
+            full_text=content, # 'content' from form maps to 'full_text' in model
+            source_name=source_name,
+            image_url=final_image_url,
+            user_id=session['user_id'],
+            published_at=datetime.now(timezone.utc),
+            groq_summary=groq_summary_text,
+            groq_takeaways=groq_takeaways_json_str
+        )
+        
+        app.logger.info(f"Attempting to add article '{title[:50]}...' to DB session.")
+        db.session.add(new_article)
+        
+        app.logger.info(f"Attempting to commit DB session for article '{title[:50]}...'. Current DB URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+        db.session.commit()
+        app.logger.info(f"Article '{new_article.title[:50]}' (ID: {new_article.id}, Hash: {new_article.article_hash_id}) committed successfully.")
+        
+        flash("Your article has been posted!", "success")
+        return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
+
+    except Exception as e:
+        # Log the exception with traceback
+        # Use title_for_logging as 'title' might not be defined if error occurred before its assignment
+        app.logger.error(f"Critical error in /post_article for user {session.get('user_name', 'Unknown')}, initial title '{title_for_logging}...': {str(e)}", exc_info=True)
+        
+        # Attempt to rollback the session
+        try:
+            db.session.rollback()
+            app.logger.info("Database session rolled back successfully after error.")
+        except Exception as rb_err:
+            app.logger.error(f"Error during session rollback: {str(rb_err)}", exc_info=True)
+            
+        flash("An unexpected error occurred while posting your article. Our team has been notified. Please try again later.", "danger")
+        # Redirect to referrer or a safe page like index
         return redirect(request.referrer or url_for('index'))
-    article_hash_id = generate_article_id(title + str(session['user_id']) + str(time.time()))
-    groq_analysis_result = get_article_analysis_with_groq(content, title)
-    groq_summary_text, groq_takeaways_json_str = None, None
-    if groq_analysis_result and not groq_analysis_result.get("error"):
-        groq_summary_text = groq_analysis_result.get('groq_summary')
-        takeaways_list = groq_analysis_result.get('groq_takeaways')
-        if takeaways_list and isinstance(takeaways_list, list): groq_takeaways_json_str = json.dumps(takeaways_list)
-    new_article = CommunityArticle(article_hash_id=article_hash_id, title=title, description=description, full_text=content, source_name=source_name, image_url=image_url or f'https://via.placeholder.com/400x220/1E3A5E/FFFFFF?text={urllib.parse.quote_plus(title[:20])}', user_id=session['user_id'], published_at=datetime.now(timezone.utc), groq_summary=groq_summary_text, groq_takeaways=groq_takeaways_json_str)
-    db.session.add(new_article); db.session.commit()
-    flash("Your article has been posted!", "success")
-    return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
