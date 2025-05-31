@@ -78,19 +78,58 @@ app.logger.setLevel(logging.INFO)
 
 # Data Persistence
 database_url = os.environ.get('DATABASE_URL')
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    app.logger.info("Connecting to persistent PostgreSQL database.")
+app.logger.info(f"--- Database Configuration ---")
+app.logger.info(f"Attempting to read DATABASE_URL environment variable...")
+if database_url_env:
+    app.logger.info(f"DATABASE_URL found. Raw value (prefix): '{database_url_env[:30]}...'") # Log prefix for security
 else:
+    app.logger.info("DATABASE_URL environment variable NOT FOUND.")
+
+configured_db_uri = None
+using_postgres_flag = False # To track if we intend to use PostgreSQL
+
+if database_url_env and (database_url_env.startswith("postgres://") or database_url_env.startswith("postgresql://")):
+    app.logger.info(f"DATABASE_URL indicates a PostgreSQL connection.")
+    if database_url_env.startswith("postgres://"):
+        configured_db_uri = database_url_env.replace("postgres://", "postgresql://", 1)
+        app.logger.info(f"Converted DATABASE_URL from 'postgres://' to 'postgresql://'.")
+    else: # Already starts with "postgresql://"
+        configured_db_uri = database_url_env
+        app.logger.info(f"DATABASE_URL already uses 'postgresql://' scheme.")
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = configured_db_uri
+    # Log a safe part of the URI to confirm it's being set, e.g., excluding user:pass
+    uri_to_log = configured_db_uri
+    try:
+        parsed_uri = urllib.parse.urlparse(configured_db_uri)
+        if parsed_uri.username or parsed_uri.password:
+            uri_to_log = f"{parsed_uri.scheme}://********:********@{parsed_uri.hostname}:{parsed_uri.port}{parsed_uri.path}"
+    except Exception:
+        pass # Keep original if parsing fails
+    app.logger.info(f"SQLAlchemy URI configured for PostgreSQL: {uri_to_log}")
+    using_postgres_flag = True
+else:
+    if database_url_env:
+        app.logger.warning(f"DATABASE_URL found ('{database_url_env[:30]}...') but it does not seem to be a PostgreSQL URL (expected 'postgres://' or 'postgresql://').")
+    app.logger.info("Falling back to local SQLite database for development.")
+    
     db_file_name = 'app_data.db'
-    project_root_for_db = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(project_root_for_db, db_file_name)
+    # Ensure project_root is defined for SQLite path (it's defined earlier for NLTK)
+    # If not, use a simpler relative path or ensure os.path.dirname is robust
+    try:
+        project_root_for_db = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(project_root_for_db, db_file_name)
+    except NameError: # __file__ might not be defined in some execution contexts
+        app.logger.warning("__file__ not defined, using relative path for SQLite DB.")
+        db_path = db_file_name # Fallback to relative path if absolute path fails
+        
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    app.logger.info(f"Using local SQLite database for development at {db_path}.")
+    app.logger.info(f"SQLAlchemy URI configured for SQLite: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+db = SQLAlchemy(app) # SQLAlchemy is the ORM. It uses the URI set above.
+app.logger.info(f"SQLAlchemy instance created.")
+app.logger.info(f"--- End of Database Configuration ---")
 
 # ==============================================================================
 # --- 3. API Client Initialization ---
@@ -180,9 +219,38 @@ class BookmarkedArticle(db.Model):
 
 def init_db():
     with app.app_context():
-        app.logger.info("Attempting to create database tables...")
-        db.create_all()
-        app.logger.info("Database tables should be ready.")
+        app.logger.info("--- Database Initialization (init_db) ---")
+        try:
+            # Log the actual dialect being used by SQLAlchemy's engine
+            engine = db.get_engine()
+            engine_url_str = str(engine.url) # Get the URL string from the engine
+            dialect_name = engine.dialect.name
+            app.logger.info(f"SQLAlchemy engine is configured with URL (actual): {engine_url_str}")
+            app.logger.info(f"SQLAlchemy dialect in use: {dialect_name}")
+
+            if using_postgres_flag: # Check the flag set during initial config
+                if dialect_name == "postgresql":
+                    app.logger.info("CONFIRMED: SQLAlchemy is using PostgreSQL dialect as intended.")
+                else:
+                    app.logger.warning(f"WARNING: Intended to use PostgreSQL, but SQLAlchemy dialect is '{dialect_name}'. Check DATABASE_URL and configuration.")
+            else: # Intended to use SQLite (fallback)
+                if dialect_name == "sqlite":
+                    app.logger.info("CONFIRMED: SQLAlchemy is using SQLite dialect as intended (fallback).")
+                else:
+                    app.logger.warning(f"WARNING: Intended to use SQLite (fallback), but SQLAlchemy dialect is '{dialect_name}'.")
+
+        except Exception as e:
+            app.logger.error(f"Error during SQLAlchemy engine/dialect logging: {e}", exc_info=True)
+
+        app.logger.info("Attempting to create database tables (db.create_all()). This is non-destructive to existing tables.")
+        try:
+            db.create_all()
+            app.logger.info("db.create_all() executed successfully. Tables should be ready or already exist.")
+        except Exception as e:
+            app.logger.error(f"Error during db.create_all(): {e}", exc_info=True)
+            # Depending on the error, you might want to exit or handle it more gracefully
+            # For Render deployments, persistent DB connection errors here are critical.
+        app.logger.info("--- End of Database Initialization (init_db) ---")
 
 # ==============================================================================
 # --- 5. Helper Functions ---
