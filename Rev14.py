@@ -521,6 +521,71 @@ def fetch_news_from_api(target_date_str=None): # New optional parameter
     processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
     app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)} for period from {api_call_from_date_str} to {api_call_to_date_str}.")
     return processed_articles
+
+# This function should be defined in your Rev14.py,
+# likely after fetch_news_from_api and before the Flask routes section.
+
+@simple_cache(expiry_seconds_default=3600 * 6)
+def fetch_and_parse_article_content(article_hash_id, url):
+    app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
+    if not SCRAPER_API_KEY:
+        return {"full_text": None, "groq_analysis": None, "error": "Content fetching service unavailable."}
+    
+    params = {'api_key': SCRAPER_API_KEY, 'url': url}
+    try:
+        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
+        response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
+
+        config = Config()
+        config.fetch_images = False # To speed up, images are not needed for text analysis
+        config.memoize_articles = False # Avoid disk caching by newspaper itself
+        article_scraper = Article(url, config=config)
+        article_scraper.download(input_html=response.text)
+        article_scraper.parse()
+
+        if not article_scraper.text:
+            app.logger.warning(f"Could not extract text from article URL: {url}")
+            return {"full_text": None, "groq_analysis": None, "error": "Could not extract text from the article."}
+        
+        article_title_for_groq = article_scraper.title or MASTER_ARTICLE_STORE.get(article_hash_id, {}).get('title', 'Unknown Title')
+        
+        groq_analysis_result = None # Initialize
+
+        # Check if Groq analysis already exists in MASTER_ARTICLE_STORE for this API article
+        # This is a redundancy check; the route get_article_content_json already does this.
+        # However, keeping it ensures consistency if this function were called from elsewhere.
+        if article_hash_id in MASTER_ARTICLE_STORE and \
+           MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
+           MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
+            app.logger.info(f"Re-confirming pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id} within fetch_and_parse.")
+            groq_analysis_result = {
+                "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
+                "groq_takeaways": MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'],
+                "error": None 
+            }
+        else:
+            # If not in MASTER_ARTICLE_STORE or incomplete, generate it
+            groq_analysis_result = get_article_analysis_with_groq(article_scraper.text, article_title_for_groq)
+            # And cache it in MASTER_ARTICLE_STORE if successfully generated
+            if article_hash_id in MASTER_ARTICLE_STORE and groq_analysis_result and not groq_analysis_result.get("error"):
+                MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'] = groq_analysis_result.get("groq_summary")
+                MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis_result.get("groq_takeaways")
+                app.logger.info(f"Groq analysis generated and cached in MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
+            elif groq_analysis_result and groq_analysis_result.get("error"):
+                 app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
+
+
+        return {
+            "full_text": article_scraper.text,
+            "groq_analysis": groq_analysis_result, 
+            "error": None # Overall error for this function; specific errors are in groq_analysis_result if they occurred there
+        }
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Failed to fetch article content via proxy for {url}: {e}")
+        return {"full_text": None, "groq_analysis": None, "error": f"Failed to fetch article content: {str(e)}"}
+    except Exception as e: # Catches ArticleException from newspaper, and any other general errors during parsing/processing
+        app.logger.error(f"Failed to parse or process article content for {url}: {e}", exc_info=True)
+        return {"full_text": None, "groq_analysis": None, "error": f"Failed to parse or process article content: {str(e)}"}
     
 # ==============================================================================
 # --- 6. Flask Routes ---
