@@ -1246,6 +1246,8 @@ BASE_HTML_TEMPLATE = """
         .article-card .bookmark-btn { font-size: 1.2rem; padding: 0.1rem 0.3rem; }
     </style>
     {% block head_extra %}{% endblock %}
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886"
+     crossorigin="anonymous"></script>
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}">
     <div id="alert-placeholder">
