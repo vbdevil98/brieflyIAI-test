@@ -366,7 +366,7 @@ def get_article_analysis_with_groq(article_text, article_title=""):
 # ==============================================================================
 # --- NEWS FETCHING ---
 # ==============================================================================
-@simple_cache() # Default cache is 1 hour. For testing freshness, you might temporarily lower app.config['CACHE_EXPIRY_SECONDS']
+@simple_cache()
 def fetch_news_from_api(target_date_str=None):
     if not newsapi:
         app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
@@ -374,15 +374,17 @@ def fetch_news_from_api(target_date_str=None):
 
     api_call_from_date_str = None
     api_call_to_date_str = None
-    is_specific_date_fetch = False # Flag to indicate if a user-specified date filter is active and valid
+    is_specific_date_fetch = False
 
-    # INDIAN_TIMEZONE is globally defined: pytz.timezone('Asia/Kolkata')
+    # INDIAN_TIMEZONE should be globally defined in your script, e.g.,
+    # INDIAN_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
-    if target_date_str: # User has applied a date filter
+    if target_date_str:
         try:
-            # Interpret target_date_str as user's local day in INDIAN_TIMEZONE
+            # Primary: Interpret target_date_str as user's local day in INDIAN_TIMEZONE
             local_day_start_naive = datetime.strptime(target_date_str, '%Y-%m-%d')
-            local_day_start_aware_ist = INDIAN_TIMEZONE.localize(local_day_start_naive)
+            local_day_start_aware_ist = INDIAN_TIMEZONE.localize(local_day_start_naive) # Assign IST timezone
+            # Define end of the local day in IST
             local_day_end_aware_ist = local_day_start_aware_ist.replace(hour=23, minute=59, second=59, microsecond=999999)
 
             # Convert these IST times to UTC for the NewsAPI query
@@ -393,50 +395,44 @@ def fetch_news_from_api(target_date_str=None):
             api_call_to_date_str = api_call_to_utc_dt.strftime('%Y-%m-%dT%H:%M:%S')
             
             app.logger.info(f"Date filter active for '{target_date_str}' (interpreted as IST).")
-            app.logger.info(f"Querying NewsAPI with UTC range for specific date: FROM {api_call_from_date_str} TO {api_call_to_date_str}")
+            app.logger.info(f"Querying NewsAPI with UTC range: FROM {api_call_from_date_str} TO {api_call_to_date_str}")
             is_specific_date_fetch = True
         except Exception as e:
-            app.logger.error(f"Error processing target_date_str '{target_date_str}' with IST conversion: {e}. Attempting fallback or default.", exc_info=True)
-            # Fallback 1: Try interpreting target_date_str as a simple UTC date
+            app.logger.error(f"Error processing target_date_str '{target_date_str}' with IST conversion: {e}. Reverting to simpler UTC day or default fetch.", exc_info=True)
+            # Fallback 1: Try interpreting target_date_str as a simple UTC date (original behavior for specific date)
             try:
                 utc_target_dt = datetime.strptime(target_date_str, '%Y-%m-%d')
                 api_call_from_date_str = utc_target_dt.strftime('%Y-%m-%dT00:00:00')
                 api_call_to_date_str = utc_target_dt.strftime('%Y-%m-%dT23:59:59')
-                app.logger.info(f"Fallback for specific date: Fetching news for UTC date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
+                app.logger.info(f"Fallback: Fetching news specifically for UTC date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
                 is_specific_date_fetch = True
-            except ValueError: 
-                 app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC. Clearing date filter for this fetch.")
-                 # target_date_str = None # No need to set to None, is_specific_date_fetch will remain False
-                 is_specific_date_fetch = False # This will trigger the default logic below
+            except ValueError: # If target_date_str is malformed even for simple parsing
+                 app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
+                 target_date_str = None # This will ensure it uses the default N-day range logic in the next block
+                 is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
 
-    if not is_specific_date_fetch:
-        # This block executes if:
-        # 1. No target_date_str was provided (e.g., "All Articles" homepage).
-        # 2. target_date_str was provided but was invalid and couldn't be parsed.
-
-        # For the default "All Articles" view, prioritize freshness for /everything calls.
-        # Query /everything for the last 12 hours up to the end of the current UTC day.
-        # This aims to meet the "max 4-5 hours late" desire more closely for the homepage.
-        default_everything_from_dt = datetime.now(timezone.utc) - timedelta(hours=12) # Look back 12 hours
-        default_everything_to_dt = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=0)
+    if not is_specific_date_fetch: 
+        # Modified default fetch logic to get the latest news (last few hours to current time)
+        # This fetches news from the last few hours up to the current moment for maximum freshness
+        current_utc_now = datetime.now(timezone.utc)
         
-        api_call_from_date_str = default_everything_from_dt.strftime('%Y-%m-%dT%H:%M:%S')
-        api_call_to_date_str = default_everything_to_dt.strftime('%Y-%m-%dT%H:%M:%S')
+        # Fetch news from the last 6 hours to current time for maximum freshness
+        # You can adjust this value (6 hours) based on your needs
+        from_date_utc_default = current_utc_now - timedelta(hours=6)
+        api_call_from_date_str = from_date_utc_default.strftime('%Y-%m-%dT%H:%M:%S')
         
-        app.logger.info(f"Default 'All Articles' view (or invalid date filter): Using RECENT window for /everything calls: FROM {api_call_from_date_str} TO {api_call_to_date_str}")
-        # Note: `get_top_headlines` (Attempt 1) runs if `is_specific_date_fetch` is false (due to no filter or invalid filter)
-        # and it fetches its own "live" news irrespective of this from/to window.
-        # The NEWS_API_DAYS_AGO config is now primarily for conceptual lookback; this overrides it for /everything on the default view.
+        # Use current time as the end point to get the absolute latest news
+        api_call_to_date_str = current_utc_now.strftime('%Y-%m-%dT%H:%M:%S')
+        app.logger.info(f"Fetching latest news from last 6 hours: from {api_call_from_date_str} to {api_call_to_date_str}")
 
     # --- API Call Attempts ---
     all_raw_articles = []
 
-    # Attempt 1: Top Headlines 
-    # Runs if no valid specific date filter was applied by the user.
-    # This should give the freshest general headlines for 'in'.
-    if not is_specific_date_fetch: 
+    # Attempt 1: Top Headlines (prioritized for latest news when no specific date)
+    # Top headlines are typically the freshest and most current news
+    if not is_specific_date_fetch:
         try:
-            app.logger.info("Attempt 1: Fetching top headlines from country: 'in' (for default/fallback view).")
+            app.logger.info("Attempt 1: Fetching top headlines from country: 'in' (latest news).")
             top_headlines_response = newsapi.get_top_headlines(
                 country='in',
                 language='en',
@@ -456,10 +452,11 @@ def fetch_news_from_api(target_date_str=None):
         except Exception as e:
             app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
 
-    # Attempt 2: Everything query (uses the `api_call_from_date_str` and `api_call_to_date_str` set above)
+    # Attempt 2: Everything query with publishedAt sorting for freshness
     try:
         current_query = app.config['NEWS_API_QUERY']
-        current_sort_by = app.config['NEWS_API_SORT_BY'] # Still 'publishedAt'
+        # Force sort by publishedAt to get the most recent articles first
+        current_sort_by = 'publishedAt'  # Override config to ensure latest news
         app.logger.info(f"Attempt 2: Fetching 'everything' with query: \"{current_query}\" for period: {api_call_from_date_str} to {api_call_to_date_str}, sort_by: {current_sort_by}")
         everything_response = newsapi.get_everything(
             q=current_query,
@@ -483,21 +480,20 @@ def fetch_news_from_api(target_date_str=None):
     except Exception as e:
         app.logger.error(f"Generic Exception (Everything Query): {e}", exc_info=True)
 
-    # Attempt 3: Fallback with domains (uses the `api_call_from_date_str` and `api_call_to_date_str` set above)
-    # Run if (no articles from previous attempts) OR (it was a specific date filter, to maximize results for that day).
+    # Attempt 3: Fallback with domains (also optimized for latest news)
     if not all_raw_articles or is_specific_date_fetch:
         log_prefix_attempt3 = "Fallback/Augment"
-        # Adjust logging message based on context
         if not all_raw_articles and not is_specific_date_fetch:
-             app.logger.warning("No articles from primary calls for default view. Trying Fallback with domains using RECENT window.")
+             app.logger.warning("No articles from primary calls. Trying Fallback with domains for latest news.")
         elif not all_raw_articles and is_specific_date_fetch:
-            app.logger.warning(f"No articles from query for specific date '{target_date_str if target_date_str else 'unknown'}'. Trying with domains for the same date window.")
-        elif all_raw_articles and is_specific_date_fetch: # Already have some, this is to augment
-            app.logger.info(f"Augmenting results for specific date '{target_date_str if target_date_str else 'unknown'}' with domain-specific search for the same date window.")
-        
+            app.logger.warning(f"No articles from query for specific date '{target_date_str}'. Trying with domains.")
+        elif all_raw_articles and is_specific_date_fetch:
+            app.logger.info(f"Augmenting results for specific date '{target_date_str}' with domain-specific search.")
+
         try:
             domains_to_check = app.config['NEWS_API_DOMAINS']
-            current_sort_by_fallback = app.config['NEWS_API_SORT_BY'] # Still 'publishedAt'
+            # Force sort by publishedAt for freshness in fallback too
+            current_sort_by_fallback = 'publishedAt'
             app.logger.info(f"Attempt 3 ({log_prefix_attempt3}): Fetching from domains: {domains_to_check} for period: {api_call_from_date_str} to {api_call_to_date_str}, sort_by: {current_sort_by_fallback}")
             fallback_response = newsapi.get_everything(
                 domains=domains_to_check,
@@ -521,9 +517,13 @@ def fetch_news_from_api(target_date_str=None):
         except Exception as e:
             app.logger.error(f"Generic Exception ({log_prefix_attempt3}): {e}", exc_info=True)
 
-    # --- Processing (remains the same) ---
     processed_articles, unique_urls = [], set()
     app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
+    
+    # Filter articles to only include those from the last 24 hours when not fetching specific date
+    current_utc_now = datetime.now(timezone.utc)
+    twenty_four_hours_ago = current_utc_now - timedelta(hours=24)
+    
     for art_data in all_raw_articles:
         url = art_data.get('url')
         if not url or url in unique_urls: continue
@@ -532,33 +532,49 @@ def fetch_news_from_api(target_date_str=None):
 
         if not all([title, art_data.get('source'), description]) or title == '[Removed]' or not title.strip() or not description.strip():
             continue
-        unique_urls.add(url)
-        article_id = generate_article_id(url)
-        source_name = art_data['source'].get('name', 'Unknown Source')
-        placeholder_text = urllib.parse.quote_plus(source_name[:20])
+            
+        # Parse and check article date for freshness
         published_at_dt = None
         if art_data.get('publishedAt'):
             try:
                 published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
+                
+                # Skip articles older than 24 hours when not fetching specific date
+                if not is_specific_date_fetch and published_at_dt < twenty_four_hours_ago:
+                    continue
+                    
             except ValueError:
                 app.logger.warning(f"Could not parse publishedAt date for article: {title} - Date: {art_data.get('publishedAt')}")
-                published_at_dt = datetime.now(timezone.utc) 
+                # Skip articles with unparseable dates when fetching latest news
+                if not is_specific_date_fetch:
+                    continue
+                published_at_dt = datetime.now(timezone.utc) # Fallback if parsing fails
         else:
+            # If publishedAt is missing, skip for latest news fetching
+            if not is_specific_date_fetch:
+                app.logger.warning(f"Skipping article with missing 'publishedAt': {title}")
+                continue
             app.logger.warning(f"Missing 'publishedAt' for article: {title}. Using current UTC time.")
             published_at_dt = datetime.now(timezone.utc)
+
+        unique_urls.add(url)
+        article_id = generate_article_id(url)
+        source_name = art_data['source'].get('name', 'Unknown Source')
+        placeholder_text = urllib.parse.quote_plus(source_name[:20])
 
         standardized_article = {
             'id': article_id, 'title': title, 'description': description,
             'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-            'publishedAt': published_at_dt.isoformat(), 
+            'publishedAt': published_at_dt.isoformat(), # Store as ISO string
             'source': {'name': source_name}, 'is_community_article': False,
             'groq_summary': None, 'groq_takeaways': None
         }
         MASTER_ARTICLE_STORE[article_id] = standardized_article
         processed_articles.append(standardized_article)
     
+    # Sort by publishedAt in descending order (newest first)
     processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
-    app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)} for effective API query window: from {api_call_from_date_str} to {api_call_to_date_str}.")
+    app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)} for period from {api_call_from_date_str} to {api_call_to_date_str}.")
     return processed_articles
 
 @simple_cache(expiry_seconds_default=3600 * 6)
