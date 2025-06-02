@@ -21,7 +21,7 @@ import nltk
 import requests
 from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
- from sqlalchemy import func, case
+from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
 from jinja2 import DictLoader
 from newsapi import NewsApiClient
