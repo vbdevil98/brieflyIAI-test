@@ -14,13 +14,14 @@ import logging
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from flask import Response
 
 # Third-party imports
 import nltk
 import requests
 from flask import (Flask, render_template, url_for, redirect, request, jsonify, session, flash)
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, case
+ from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
 from jinja2 import DictLoader
 from newsapi import NewsApiClient
@@ -1020,6 +1021,13 @@ def page_not_found(e): return render_template("404_TEMPLATE"), 404
 @app.errorhandler(500)
 def internal_server_error(e): db.session.rollback(); app.logger.error(f"500 error at {request.url}: {e}", exc_info=True); return render_template("500_TEMPLATE"), 500
 
+@app.route('/ads.txt')
+def ads_txt():
+    # Ensure this is your correct AdSense Publisher ID
+    ads_content = "google.com, pub-6975904325280886, DIRECT, f08c47fec0942fa0"
+    # If you have other ad partners, add their lines here, each on a new line.
+    # e.g., ads_content += "\notheradsystem.com, theirPubId, DIRECT, theirTagId"
+    return Response(ads_content, mimetype='text/plain')
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
