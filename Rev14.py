@@ -1737,7 +1737,7 @@ ARTICLE_HTML_TEMPLATE = """
     {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
     {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
 
-    <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary...</div></div>
+    <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary in 5 to 6 seconds...</div></div>
 
     <div id="articleAnalysisContainer">
     {% if is_community_article %}
