@@ -73,7 +73,7 @@ app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.
 app.config['NEWS_API_DAYS_AGO'] = 7 # Fetch news from the last 7 days
 app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt' #relevance, popularity, publishedAt
-app.config['CACHE_EXPIRY_SECONDS'] = 3600 # 1 hour
+app.config['CACHE_EXPIRY_SECONDS'] = 7200 # 1 hour
 app.permanent_session_lifetime = timedelta(days=30)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
