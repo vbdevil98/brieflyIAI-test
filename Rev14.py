@@ -1613,11 +1613,10 @@ INDEX_HTML_TEMPLATE = """
 
 {% block content %}
 
-{# This is the main controller: It shows the tabbed view on the homepage, or the original list view everywhere else. #}
+{# This is the main controller: It shows the tabbed view on the homepage, or the list view everywhere else. #}
 {% if is_main_homepage %}
 
     {# ============== LAYOUT 1: MAIN HOMEPAGE (NEW TABBED VIEW) ============== #}
-    {# This section uses your original article card design to prevent breaking the UI. #}
     <div class="animate-fade-in">
         <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist" style="font-weight: 600;">
             <li class="nav-item" role="presentation">
@@ -1638,28 +1637,15 @@ INDEX_HTML_TEMPLATE = """
                     {% if popular_articles %}
                         {% for art in popular_articles %}
                             <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card animate-fade-in d-flex flex-column w-100">
+                                <article class="article-card d-flex flex-column w-100">
                                     {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
                                     <div class="article-image-container">
-                                        <a href="{{ article_url }}">
-                                        <img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                                        <a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
                                     </div>
                                     <div class="article-body d-flex flex-column">
                                         <div class="d-flex justify-content-between align-items-start">
                                             <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}
-                                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
-                                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                                                    data-article-hash-id="{{ art.id }}"
-                                                    data-is-community="false"
-                                                    data-title="{{ art.title|e }}"
-                                                    data-source-name="{{ art.source.name|e }}"
-                                                    data-image-url="{{ art.urlToImage|e }}"
-                                                    data-description="{{ (art.description if art.description else '')|e }}"
-                                                    data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}">
-                                                <i class="fa-solid fa-bookmark"></i>
-                                            </button>
-                                            {% endif %}
+                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
                                         </div>
                                         <div class="article-meta small mb-2">
                                             <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
@@ -1675,34 +1661,26 @@ INDEX_HTML_TEMPLATE = """
                         <div class="col-12"><div class="alert alert-light text-center">Popular stories are currently unavailable.</div></div>
                     {% endif %}
                 </div>
+                {% if popular_articles %}
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('index', category_name='Popular Stories') }}" class="btn btn-outline-primary">View All Popular Stories <i class="fas fa-arrow-right ms-1"></i></a>
+                </div>
+                {% endif %}
             </div>
             <div class="tab-pane fade" id="yesterday-tab-pane" role="tabpanel" aria-labelledby="yesterday-tab">
                 <div class="row g-4 pt-3">
                     {% if latest_yesterday_articles %}
                         {% for art in latest_yesterday_articles %}
                              <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card animate-fade-in d-flex flex-column w-100">
+                                <article class="article-card d-flex flex-column w-100">
                                     {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
                                     <div class="article-image-container">
-                                        <a href="{{ article_url }}">
-                                        <img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                                        <a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
                                     </div>
                                     <div class="article-body d-flex flex-column">
                                         <div class="d-flex justify-content-between align-items-start">
                                             <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}
-                                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
-                                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                                                    data-article-hash-id="{{ art.id }}"
-                                                    data-is-community="false"
-                                                    data-title="{{ art.title|e }}"
-                                                    data-source-name="{{ art.source.name|e }}"
-                                                    data-image-url="{{ art.urlToImage|e }}"
-                                                    data-description="{{ (art.description if art.description else '')|e }}"
-                                                    data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}">
-                                                <i class="fa-solid fa-bookmark"></i>
-                                            </button>
-                                            {% endif %}
+                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
                                         </div>
                                         <div class="article-meta small mb-2">
                                             <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
@@ -1718,6 +1696,11 @@ INDEX_HTML_TEMPLATE = """
                         <div class="col-12"><div class="alert alert-light text-center">Could not load yesterday's articles.</div></div>
                     {% endif %}
                 </div>
+                 {% if latest_yesterday_articles %}
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('index', category_name="Yesterday's Headlines") }}" class="btn btn-outline-primary">View All of Yesterday's Headlines <i class="fas fa-arrow-right ms-1"></i></a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -1729,6 +1712,11 @@ INDEX_HTML_TEMPLATE = """
 
     {% if selected_category == 'All Articles' and current_filter_date %}
         <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
+    {% endif %}
+    
+    {# Added a title for the paginated category pages #}
+    {% if selected_category != 'All Articles' and selected_category != 'Community Hub' %}
+         <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
     {% endif %}
 
     {% if articles and articles[0] and featured_article_on_this_page %}
