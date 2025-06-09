@@ -2179,6 +2179,8 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 """
 
+# In Rev14.py, replace your entire _COMMENT_TEMPLATE variable with this corrected code.
+
 _COMMENT_TEMPLATE = """
 <div class="comment-thread" id="comment-{{ comment.id }}">
     <div class="comment-container">
@@ -2213,13 +2215,14 @@ _COMMENT_TEMPLATE = """
             {% endif %}
 
             <div class="reaction-summary" id="reaction-summary-{{ comment.id }}">
-                {# Reaction pills will be populated by JavaScript #}
+                {# Reaction pills are populated by JavaScript #}
             </div>
         </div>
     </div>
     <div class="comment-replies" id="replies-of-{{ comment.id }}">
+        {# THE FIX IS ON THE LINE BELOW: Passing the 'reply' as the 'comment' variable #}
         {% for reply in comment.replies %}
-            {% include '_COMMENT_TEMPLATE.html' with context %}
+            {% include '_COMMENT_TEMPLATE' with {'comment': reply} %}
         {% endfor %}
     </div>
 </div>
