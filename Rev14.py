@@ -639,7 +639,6 @@ def fetch_yesterdays_latest_news():
     if not newsapi:
         return []
     
-    # --- TIMEZONE-AWARE FIX ---
     # 1. Get the current time in the Indian Timezone
     now_in_ist = datetime.now(INDIAN_TIMEZONE)
     
@@ -652,19 +651,22 @@ def fetch_yesterdays_latest_news():
     start_utc = start_of_yesterday_ist.astimezone(pytz.utc)
     end_utc = end_of_yesterday_ist.astimezone(pytz.utc)
 
-    app.logger.info(f"Querying for yesterday's news in UTC range: {start_utc.isoformat()} to {end_utc.isoformat()}")
+    # 4. Format the UTC dates into the string format the API requires (THE FIX IS HERE)
+    from_param_str = start_utc.strftime('%Y-%m-%dT%H:%M:%S')
+    to_param_str = end_utc.strftime('%Y-%m-%dT%H:%M:%S')
+
+    app.logger.info(f"Querying for yesterday's news in UTC range: {from_param_str} to {to_param_str}")
 
     try:
         response = newsapi.get_everything(
             q=app.config['NEWS_API_QUERY'],
             language='en',
-            from_param=start_utc.isoformat(),
-            to=end_utc.isoformat(),
+            from_param=from_param_str,
+            to=to_param_str,
             sort_by='publishedAt',
-            page_size=100 # Fetch more for the paginated page
+            page_size=100
         )
         
-        # The rest of the function for processing articles is the same...
         if response.get('status') == 'ok':
             raw_articles = response.get('articles', [])
             processed_articles, unique_urls = [], set()
