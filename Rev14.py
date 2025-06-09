@@ -565,7 +565,134 @@ def fetch_news_from_api(target_date_str=None):
 
 # This function should be defined in your Rev14.py,
 # likely after fetch_news_from_api and before the Flask routes section.
+@simple_cache(expiry_seconds_default=3600) # Cache top news for 1 hour
+def fetch_top_news_of_the_day():
+    app.logger.info("Fetching TOP news of the day from API.")
+    if not newsapi:
+        app.logger.error("NewsAPI client not initialized. Cannot fetch top news.")
+        return []
 
+    try:
+        top_headlines_response = newsapi.get_top_headlines(
+            country='in',
+            language='en',
+            page_size=30 # Fetch more to have a good selection
+        )
+        
+        if top_headlines_response.get('status') == 'ok':
+            raw_articles = top_headlines_response.get('articles', [])
+            processed_articles, unique_urls = [], set()
+            app.logger.info(f"Processing {len(raw_articles)} raw TOP articles.")
+            for art_data in raw_articles:
+                url = art_data.get('url')
+                if not url or url in unique_urls: continue
+                title = art_data.get('title')
+                description = art_data.get('description')
+
+                if not all([title, art_data.get('source'), description]) or title == '[Removed]' or not title.strip() or not description.strip():
+                    continue
+                
+                unique_urls.add(url)
+                article_id = generate_article_id(url)
+                source_name = art_data['source'].get('name', 'Unknown Source')
+                placeholder_text = urllib.parse.quote_plus(source_name[:20])
+                
+                published_at_dt = None
+                if art_data.get('publishedAt'):
+                    try:
+                        published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
+                    except ValueError:
+                        app.logger.warning(f"Could not parse publishedAt date for article: {title}")
+                        published_at_dt = datetime.now(timezone.utc)
+                else:
+                    published_at_dt = datetime.now(timezone.utc)
+
+                standardized_article = {
+                    'id': article_id, 'title': title, 'description': description,
+                    'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
+                    'publishedAt': published_at_dt.isoformat(), 
+                    'source': {'name': source_name}, 
+                    'is_community_article': False,
+                    'groq_summary': None, 'groq_takeaways': None
+                }
+                MASTER_ARTICLE_STORE[article_id] = standardized_article
+                processed_articles.append(standardized_article)
+            
+            app.logger.info(f"Returning {len(processed_articles)} unique TOP articles.")
+            processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
+            return processed_articles
+        else:
+            app.logger.error(f"Error fetching top headlines: {top_headlines_response.get('message')}")
+            return []
+            
+    except Exception as e:
+        app.logger.error(f"Exception in fetch_top_news_of_the_day: {e}", exc_info=True)
+        return []
+
+@simple_cache(expiry_seconds_default=900) # Cache latest news for 15 minutes
+def fetch_latest_news():
+    app.logger.info("Fetching LATEST news from API.")
+    if not newsapi:
+        app.logger.error("NewsAPI client not initialized. Cannot fetch latest news.")
+        return []
+
+    try:
+        everything_response = newsapi.get_everything(
+            q=app.config['NEWS_API_QUERY'],
+            language='en',
+            sort_by='publishedAt', # This is key for "latest"
+            page_size=30
+        )
+        
+        if everything_response.get('status') == 'ok':
+            raw_articles = everything_response.get('articles', [])
+            processed_articles, unique_urls = [], set()
+            app.logger.info(f"Processing {len(raw_articles)} raw LATEST articles.")
+            for art_data in raw_articles:
+                url = art_data.get('url')
+                if not url or url in unique_urls: continue
+                title = art_data.get('title')
+                description = art_data.get('description')
+
+                if not all([title, art_data.get('source'), description]) or title == '[Removed]' or not title.strip() or not description.strip():
+                    continue
+                
+                unique_urls.add(url)
+                article_id = generate_article_id(url)
+                source_name = art_data['source'].get('name', 'Unknown Source')
+                placeholder_text = urllib.parse.quote_plus(source_name[:20])
+
+                published_at_dt = None
+                if art_data.get('publishedAt'):
+                    try:
+                        published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
+                    except ValueError:
+                        app.logger.warning(f"Could not parse publishedAt date for article: {title}")
+                        published_at_dt = datetime.now(timezone.utc)
+                else:
+                    published_at_dt = datetime.now(timezone.utc)
+
+                standardized_article = {
+                    'id': article_id, 'title': title, 'description': description,
+                    'url': url, 'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
+                    'publishedAt': published_at_dt.isoformat(), 
+                    'source': {'name': source_name}, 
+                    'is_community_article': False,
+                    'groq_summary': None, 'groq_takeaways': None
+                }
+                MASTER_ARTICLE_STORE[article_id] = standardized_article
+                processed_articles.append(standardized_article)
+
+            app.logger.info(f"Returning {len(processed_articles)} unique LATEST articles.")
+            return processed_articles
+        else:
+            app.logger.error(f"Error fetching latest news: {everything_response.get('message')}")
+            return []
+            
+    except Exception as e:
+        app.logger.error(f"Exception in fetch_latest_news: {e}", exc_info=True)
+        return []
+        
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
@@ -675,74 +802,95 @@ def get_sort_key(article):
 def index(page=1, category_name='All Articles'):
     session['previous_list_page'] = request.full_path
     per_page = app.config['PER_PAGE']
-    all_display_articles_raw = []
     query_str = request.args.get('query')
-    filter_date_str = request.args.get('filter_date') # Will be passed to fetch_news_from_api
+    filter_date_str = request.args.get('filter_date')
 
-    # If the user visits the homepage ('All Articles') without a specific date filter,
-    # default to showing articles for the current day in India.
-    if not filter_date_str and category_name == 'All Articles' and not query_str:
-        # Note: INDIAN_TIMEZONE is already defined globally in your script.
-        current_ist_time = datetime.now(INDIAN_TIMEZONE)
-        filter_date_str = current_ist_time.strftime('%Y-%m-%d')
-        app.logger.info(f"No date filter provided. Defaulting to current date in IST: {filter_date_str}")
+    # This is the new logic for the main homepage view
+    if page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str:
+        app.logger.info("Rendering main homepage with Top and Latest sections.")
         
-    # Validate filter_date_str format if present, clear if invalid
-    if filter_date_str:
-        try:
-            datetime.strptime(filter_date_str, '%Y-%m-%d') # Just validate
-            app.logger.info(f"Date filter active for 'All Articles': {filter_date_str}")
-        except ValueError:
-            app.logger.warning(f"Invalid filter_date format received: {filter_date_str}. Ignoring date filter.")
-            flash("Invalid date format for filter. Showing all latest articles instead.", "warning")
-            filter_date_str = None # Clear invalid date string for further processing
+        top_articles = fetch_top_news_of_the_day()
+        latest_articles = fetch_latest_news()
 
-    if category_name == 'Community Hub':
-        db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
-        for art in db_articles:
-            art.is_community_article = True
-            all_display_articles_raw.append(art)
-    else: # 'All Articles'
-        # Pass filter_date_str to fetch_news_from_api. It will handle fetching for a specific date or default range.
-        api_articles = fetch_news_from_api(target_date_str=filter_date_str if category_name == 'All Articles' else None)
-        for art_dict in api_articles:
-            art_dict['is_community_article'] = False
-            all_display_articles_raw.append(art_dict)
+        TOP_NEWS_COUNT = 6
+        LATEST_NEWS_COUNT = 9
+        
+        user_bookmarks_hashes = set()
+        if 'user_id' in session:
+            bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
+            user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
-    all_display_articles_raw.sort(key=get_sort_key, reverse=True)
-    paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
-    
-    paginated_display_articles_with_bookmark_status = []
-    user_bookmarks_hashes = set()
-    if 'user_id' in session:
-        bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
-        user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
+        for art_list in [top_articles, latest_articles]:
+            for art in art_list:
+                art['is_bookmarked'] = art.get('id') in user_bookmarks_hashes
 
-    for art_item in paginated_display_articles_raw:
-        current_article_hash_id = None
-        if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
-            current_article_hash_id = art_item.article_hash_id
-            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
-            paginated_display_articles_with_bookmark_status.append(art_item)
-        elif isinstance(art_item, dict):
-            current_article_hash_id = art_item.get('id')
-            art_item_copy = art_item.copy()
-            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
-            paginated_display_articles_with_bookmark_status.append(art_item_copy)
-        else:
-            paginated_display_articles_with_bookmark_status.append(art_item)
+        return render_template("INDEX_HTML_TEMPLATE",
+                               top_articles=top_articles[:TOP_NEWS_COUNT],
+                               latest_articles=latest_articles[:LATEST_NEWS_COUNT],
+                               selected_category=category_name,
+                               is_main_homepage=True, # Flag for the template
+                               current_page=1,
+                               total_pages=1,
+                               query=None,
+                               current_filter_date=None)
 
-    # Featured article only if no search query and no date filter is active
-    featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str and paginated_display_articles_with_bookmark_status)
-    
-    return render_template("INDEX_HTML_TEMPLATE",
-                           articles=paginated_display_articles_with_bookmark_status,
-                           selected_category=category_name,
-                           current_page=page,
-                           total_pages=total_pages,
-                           featured_article_on_this_page=featured_article_on_this_page,
-                           current_filter_date=filter_date_str,
-                           query=query_str)
+    # This 'else' block handles all other cases: pagination, categories, date filters, etc.
+    else:
+        app.logger.info(f"Rendering standard list view for: category='{category_name}', page='{page}', filter='{filter_date_str}'")
+        all_display_articles_raw = []
+
+        if filter_date_str:
+            try:
+                datetime.strptime(filter_date_str, '%Y-%m-%d')
+            except ValueError:
+                flash("Invalid date format for filter. Showing all latest articles instead.", "warning")
+                filter_date_str = None
+
+        if category_name == 'Community Hub':
+            db_articles = CommunityArticle.query.options(joinedload(CommunityArticle.author)).order_by(CommunityArticle.published_at.desc()).all()
+            for art in db_articles:
+                art.is_community_article = True
+                all_display_articles_raw.append(art)
+        else: # 'All Articles' but on page > 1 or with a filter
+            api_articles = fetch_news_from_api(target_date_str=filter_date_str if category_name == 'All Articles' else None)
+            for art_dict in api_articles:
+                art_dict['is_community_article'] = False
+                all_display_articles_raw.append(art_dict)
+        
+        all_display_articles_raw.sort(key=get_sort_key, reverse=True)
+        paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
+        
+        paginated_display_articles_with_bookmark_status = []
+        user_bookmarks_hashes = set()
+        if 'user_id' in session:
+            bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
+            user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
+
+        for art_item in paginated_display_articles_raw:
+            current_article_hash_id = None
+            if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
+                current_article_hash_id = art_item.article_hash_id
+                art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
+                paginated_display_articles_with_bookmark_status.append(art_item)
+            elif isinstance(art_item, dict):
+                current_article_hash_id = art_item.get('id')
+                art_item_copy = art_item.copy()
+                art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
+                paginated_display_articles_with_bookmark_status.append(art_item_copy)
+            else:
+                paginated_display_articles_with_bookmark_status.append(art_item)
+        
+        featured_article_on_this_page = (page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str and paginated_display_articles_with_bookmark_status)
+        
+        return render_template("INDEX_HTML_TEMPLATE",
+                               articles=paginated_display_articles_with_bookmark_status,
+                               selected_category=category_name,
+                               is_main_homepage=False, # Flag for the template
+                               current_page=page,
+                               total_pages=total_pages,
+                               featured_article_on_this_page=featured_article_on_this_page,
+                               current_filter_date=filter_date_str,
+                               query=query_str)
 
 # search_results route remains largely the same, ensuring current_filter_date=None is passed
 @app.route('/search')
@@ -1511,17 +1659,122 @@ INDEX_HTML_TEMPLATE = """
 {% block title %}
     {% if query %}Search: {{ query|truncate(30) }}
     {% elif selected_category == 'All Articles' and current_filter_date %}Articles for {{ current_filter_date }}
-    {% elif selected_category %}{{selected_category}}
-    {% else %}Home{% endif %} - BrieflyAI (India News)
+    {% elif selected_category and not is_main_homepage %}{{selected_category}}
+    {% else %}Home - Top & Latest News from India{% endif %} - BrieflyAI
 {% endblock %}
 
 {% block content %}
+
+{# Use the flag from the backend to decide which layout to show #}
+{% if is_main_homepage %}
+
+    {# ============== LAYOUT 1: MAIN HOMEPAGE (TWO SECTIONS) ============== #}
+
+    <!-- Section 1: Top News of the Day -->
+    <div class="mb-5 animate-fade-in">
+        <h2 class="pb-2 mb-4" style="font-weight: 700; border-bottom: 2px solid var(--card-border-color);">
+            <i class="fas fa-star text-warning me-2"></i>Top News of the Day
+        </h2>
+        <div class="row g-4">
+            {% if top_articles %}
+                {% for art in top_articles %}
+                    <div class="col-md-6 col-lg-4 d-flex">
+                        <article class="article-card d-flex flex-column w-100">
+                            {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
+                            <div class="article-image-container">
+                                <a href="{{ article_url }}">
+                                <img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                            </div>
+                            <div class="article-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                                    {% if session.user_id %}
+                                    <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
+                                            title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
+                                            data-article-hash-id="{{ art.id }}"
+                                            data-is-community="false"
+                                            data-title="{{ art.title|e }}"
+                                            data-source-name="{{ art.source.name|e }}"
+                                            data-image-url="{{ art.urlToImage|e }}"
+                                            data-description="{{ (art.description if art.description else '')|e }}"
+                                            data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}">
+                                        <i class="fa-solid fa-bookmark"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                <div class="article-meta small mb-2">
+                                    <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
+                                    <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
+                                </div>
+                                <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                                <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                            </div>
+                        </article>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12"><div class="alert alert-light text-center">Top news is currently unavailable. Please check back shortly.</div></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Section 2: Latest News -->
+    <div class="mb-4 animate-fade-in" style="animation-delay: 0.2s;">
+        <h2 class="pb-2 mb-4" style="font-weight: 700; border-bottom: 2px solid var(--card-border-color);">
+             <i class="fas fa-history me-2"></i>Latest Updates
+        </h2>
+        <div class="row g-4">
+             {% if latest_articles %}
+                {% for art in latest_articles %}
+                    <div class="col-md-6 col-lg-4 d-flex">
+                        <article class="article-card d-flex flex-column w-100">
+                             {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
+                            <div class="article-image-container">
+                                <a href="{{ article_url }}">
+                                <img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                            </div>
+                            <div class="article-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                                    {% if session.user_id %}
+                                    <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
+                                            title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
+                                            data-article-hash-id="{{ art.id }}"
+                                            data-is-community="false"
+                                            data-title="{{ art.title|e }}"
+                                            data-source-name="{{ art.source.name|e }}"
+                                            data-image-url="{{ art.urlToImage|e }}"
+                                            data-description="{{ (art.description if art.description else '')|e }}"
+                                            data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}">
+                                        <i class="fa-solid fa-bookmark"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                <div class="article-meta small mb-2">
+                                    <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
+                                    <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
+                                </div>
+                                <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                                <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                            </div>
+                        </article>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12"><div class="alert alert-light text-center">Could not load the latest articles.</div></div>
+            {% endif %}
+        </div>
+    </div>
+    
+{% else %}
+
+    {# ============ LAYOUT 2: STANDARD PAGINATED LIST (OLD BEHAVIOR) ============ #}
+    
     {% if selected_category == 'All Articles' and current_filter_date %}
         <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
     {% endif %}
 
     {% if articles and articles[0] and featured_article_on_this_page %}
-    {# ... (featured article section remains unchanged from your original file) ... #}
     <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
         <div class="row g-0 g-md-4">
             {% set art0 = articles[0] %}
@@ -1535,7 +1788,7 @@ INDEX_HTML_TEMPLATE = """
             </div>
             <div class="col-lg-6 d-flex flex-column ps-lg-3 pt-3 pt-lg-0">
                 <div class="d-flex justify-content-between align-items-start">
-                    <div> {# Container for meta items except bookmark #}
+                    <div>
                         <div class="article-meta mb-2">
                             <span class="badge bg-primary me-2" style="font-size:0.75rem;">{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|truncate(25) }}</span>
                             <span class="meta-item"><i class="far fa-calendar-alt"></i> {{ (art0.published_at | to_ist if art0.is_community_article else (art0.publishedAt | to_ist if art0.publishedAt else 'N/A')) }}</span>
@@ -1610,7 +1863,6 @@ INDEX_HTML_TEMPLATE = """
         {% endfor %}
     </div>
 
-    {# Pagination - Updated to include filter_date #}
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
         {% set filter_date_for_url = request.args.get('filter_date') if selected_category == 'All Articles' and request.args.get('filter_date') else None %}
@@ -1644,7 +1896,10 @@ INDEX_HTML_TEMPLATE = """
         </li>
     </ul></nav>
     {% endif %}
+
+{% endif %}
 {% endblock %}
+
 
 {% block scripts_extra %}
 <script>
