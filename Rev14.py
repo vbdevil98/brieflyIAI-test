@@ -169,6 +169,7 @@ if not SCRAPER_API_KEY:
 # ==============================================================================
 # --- 4. Database Models ---
 # ==============================================================================
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -205,11 +206,14 @@ class Comment(db.Model):
     replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='selectin', cascade="all, delete-orphan")
     votes = db.relationship('CommentVote', backref='comment', lazy='dynamic', cascade="all, delete-orphan")
 
+ALLOWED_REACTIONS = {'useful': '👍', 'insightful': '💡', 'thinking': '🤔', 'outrage': '😠'}
+
 class CommentVote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"), nullable=False)
     comment_id = db.Column(db.Integer, db.ForeignKey('comment.id', ondelete="CASCADE"), nullable=False)
-    vote_type = db.Column(db.SmallInteger, nullable=False)
+    # MODIFIED: From SmallInteger to String to store the reaction type (e.g., 'useful', 'insightful')
+    reaction_type = db.Column(db.String(20), nullable=False)
     __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', name='_user_comment_uc'),)
 
 class Subscriber(db.Model):
@@ -632,12 +636,14 @@ def fetch_and_parse_article_content(article_hash_id, url):
 # ... (context_processor, get_paginated_articles, get_sort_key remain unchanged from previous response) ...
 @app.context_processor
 def inject_global_vars():
-    return {'categories': app.config['CATEGORIES'],
-            'current_year': datetime.utcnow().year,
-            'session': session,
-            'request': request,
-            'groq_client': groq_client is not None}
-
+    return {
+        'categories': app.config['CATEGORIES'],
+        'current_year': datetime.utcnow().year,
+        'session': session,
+        'request': request,
+        'groq_client': groq_client is not None,
+        'ALLOWED_REACTIONS': ALLOWED_REACTIONS  # ADDED: Make reactions available to all templates
+    }
 def get_paginated_articles(articles, page, per_page):
     total = len(articles)
     start = (page - 1) * per_page
@@ -813,8 +819,8 @@ def article_detail(article_hash_id):
         except json.JSONDecodeError:
             app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
             article_data.parsed_takeaways = []
-        all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
-        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+            all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
+            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
     else:
         if not MASTER_ARTICLE_STORE: fetch_news_from_api() # Default fetch if store is empty
         article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
@@ -829,15 +835,44 @@ def article_detail(article_hash_id):
         existing_bookmark = BookmarkedArticle.query.filter_by(user_id=session['user_id'], article_hash_id=article_hash_id).first()
         if existing_bookmark: is_bookmarked = True
     if all_article_comments_list:
-        comment_ids = [c.id for c in all_article_comments_list]
-        for c_id in comment_ids: comment_data[c_id] = {'likes': 0, 'dislikes': 0, 'user_vote': 0}
-        vote_counts_query = db.session.query(CommentVote.comment_id, func.sum(case((CommentVote.vote_type == 1, 1), else_=0)).label('likes'), func.sum(case((CommentVote.vote_type == -1, 1), else_=0)).label('dislikes')).filter(CommentVote.comment_id.in_(comment_ids)).group_by(CommentVote.comment_id).all()
-        for c_id, likes, dislikes in vote_counts_query:
-            if c_id in comment_data: comment_data[c_id]['likes'] = likes; comment_data[c_id]['dislikes'] = dislikes
+        # Create a flat list of all comment and reply IDs to query against
+        all_comment_ids = []
+        for c in all_article_comments_list:
+            all_comment_ids.append(c.id)
+            if c.replies:
+                all_comment_ids.extend([r.id for r in c.replies])
+
+        # Initialize comment_data structure for all comments
+        for c_id in all_comment_ids:
+            comment_data[c_id] = {
+                'reactions': {reaction: 0 for reaction in ALLOWED_REACTIONS.keys()},
+                'user_reaction': None
+            }
+
+        # Get all reaction counts in a single efficient query
+        reaction_counts_query = db.session.query(
+            CommentVote.comment_id,
+            CommentVote.reaction_type,
+            func.count(CommentVote.id)
+        ).filter(CommentVote.comment_id.in_(all_comment_ids)).group_by(
+            CommentVote.comment_id,
+            CommentVote.reaction_type
+        ).all()
+
+        for c_id, r_type, count in reaction_counts_query:
+            if c_id in comment_data and r_type in comment_data[c_id]['reactions']:
+                comment_data[c_id]['reactions'][r_type] = count
+       # Get the current user's reactions for all comments on the page
         if 'user_id' in session:
-            user_votes = CommentVote.query.filter(CommentVote.comment_id.in_(comment_ids), CommentVote.user_id == session['user_id']).all()
-            for vote in user_votes:
-                if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_vote'] = vote.vote_type
+            user_reactions_query = CommentVote.query.filter(
+                CommentVote.comment_id.in_(all_comment_ids),
+                CommentVote.user_id == session['user_id']
+            ).all()
+            for reaction in user_reactions_query:
+                if reaction.comment_id in comment_data:
+                    comment_data[reaction.comment_id]['user_reaction'] = reaction.reaction_type
+                    
+    comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
     if isinstance(article_data, dict): article_data['is_community_article'] = False
     elif article_data: article_data.is_community_article = True
     return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page, is_bookmarked=is_bookmarked)
@@ -871,24 +906,66 @@ def add_comment(article_hash_id):
         else: return jsonify({"error": "Article not found to comment on."}), 404
     db.session.add(new_comment); db.session.commit(); db.session.refresh(new_comment)
     author_name = new_comment.author.name if new_comment.author else "Anonymous"
-    return jsonify({"success": True, "comment": {"id": new_comment.id, "content": new_comment.content, "timestamp": new_comment.timestamp.isoformat() + 'Z', "author": {"name": author_name }, "parent_id": new_comment.parent_id, "likes": 0, "dislikes": 0, "user_vote": 0}}), 201
-
+    
+    return jsonify({
+        "success": True, 
+        "comment": {
+            "id": new_comment.id, 
+            "content": new_comment.content, 
+            "timestamp": new_comment.timestamp.isoformat() + 'Z', 
+            "author": {"name": author_name}, 
+            "parent_id": new_comment.parent_id,
+            # ADDED: Provide initial reaction structure for the frontend
+            "reactions": {reaction: 0 for reaction in ALLOWED_REACTIONS.keys()},
+            "user_reaction": None
+        }
+    }), 201
+    
 @app.route('/vote_comment/<int:comment_id>', methods=['POST'])
 @login_required
 def vote_comment(comment_id):
+    # --- MODIFIED: This route is completely updated for emoji reactions ---
     comment = Comment.query.get_or_404(comment_id)
-    vote_type = request.json.get('vote_type')
-    if vote_type not in [1, -1]: return jsonify({"error": "Invalid vote type."}), 400
-    existing_vote = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
-    new_user_vote_status = 0
-    if existing_vote:
-        if existing_vote.vote_type == vote_type: db.session.delete(existing_vote); new_user_vote_status = 0
-        else: existing_vote.vote_type = vote_type; new_user_vote_status = vote_type
-    else: db.session.add(CommentVote(user_id=session['user_id'], comment_id=comment_id, vote_type=vote_type)); new_user_vote_status = vote_type
+    reaction_type = request.json.get('reaction_type')
+    
+    if reaction_type not in ALLOWED_REACTIONS.keys():
+        return jsonify({"error": "Invalid reaction type."}), 400
+
+    existing_reaction = CommentVote.query.filter_by(user_id=session['user_id'], comment_id=comment_id).first()
+    
+    new_user_reaction_status = None
+
+    if existing_reaction:
+        if existing_reaction.reaction_type == reaction_type:
+            # User clicked the same reaction again, so remove it (toggle off)
+            db.session.delete(existing_reaction)
+            new_user_reaction_status = None
+        else:
+            # User changed their reaction
+            existing_reaction.reaction_type = reaction_type
+            new_user_reaction_status = reaction_type
+    else:
+        # New reaction
+        new_reaction = CommentVote(user_id=session['user_id'], comment_id=comment_id, reaction_type=reaction_type)
+        db.session.add(new_reaction)
+        new_user_reaction_status = reaction_type
+    
     db.session.commit()
-    likes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=1).count()
-    dislikes = CommentVote.query.filter_by(comment_id=comment_id, vote_type=-1).count()
-    return jsonify({"success": True, "likes": likes, "dislikes": dislikes, "user_vote": new_user_vote_status}), 200
+
+    # Recalculate all reaction counts for this comment
+    counts_query = db.session.query(
+        CommentVote.reaction_type,
+        func.count(CommentVote.id)
+    ).filter_by(comment_id=comment_id).group_by(CommentVote.reaction_type).all()
+    
+    reaction_counts = {r: 0 for r in ALLOWED_REACTIONS.keys()}
+    reaction_counts.update(dict(counts_query))
+
+    return jsonify({
+        "success": True, 
+        "reactions": reaction_counts, 
+        "user_reaction": new_user_reaction_status
+    }), 200
 
 @app.route('/post_article', methods=['POST'])
 @login_required
@@ -1062,6 +1139,20 @@ BASE_HTML_TEMPLATE = """
         .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
         
         /* --- HEADER LAYOUT FIX --- */
+        /* Add these new rules inside the <style> tag in BASE_HTML_TEMPLATE */
+.comment-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.reaction-btn { background-color: var(--light-bg); border: 1px solid var(--card-border-color); padding: 0.25rem 0.6rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.4rem; transition: all 0.2s ease; border-radius: 20px; font-size: 0.9rem; }
+.reaction-btn .emoji { font-size: 1.2em; transition: transform 0.2s ease; }
+.reaction-btn:hover .emoji { transform: scale(1.2); }
+.reaction-btn .reaction-count { font-weight: 500; min-width: 12px; text-align: left; }
+.reaction-btn.active { border-color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); color: var(--primary-color); font-weight: 600; }
+.reaction-btn.active .emoji { transform: scale(1.1); }
+body.dark-mode .reaction-btn { background-color: var(--card-bg); border-color: #444; }
+body.dark-mode .reaction-btn:hover { border-color: var(--primary-light); color: var(--primary-light); }
+body.dark-mode .reaction-btn.active { border-color: var(--primary-light); background-color: rgba(var(--primary-color-rgb), 0.2); color: var(--primary-light); }
+.reply-btn { background: none; border: none; padding: 0.2rem 0.4rem; color: var(--text-muted-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; transition: color 0.2s ease; border-radius: 4px; font-size: 0.9rem; margin-left: auto; }
+.reply-btn:hover { color: var(--primary-color); }
+body.dark-mode .reply-btn:hover { color: var(--primary-light); }
         .navbar-main { background-color: var(--primary-color); padding: 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; height: 95px; }
         .navbar-content-wrapper { position: relative; display: flex; justify-content: space-between; align-items: center; width: 100%; height: 100%; }
         .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
