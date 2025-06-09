@@ -1107,13 +1107,14 @@ BASE_HTML_TEMPLATE = """
             /* Color Palette */
             --navy-blue: #0D2C54;
             --accent-yellow: #FFC107;
-            --primary-action: #3B82F6; /* A friendly blue for links and buttons */
             --light-bg: #F8F9FA;
             --card-bg: #FFFFFF;
             --text-heading: #1F2937;
             --text-body: #374151;
             --text-muted: #6B7280;
             --card-border-color: #E5E7EB;
+            /* Action color is now black (text-heading color) */
+            --action-color: var(--text-heading); 
 
             /* Common Variables */
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -1131,39 +1132,31 @@ BASE_HTML_TEMPLATE = """
             --text-body: #D1D5DB;
             --text-muted: #9CA3AF;
             --card-border-color: #374151;
-            --primary-action: #60A5FA;
+            /* Action color is now white */
+            --action-color: #FFFFFF;
         }
 
         /* --- GLOBAL STYLES --- */
         html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-        body {
-            padding-top: 80px;
-            font-family: 'Inter', sans-serif;
-            font-weight: 400;
-            line-height: 1.7;
-            color: var(--text-body);
-            background-color: var(--light-bg);
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
+        body { padding-top: 80px; font-family: 'Inter', sans-serif; line-height: 1.7; color: var(--text-body); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; }
         .main-content { flex-grow: 1; }
         h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; font-weight: 700; color: var(--text-heading); }
-        .alert-top { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width: 300px; text-align: center; box-shadow: var(--shadow-lg); border-radius: 0.5rem; }
+        a { color: var(--action-color); text-decoration: none; }
+        a:hover { color: var(--action-color); text-decoration: underline; }
+        .alert-top { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2050; text-align: center; box-shadow: var(--shadow-lg); border-radius: 0.5rem; }
 
         /* General Content Layout */
         .article-card, .static-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--card-border-color); box-shadow: var(--shadow-sm); transition: var(--transition); }
         .static-content-wrapper { max-width: 800px; margin: 0 auto; line-height: 1.8; }
         .static-content-wrapper h1 { font-size: 2.5rem; }
         .static-content-wrapper h2 { font-size: 1.75rem; margin-top: 2.5rem; margin-bottom: 1rem; color: var(--text-heading); font-weight: 600; border-bottom: 1px solid var(--card-border-color); padding-bottom: 0.5rem; }
-        .static-content-wrapper ul { padding-left: 1.5rem; }
-        .static-content-wrapper ul li { margin-bottom: 0.5rem; }
         .auth-container { max-width: 450px; }
 
         /* --- HEADER & NAVIGATION --- */
         .header-main { background-color: var(--navy-blue); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: var(--transition); height: 80px; }
-        .navbar-brand-custom { color: var(--accent-yellow) !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
-        .navbar-brand-custom .brand-icon { color: var(--accent-yellow) !important; font-size: 1.8rem; }
+        .navbar-brand-custom { color: var(--accent-yellow) !important; font-weight: 700; font-size: 2rem; display: flex; align-items: center; gap: 0.6rem; }
+        .navbar-brand-custom:hover { text-decoration: none; }
+        .navbar-brand-custom .brand-icon { font-size: 1.8rem; }
         .search-form { width: 100%; max-width: 480px; }
         .search-input { border-radius: 50px; padding: 0.6rem 1rem 0.6rem 2.5rem; border: none; font-size: 0.9rem; background: rgba(255, 255, 255, 0.1); color: white; transition: var(--transition); }
         .search-input::placeholder { color: rgba(255, 255, 255, 0.6); }
@@ -1175,24 +1168,32 @@ BASE_HTML_TEMPLATE = """
         /* Category Nav */
         .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); top: 80px; border-bottom: 1px solid var(--card-border-color); }
         .category-link { color: var(--text-muted) !important; font-weight: 600; padding: 0.5rem 1.25rem !important; border-radius: 50px; transition: var(--transition); text-decoration: none; margin: 0 0.2rem; font-size: 0.9rem; }
-        .category-link.active { background: var(--primary-action) !important; color: white !important; }
-        .category-link:hover:not(.active) { color: var(--primary-action) !important; background-color: var(--light-bg) !important; }
+        .category-link.active { background: var(--text-heading) !important; color: var(--card-bg) !important; }
+        body.dark-mode .category-link.active { background: var(--text-heading) !important; color: var(--card-bg) !important; }
+        .category-link:hover:not(.active) { color: var(--text-heading) !important; background-color: var(--light-bg) !important; }
         .date-filter-form .form-control, .date-filter-form .btn { font-size: 0.85rem; }
+        .category-link .fa-fw { margin-right: 0.4rem; }
 
         /* Article Cards */
         .article-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); }
         .article-image-container { height: 220px; overflow: hidden; border-top-left-radius: var(--border-radius); border-top-right-radius: var(--border-radius); }
         .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
         .article-card:hover .article-image { transform: scale(1.05); }
-        .article-title a { color: var(--text-heading); text-decoration: none; transition: color 0.2s ease; }
-        .article-card:hover .article-title a { color: var(--primary-action) !important; }
-        .read-more { background: var(--primary-action); font-weight: 600; font-size: 0.9rem; transition: var(--transition); }
-        .read-more:hover { background-color: color-mix(in srgb, var(--primary-action) 85%, black); transform: translateY(-2px); }
+        .article-title a { color: var(--text-heading); text-decoration: none; }
+        .article-card:hover .article-title a { color: var(--text-heading) !important; text-decoration: underline; }
+        .read-more { background: var(--text-heading); color: var(--card-bg) !important; font-weight: 600; font-size: 0.9rem; transition: var(--transition); }
+        .read-more:hover { background-color: color-mix(in srgb, var(--text-heading) 85%, white); transform: translateY(-2px); }
+        body.dark-mode .read-more:hover { background-color: color-mix(in srgb, var(--text-heading) 85%, black); }
+
+        /* --- BOOKMARK BUTTON --- */
+        .bookmark-btn { background: transparent; border: none; padding: 0.25rem; color: var(--text-muted); cursor: pointer; transition: var(--transition); font-size: 1.5rem; line-height: 1; }
+        .bookmark-btn:hover { color: var(--text-heading); }
+        .bookmark-btn.active { color: var(--accent-yellow); transform: scale(1.2); }
+        .article-card .bookmark-btn { font-size: 1.25rem; }
 
         /* --- FOOTER --- */
         .footer { background: var(--navy-blue); color: #E5E7EB; margin-top: auto; padding: 4rem 0 2rem; font-size: 0.9rem; }
         .footer h5 { color: white; font-weight: 600; }
-        .footer-brand .navbar-brand-custom { font-size: 1.8rem; }
         .footer a { color: #D1D5DB; transition: var(--transition); text-decoration: none; }
         .footer a:hover { color: var(--accent-yellow); }
         .footer .social-links a:hover { transform: translateY(-2px) scale(1.1); }
@@ -1209,28 +1210,12 @@ BASE_HTML_TEMPLATE = """
         #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
         .comment-replies { margin-top: 1rem; margin-left: calc(45px + 1rem); padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); }
         .comment-replies > .comment-thread + .comment-thread { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--card-border-color); }
-        .comment-avatar { width: 45px; height: 45px; border-radius:50%; background:var(--primary-action); color:white; display:flex; align-items:center; justify-content:center; font-weight:600; flex-shrink:0;}
+        .comment-avatar { width: 45px; height: 45px; border-radius:50%; background: var(--text-muted); color:white; display:flex; align-items:center; justify-content:center; font-weight:600; flex-shrink:0;}
         .comment-replies .comment-avatar { width: 40px; height: 40px; }
-        body.dark-mode .comment-avatar { background: var(--primary-action); }
-        .comment-body { flex-grow: 1; }
-        .comment-author { font-weight: 600; color: var(--text-heading); }
-        .comment-date { font-size: 0.8rem; color: var(--text-muted); }
-        .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
-        .comment-content { word-wrap: break-word; }
-        .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
-        .comment-actions button { background: none; border: none; color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 0.3rem; transition: var(--transition); }
-        .comment-actions button:hover { color: var(--primary-action); background-color: color-mix(in srgb, var(--primary-action) 15%, transparent); }
-        .reaction-box { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background-color: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: 50px; padding: 4px 8px; box-shadow: var(--shadow-md); z-index: 10; animation: fadeInUp 0.2s ease-out; }
-        .reaction-box.show { display: flex; gap: 5px; }
-        .reaction-emoji { font-size: 1.4rem; cursor: pointer; transition: transform 0.15s cubic-bezier(0.215, 0.610, 0.355, 1); padding: 2px; }
-        .reaction-emoji:hover { transform: scale(1.25); }
-        .reaction-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .reaction-pill { display: flex; align-items: center; background-color: color-mix(in srgb, var(--primary-action) 10%, transparent); border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; font-weight: 500; transition: var(--transition); }
-        .reaction-pill.user-reacted { background-color: var(--primary-action); color: white; }
-        .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
-        .reply-form-container { display: none; padding: 1rem; border-radius: var(--border-radius); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-        body.dark-mode .reply-form-container { background-color: var(--light-bg); }
-
+        .comment-actions button:hover { color: var(--action-color); background-color: color-mix(in srgb, var(--action-color) 10%, transparent); }
+        .reaction-pill { background-color: color-mix(in srgb, var(--action-color) 8%, transparent); }
+        .reaction-pill.user-reacted { background-color: var(--action-color); color: var(--card-bg); }
+        
         /* --- MOBILE RESPONSIVENESS --- */
         @media (max-width: 991.98px) {
             body { padding-top: 80px; }
@@ -1240,18 +1225,10 @@ BASE_HTML_TEMPLATE = """
             .search-form.d-lg-block { display: none !important; } .search-form.d-lg-none { display: block !important; order: 3; width: 100%; margin-top: 0.75rem; }
             .header-controls { width: 50%; justify-content: flex-end; }
             .category-nav { top: 80px; }
-            .categories-wrapper { flex-direction: column; flex-wrap: nowrap; gap: 0.5rem; justify-content: center; padding: 0.5rem; }
-            .category-links-container { width: 100%; overflow-x: auto; justify-content: flex-start; -ms-overflow-style: none; scrollbar-width: none; }
-            .category-links-container::-webkit-scrollbar { display: none; }
-            .date-filter-form { width: 100%; max-width: 320px; margin: 0.5rem auto 0; }
+            .categories-wrapper { flex-direction: column; gap: 1rem; padding: 0.75rem; }
+            .category-links-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+            .date-filter-form { width: 100%; max-width: 320px; }
         }
-        @media (max-width: 575.98px) {
-            .comment-replies { margin-left: 1rem; padding-left: 0.75rem; }
-            .static-content-wrapper, .auth-container { padding: 1.5rem; }
-        }
-        
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
     {% block head_extra %}{% endblock %}    
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1306,7 +1283,12 @@ BASE_HTML_TEMPLATE = """
         <div class="container">
             <div class="categories-wrapper">
                 <div class="category-links-container">
-                    {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">{{ cat_item }}</a>{% endfor %}
+                    {% for cat_item in categories %}
+                        <a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                            {% if cat_item == 'All Articles' %}<i class="fas fa-globe-americas fa-fw"></i>{% elif cat_item == 'Community Hub' %}<i class="fas fa-users fa-fw"></i>{% endif %}
+                            <span>{{ cat_item }}</span>
+                        </a>
+                    {% endfor %}
                 </div>
                 <form id="dateFilterForm" class="date-filter-form">
                     <div class="input-group input-group-sm">
@@ -1325,17 +1307,17 @@ BASE_HTML_TEMPLATE = """
 
     {% if session.user_id %}
     <div class="admin-controls">
-        <button class="btn p-0 add-article-btn" data-bs-toggle="modal" data-bs-target="#addArticleModal" title="Post a New Article" style="width: 60px; height: 60px; border-radius: 50%; background-color: var(--primary-action); color:white; box-shadow: var(--shadow-lg);"><i class="fas fa-plus fs-4"></i></button>
+        <button class="btn p-0 add-article-btn rounded-circle" data-bs-toggle="modal" data-bs-target="#addArticleModal" title="Post a New Article" style="width: 60px; height: 60px; background-color: var(--text-heading); color:var(--card-bg); box-shadow: var(--shadow-lg);"><i class="fas fa-plus fs-4"></i></button>
     </div>
     <div class="modal fade" id="addArticleModal" tabindex="-1" aria-labelledby="addArticleModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="addArticleModalLabel">Post New Article to Community Hub</h5>
+                    <h5 class="modal-title" id="addArticleModalLabel">Post New Article</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
+                <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
                 <div class="modal-body">
-                    <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
                         <div class="mb-3"><label for="articleTitle" class="form-label">Title</label><input type="text" id="articleTitle" name="title" class="form-control" required></div>
                         <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control" rows="3" required></textarea></div>
                         <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control" value="Community Post" required></div>
@@ -1345,8 +1327,8 @@ BASE_HTML_TEMPLATE = """
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Post Article</button>
-                    </form>
                 </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1354,7 +1336,7 @@ BASE_HTML_TEMPLATE = """
 
     <footer class="footer">
         <div class="container">
-            <div class="row gy-4">
+            <div class="row gy-4 align-items-center">
                 <div class="footer-brand col-lg-4 col-md-12 text-center text-lg-start">
                     <a class="navbar-brand-custom mb-2 d-inline-flex" href="{{ url_for('index') }}"><i class="fas fa-bolt-lightning brand-icon me-2"></i><span>Briefly</span></a>
                     <p class="ps-1" style="color: white !important;">Clarity in a Flash. India's News, Simplified by AI.</p>
@@ -1366,7 +1348,6 @@ BASE_HTML_TEMPLATE = """
                         <li><a href="{{ url_for('about') }}">About Us</a></li>
                         <li><a href="{{ url_for('contact') }}">Contact</a></li>
                         <li><a href="{{ url_for('privacy') }}">Privacy Policy</a></li>
-                        {% if session.user_id %}<li><a href="{{ url_for('profile') }}">My Profile</a></li>{% endif %}
                     </ul>
                 </div>
                 <div class="footer-section col-lg-2 col-md-4 col-6">
