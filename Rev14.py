@@ -1038,6 +1038,8 @@ def get_article_content_json(article_hash_id):
     processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
     return jsonify(processed_content)
 
+# In Rev14.py, replace the entire add_comment function with this corrected block.
+
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
@@ -1058,7 +1060,6 @@ def add_comment(article_hash_id):
     elif article_hash_id in MASTER_ARTICLE_STORE:
         new_comment.api_article_hash_id = article_hash_id
     else:
-        # Final check if article is missing from memory
         fetch_news_from_api() 
         if article_hash_id in MASTER_ARTICLE_STORE:
              new_comment.api_article_hash_id = article_hash_id
@@ -1067,10 +1068,10 @@ def add_comment(article_hash_id):
 
     db.session.add(new_comment)
     db.session.commit()
-    db.session.refresh(new_comment) # Ensure all relationships like `author` are loaded
+    db.session.refresh(new_comment)
 
-    # Render the new comment's HTML on the server
-    comment_html = render_template("_COMMENT_TEMPLATE.html", comment=new_comment, session=session)
+    # THE FIX IS ON THE LINE BELOW: "_COMMENT_TEMPLATE" instead of "_COMMENT_TEMPLATE.html"
+    comment_html = render_template("_COMMENT_TEMPLATE", comment=new_comment, session=session)
 
     return jsonify({
         "success": True, 
