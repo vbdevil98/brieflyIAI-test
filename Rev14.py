@@ -1246,411 +1246,358 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
-# --- File: Rev14.py ---
+# In Rev14.py, find and replace the entire BASE_HTML_TEMPLATE string with this:
 
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Briefly{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary-color: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --secondary-color: #14B8A6; --secondary-light: #2DD4BF; --accent-color: #F97316; --text-color: #1F2937; --text-muted-color: #6B7280; --light-bg: #F9FAFB; --card-bg: #FFFFFF; --card-border-color: #E5E7EB; --footer-bg: #111827; --footer-text: #D1D5DB; --footer-link-hover: var(--primary-light);
-            --primary-color-rgb: 79, 70, 229; --secondary-color-rgb: 20, 184, 166;
-            --bookmark-active-color: var(--secondary-color);
-            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-            --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
-        }
-        body { padding-top: 145px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
-        .main-content { flex-grow: 1; }
-        body.dark-mode {
-            --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
-            --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
-            --bookmark-active-color: var(--secondary-light);
-        }
-        h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
-        .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        
-        /* --- HEADER LAYOUT FIX --- */
-        .navbar-main { background-color: var(--primary-color); padding: 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; height: 95px; }
-        .navbar-content-wrapper { position: relative; display: flex; justify-content: space-between; align-items: center; width: 100%; height: 100%; }
-        .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
-        .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
-        .search-form-container { position: absolute; left: 50%; transform: translateX(-50%); width: 45%; max-width: 550px; }
-        .search-container { position: relative; width: 100%; }
-        .navbar-search { border-radius: 50px; padding: 0.7rem 1.25rem 0.7rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
-        .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
-        .navbar-search:focus { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 4px rgba(255,255,255,0.2); border-color: var(--secondary-light); outline: none; color:white; }
-        .search-icon { color: rgba(255,255,255,0.8); transition: all 0.3s ease; left: 1.1rem; position: absolute; top: 50%; transform: translateY(-50%); }
-        .header-controls { display: flex; gap: 0.8rem; align-items: center; }
-        .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
-        .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
-        .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
-        
-        /* Category Nav */
-        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 95px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
-        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
-        .categories-wrapper::-webkit-scrollbar { display: none; }
-        .category-links-container { display: flex; flex-shrink: 0; }
-        .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
-        .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
-        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
-        body.dark-mode .category-link.active { color: var(--card-bg) !important; }
-        body.dark-mode .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-light) !important; }
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Briefly{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --secondary-color: #14B8A6; --secondary-light: #2DD4BF; --accent-color: #F97316; --text-color: #1F2937; --text-muted-color: #6B7280; --light-bg: #F9FAFB; --card-bg: #FFFFFF; --card-border-color: #E5E7EB; --footer-bg: #111827; --footer-text: #D1D5DB; --footer-link-hover: var(--primary-light);
+            --primary-color-rgb: 79, 70, 229; --secondary-color-rgb: 20, 184, 166;
+            --bookmark-active-color: var(--secondary-color);
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
+        }
+        body { padding-top: 155px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
+        .main-content { flex-grow: 1; }
+        body.dark-mode {
+            --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
+            --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
+            --bookmark-active-color: var(--secondary-light);
+        }
+        h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
+        .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
+        
+        /* === HEADER LAYOUT FIX: Robust Flexbox Approach === */
+        .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; }
+        .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
+        .navbar-left { flex-shrink: 0; }
+        .navbar-center { flex-grow: 1; min-width: 150px; max-width: 550px; }
+        .navbar-right { flex-shrink: 0; }
+        
+        .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
+        .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
+        
+        .search-container { position: relative; width: 100%; }
+        .navbar-search { width: 100%; border-radius: 50px; padding: 0.6rem 1.25rem 0.6rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
+        .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
+        .navbar-search:focus { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 4px rgba(255,255,255,0.2); border-color: var(--secondary-light); outline: none; color:white; }
+        .search-icon { color: rgba(255,255,255,0.8); transition: all 0.3s ease; left: 1.1rem; position: absolute; top: 50%; transform: translateY(-50%); }
 
-        /* Cards */
-        .article-card, .featured-article, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
-        .article-card:hover, .featured-article:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
-        .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
-        .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
-        .article-card:hover .article-image { transform: scale(1.05); }
-        .article-body { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
-        .article-title { font-weight: 600; line-height: 1.4; margin-bottom: 0.6rem; font-size:1.15rem; }
-        .article-title a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
-        .article-card:hover .article-title a { color: var(--primary-color) !important; }
-        .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
-        .meta-item { display: flex; align-items: center; font-size: 0.8rem; color: var(--text-muted-color); }
-        .meta-item i { font-size: 0.9rem; margin-right: 0.4rem; color: var(--secondary-color); }
-        .article-description { color: var(--text-muted-color); margin-bottom: 1.25rem; font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.6rem 0; border-radius: var(--border-radius-md); font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
-        .read-more:hover { background: var(--primary-dark); transform: translateY(-2px); color: white !important; box-shadow: var(--shadow-md); }
-        body.dark-mode .read-more { color: var(--card-bg) !important; }
-        
-        /* Pagination */
-        .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--text-muted-color); background-color: var(--card-bg); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; margin: 0 0.2rem;}
-        .page-item .page-link:hover { border-color: var(--primary-light); color: var(--primary-color); }
-        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
-        .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
-        body.dark-mode .page-item.disabled .page-link { background-color: var(--card-bg); }
-        .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
-        
-        /* Footer */
-        footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
-        .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
-        .footer-links { display: flex; flex-direction: column; gap: 0.8rem; }
-        .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; }
-        .footer-links a:hover { color: var(--footer-link-hover); padding-left: 5px; }
-        .social-links { display: flex; gap: 1rem; margin-top: 0.5rem; }
-        .social-links a { color: var(--footer-text); font-size: 1.2rem; transition: all 0.2s ease; }
-        .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
-        .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); }
-        body.dark-mode .copyright { border-top-color: var(--card-border-color); color: var(--footer-text); }
-        
-        /* Modal & FAB */
-        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
-        .add-article-btn { width: 60px; height: 60px; border-radius: 50%; background: var(--primary-color); color: white; border: none; box-shadow: var(--shadow-lg); display: flex; align-items: center; justify-content: center; font-size: 26px; cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
-        .add-article-btn:hover { transform: translateY(-4px) scale(1.05); background: var(--primary-light); }
-        .add-article-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; }
-        .modal-content { border-radius: var(--border-radius-lg); border: none; }
-        .close-modal { position: absolute; top: 12px; right: 12px; font-size: 20px; color: var(--text-muted-color); background: none; border: none; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
-        .close-modal:hover { background: var(--light-bg); color: var(--text-color); }
-        .modal-form-control { border-radius: var(--border-radius-md); border: 1px solid var(--card-border-color); font-size: 0.95rem; transition: all 0.2s ease; background-color: var(--light-bg); }
-        .modal-form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb),0.2); outline: none; background-color: var(--card-bg); }
-        .btn-primary-modal { background-color: var(--primary-color); border-color: var(--primary-color); color:white; padding: 0.7rem 1.4rem; font-weight:600; border-radius: var(--border-radius-md); }
-        .btn-primary-modal:hover { background-color: var(--primary-dark); border-color: var(--primary-dark); }
-        
-        /* Auth pages */
-        .auth-container { max-width: 450px; margin: 3rem auto; padding: 2.5rem; }
-        
-        /* --- NEW Comment Section Styles (Replaces old comment CSS) --- */
-        .comment-thread { position: relative; animation: fadeIn 0.4s ease; }
-        .comment-container { display: flex; gap: 1rem; align-items: flex-start; }
-        #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
-        .comment-replies { margin-top: 1rem; margin-left: calc(45px + 1rem); padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); }
-        .comment-replies > .comment-thread + .comment-thread { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--card-border-color); }
-        .comment-avatar { width: 45px; height: 45px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
-        .comment-replies .comment-avatar { width: 40px; height: 40px; }
-        body.dark-mode .comment-avatar { background: var(--primary-dark); }
-        .comment-body { flex-grow: 1; }
-        .comment-author { font-weight: 600; color: var(--text-color); }
-        .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
-        .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
-        .comment-content { word-wrap: break-word; }
-        .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
-        .comment-actions button { background: none; border: none; color: var(--text-muted-color); padding: 0.25rem 0.5rem; border-radius: var(--border-radius-md); font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 0.3rem; transition: all 0.2s ease; }
-        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
-        body.dark-mode .comment-actions button:hover { color: var(--primary-light); }
-        .react-btn { position: relative; }
-        .reaction-box { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background-color: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: 50px; padding: 4px 8px; box-shadow: var(--shadow-md); z-index: 10; white-space: nowrap; animation: fadeInUp 0.2s ease-out; }
-        .reaction-box.show { display: flex; gap: 5px; }
-        .reaction-emoji { font-size: 1.4rem; cursor: pointer; transition: transform 0.15s cubic-bezier(0.215, 0.610, 0.355, 1); padding: 2px; }
-        .reaction-emoji:hover { transform: scale(1.25); }
-        .reaction-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .reaction-pill { display: flex; align-items: center; background-color: rgba(var(--primary-color-rgb), 0.08); border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; font-weight: 500; cursor: default; transition: all 0.2s ease; }
-        .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        body.dark-mode .reaction-pill.user-reacted { background-color: var(--primary-light); color: var(--footer-bg); border-color: var(--primary-color); }
-        .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
-        .reply-form-container { display: none; padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-        body.dark-mode .reply-form-container { background-color: var(--footer-bg); }
-        /* --- END NEW Comment Section Styles --- */
+        .header-controls { display: flex; gap: 0.8rem; align-items: center; }
+        .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
+        .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
+        .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
+        
+        /* Category Nav */
+        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 82px; /* Adjusted for new header height */ width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
+        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
+        .categories-wrapper::-webkit-scrollbar { display: none; }
+        .category-links-container { display: flex; flex-shrink: 0; }
+        .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
+        .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
+        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
 
-        /* Profile Page */
-        .profile-card .profile-avatar { background-color: var(--primary-color); }
-        body.dark-mode .profile-card .profile-avatar { background-color: var(--primary-dark); }
-        .profile-tabs .nav-link { color: var(--text-muted-color); font-weight: 600; }
-        .profile-tabs .nav-link.active { color: var(--primary-color); border-bottom: 3px solid var(--primary-color); background: transparent; }
-        body.dark-mode .profile-tabs .nav-link.active { color: var(--primary-light); border-bottom-color: var(--primary-light); }
-        
-        /* Bookmark Button */
-        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
-        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
-        .bookmark-btn:hover { color: var(--secondary-light); }
-        .article-card .bookmark-btn { font-size: 1.3rem; }
-        
-        /* --- RESPONSIVE HEADER LAYOUT --- */
-        @media (max-width: 991.98px) {
-            body { padding-top: 180px; }
-            .navbar-main { padding: 1rem 0 0.5rem; height: auto; }
-            .navbar-content-wrapper { position: static; flex-direction: column; align-items: flex-start; gap: 0.75rem; height: auto; }
-            .navbar-brand-custom { margin-bottom: 0.5rem; }
-            .search-form-container { position: static; transform: none; width: 100%; order: 3; }
-            .header-controls { position: absolute; top: 1.2rem; right: 1rem; }
-            .category-nav { top: 130px; }
-            .categories-wrapper { justify-content: flex-start; }
-            #dateFilterForm { width: 100%; margin-left: 0 !important; margin-top: 0.5rem; }
-        }
-        @media (max-width: 767.98px) { body { padding-top: 170px; } .category-nav { top: 120px; } .featured-article .row { flex-direction: column; } .featured-image { margin-bottom: 1rem; height: 250px; } }
-        @media (max-width: 575.98px) { .navbar-brand-custom { font-size: 1.8rem;} .header-controls { gap: 0.3rem; } .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; } .dark-mode-toggle { font-size: 1rem; } .comment-replies { margin-left: 1rem; padding-left: 1rem; } }
-        
-        /* Animations */
-        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(25px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
-    {% block head_extra %}{% endblock %}    
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-CV5LWJ7NQ7');
-    </script>
+        /* Cards & General Layout */
+        .article-card, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
+        .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+        .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
+        .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
+        .article-card:hover .article-image { transform: scale(1.05); }
+        .article-body { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
+        .article-title { font-weight: 600; line-height: 1.4; margin-bottom: 0.6rem; font-size:1.15rem; }
+        .article-title a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
+        .article-card:hover .article-title a { color: var(--primary-color) !important; }
+        .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
+        .meta-item { display: flex; align-items: center; font-size: 0.8rem; color: var(--text-muted-color); }
+        .meta-item i { font-size: 0.9rem; margin-right: 0.4rem; color: var(--secondary-color); }
+        .article-description { color: var(--text-muted-color); margin-bottom: 1.25rem; font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.6rem 0; border-radius: var(--border-radius-md); font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
+        .read-more:hover { background: var(--primary-dark); transform: translateY(-2px); color: white !important; box-shadow: var(--shadow-md); }
+        
+        /* Pagination */
+        .pagination { flex-wrap: wrap; }
+        .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--text-muted-color); background-color: var(--card-bg); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; margin: 0 0.2rem;}
+        .page-item .page-link:hover { border-color: var(--primary-light); color: var(--primary-color); }
+        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
+        .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
+        .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
+        
+        /* === FOOTER LAYOUT FIX === */
+        footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
+        .footer-content.row { display: flex; flex-wrap: wrap; } /* Ensures wrapping on small screens */
+        .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
+        .footer-links { display: flex; flex-direction: column; gap: 0.8rem; }
+        .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; }
+        .footer-links a:hover { color: var(--footer-link-hover); padding-left: 5px; }
+        .social-links { display: flex; gap: 1rem; margin-top: 0.5rem; }
+        .social-links a { color: var(--footer-text); font-size: 1.2rem; transition: all 0.2s ease; }
+        .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
+        .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
+
+        /* Other styles */
+        .auth-container { max-width: 450px; margin: 3rem auto; padding: 2.5rem; }
+        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
+        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
+        .bookmark-btn:hover { color: var(--secondary-light); }
+        .article-card .bookmark-btn { font-size: 1.3rem; }
+
+        /* === RESPONSIVE FIXES === */
+        @media (max-width: 767.98px) {
+            body { padding-top: 145px; } /* Reset to a reasonable value */
+            .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
+            .navbar-left { width: 100%; text-align: center; margin-bottom: 0.5rem; }
+            .navbar-right { position: absolute; top: 1.2rem; right: 1rem; }
+            .navbar-center { order: 3; width: 100%; }
+            .category-nav { top: 128px; }
+        }
+        @media (max-width: 575.98px) {
+            .navbar-brand-custom { font-size: 1.8rem; }
+            .header-controls { gap: 0.3rem; }
+            .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+            .dark-mode-toggle { font-size: 1rem; }
+        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+    {% block head_extra %}{% endblock %}
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-CV5LWJ7NQ7');
+    </script>
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}">
-    <div id="alert-placeholder">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show alert-top" role="alert">
-                    <span>{{ message }}</span>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-
-    <nav class="navbar navbar-main navbar-expand-lg fixed-top">
-        <div class="container">
-            <div class="navbar-content-wrapper">
-                <a class="navbar-brand-custom animate-fade-in" href="{{ url_for('index') }}">
-                    <i class="fas fa-bolt-lightning brand-icon"></i>
-                    <span>Briefly</span>
-                </a>
-                <div class="search-form-container">
-                    <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
-                        <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
-                        <i class="fas fa-search search-icon"></i>
-                        <button type="submit" class="d-none">Search</button>
-                    </form>
-                </div>
-                <div class="header-controls">
-                    <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
-                        <i class="fas fa-moon"></i>
-                    </button>
-                    {% if session.user_id %}
-                    <div class="dropdown">
-                        <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
-                            <i class="fas fa-user-circle"></i> <span class="d-none d-md-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
-                        </ul>
-                    </div>
-                    {% else %}
-                    <a href="{{ url_for('login') }}" class="header-btn" title="Login/Register">
-                        <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <nav class="navbar navbar-expand-lg category-nav">
-        <div class="container">
-            <div class="categories-wrapper">
-                <div class="category-links-container">
-                {% for cat_item in categories %}
-                    {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
-                    {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
-                        {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
-                    {% endif %}
-                    <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
-                        {{ cat_item }}
-                    </a>
-                {% endfor %}
+    <div id="alert-placeholder">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show alert-top" role="alert">
+                    <span>{{ message }}</span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
-                
-                <form id="dateFilterForm" class="ms-2 ms-md-3" style="min-width: 180px;">
-                    <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
-                    <div class="input-group input-group-sm">
-                        <input type="date" id="articleDateFilter" class="form-control form-control-sm" 
-                               value="{{ current_filter_date | default('', true) }}" 
-                               aria-label="Filter by date for All Articles"
-                               title="Filter 'All Articles' by date">
-                        <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
-                        {% if current_filter_date %}
-                        <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
-                        {% endif %}
-                    </div>
-                </form>
-            </div>
-        </div>
-    </nav>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
 
-    <main class="container main-content my-4">
-        {% block content %}{% endblock %}
-    </main>
+    <header class="fixed-top">
+        <nav class="navbar-main">
+            <div class="container">
+                <div class="navbar-content-wrapper">
+                    <div class="navbar-left">
+                        <a class="navbar-brand-custom" href="{{ url_for('index') }}">
+                            <i class="fas fa-bolt-lightning brand-icon"></i>
+                            <span>Briefly</span>
+                        </a>
+                    </div>
+                    <div class="navbar-center">
+                        <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
+                            <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
+                            <i class="fas fa-search search-icon"></i>
+                            <button type="submit" class="d-none">Search</button>
+                        </form>
+                    </div>
+                    <div class="navbar-right">
+                        <div class="header-controls">
+                            <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
+                                <i class="fas fa-moon"></i>
+                            </button>
+                            {% if session.user_id %}
+                            <div class="dropdown">
+                                <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
+                                    <i class="fas fa-user-circle"></i> <span class="d-none d-md-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                                    <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                                </ul>
+                            </div>
+                            {% else %}
+                            <a href="{{ url_for('login') }}" class="header-btn" title="Login/Register">
+                                <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
 
-    {% if session.user_id %}
-    <div class="admin-controls">
-        <button class="add-article-btn" id="addArticleBtn" title="Post a New Article">
-            <i class="fas fa-plus"></i>
-        </button>
-    </div>
-    <div class="add-article-modal" id="addArticleModal">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content p-4">
-                <div class="modal-header border-0 pb-0">
-                    <h4 class="modal-title">Post New Article</h4>
-                    <button type="button" class="btn-close" id="closeModalBtn" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
-                        <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control modal-form-control" required></div>
-                        <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control modal-form-control" rows="3" required></textarea></div>
-                        <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control modal-form-control" value="Community Post" required></div>
-                        <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control modal-form-control"></div>
-                        <div class="mb-3"><label for="articleContent" class="form-label">Full Article Content</label><textarea id="articleContent" name="content" class="form-control modal-form-control" rows="7" required></textarea></div>
-                        <div class="d-flex justify-content-end gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" id="cancelArticleBtn">Cancel</button><button type="submit" class="btn btn-primary-modal">Post Article</button></div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+        <nav class="navbar navbar-expand-lg category-nav">
+            <div class="container">
+                <div class="categories-wrapper">
+                    <div class="category-links-container">
+                        {% for cat_item in categories %}
+                            {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
+                            {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
+                                {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
+                            {% endif %}
+                            <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                                <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
+                                {{ cat_item }}
+                            </a>
+                        {% endfor %}
+                    </div>
+                    
+                    <form id="dateFilterForm" class="ms-auto">
+                        <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
+                        <div class="input-group input-group-sm">
+                            <input type="date" id="articleDateFilter" class="form-control form-control-sm"
+                                   value="{{ current_filter_date | default('', true) }}"
+                                   aria-label="Filter by date for All Articles"
+                                   title="Filter 'All Articles' by date">
+                            <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
+                            {% if current_filter_date %}
+                            <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </nav>
+    </header>
 
-    <footer class="mt-auto">
-        <div class="container">
-            <div class="footer-content row">
-                <div class="footer-section col-lg-4 col-md-6 mb-4">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-bolt-lightning footer-brand-icon me-2" style="color:var(--secondary-light);"></i>
-                        <span class="h5 mb-0" style="color:white; font-family: 'Poppins', sans-serif;">Briefly</span>
-                    </div>
-                    <p class="small text-muted">Your premier source for AI summarized, India-centric news.</p>
-                    <div class="social-links">
-                        <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
-                    </div>
-                </div>
-                <div class="footer-section col-lg-2 col-md-6 mb-4">
-                    <h5>Quick Links</h5>
-                    <div class="footer-links">
-                        <a href="{{ url_for('index') }}">Home</a>
-                        <a href="{{ url_for('about') }}">About Us</a>
-                        <a href="{{ url_for('contact') }}">Contact</a>
-                        <a href="{{ url_for('privacy') }}">Privacy Policy</a>
-                        {% if session.user_id %}<a href="{{ url_for('profile') }}">My Profile</a>{% endif %}
-                    </div>
-                </div>
-                <div class="footer-section col-lg-2 col-md-6 mb-4">
-                    <h5>Categories</h5>
-                    <div class="footer-links">
-                        {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a>{% endfor %}
-                    </div>
-                </div>
-                <div class="footer-section col-lg-4 col-md-6 mb-4">
-                    <h5>Newsletter</h5>
-                    <p class="small text-muted">Subscribe for weekly updates!</p>
-                    <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">
-                        <div class="input-group">
-                            <input type="email" name="email" class="form-control form-control-sm" placeholder="Your Email" aria-label="Your Email" required style="background: #374151; border-color: #4B5563; color: white;">
-                            <button class="btn btn-sm btn-primary-modal" type="submit">Subscribe</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
-        </div>
-    </footer>
+    <main class="container main-content my-4">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <div id="modals-placeholder">
+        {% if session.user_id %}
+        <div class="admin-controls">
+            <button class="add-article-btn" id="addArticleBtn" title="Post a New Article">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        <div class="add-article-modal" id="addArticleModal" style="display:none;" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content p-4">
+                    <div class="modal-header border-0 pb-0">
+                        <h4 class="modal-title">Post New Article</h4>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
+                            <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control modal-form-control" required></div>
+                            <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control modal-form-control" rows="3" required></textarea></div>
+                            <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control modal-form-control" value="Community Post" required></div>
+                            <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control modal-form-control"></div>
+                            <div class="mb-3"><label for="articleContent" class="form-label">Full Article Content</label><textarea id="articleContent" name="content" class="form-control modal-form-control" rows="7" required></textarea></div>
+                            <div class="d-flex justify-content-end gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary-modal">Post Article</button></div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const darkModeToggle = document.querySelector('.dark-mode-toggle');
-        const body = document.body;
-        function updateThemeIcon() { if(darkModeToggle) { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; } }
-        function applyTheme(theme) {
-            if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
-            updateThemeIcon();
-            localStorage.setItem('darkMode', theme);
-            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
-        }
-        if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
-        let storedTheme = localStorage.getItem('darkMode');
-        if (!storedTheme) { const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1]; if (cookieTheme) storedTheme = cookieTheme; }
-        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
-        
-        const addArticleBtn = document.getElementById('addArticleBtn');
-        const addArticleModalEl = document.getElementById('addArticleModal');
-        if (addArticleBtn && addArticleModalEl) {
-            const addArticleModal = new bootstrap.Modal(addArticleModalEl);
-            addArticleBtn.addEventListener('click', () => addArticleModal.show());
-            document.getElementById('closeModalBtn').addEventListener('click', () => addArticleModal.hide());
-            document.getElementById('cancelArticleBtn').addEventListener('click', () => addArticleModal.hide());
-            addArticleModalEl.addEventListener('hidden.bs.modal', () => {
-                const form = document.getElementById('addArticleForm');
-                if (form) form.reset();
-            });
-        }
-        
-        const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
-        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
+    <footer class="mt-auto">
+        <div class="container">
+            <div class="footer-content row">
+                <div class="footer-section col-lg-4 col-md-6 mb-4">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-bolt-lightning me-2" style="color:var(--secondary-light); font-size: 1.5rem;"></i>
+                        <span class="h5 mb-0" style="color:white; font-family: 'Poppins', sans-serif;">Briefly</span>
+                    </div>
+                    <p class="small text-muted">Your premier source for AI summarized, India-centric news.</p>
+                    <div class="social-links">
+                        <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
+                    </div>
+                </div>
+                <div class="footer-section col-lg-2 col-md-6 mb-4">
+                    <h5>Quick Links</h5>
+                    <div class="footer-links">
+                        <a href="{{ url_for('index') }}">Home</a>
+                        <a href="{{ url_for('about') }}">About Us</a>
+                        <a href="{{ url_for('contact') }}">Contact</a>
+                        <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+                        {% if session.user_id %}<a href="{{ url_for('profile') }}">My Profile</a>{% endif %}
+                    </div>
+                </div>
+                <div class="footer-section col-lg-2 col-md-6 mb-4">
+                    <h5>Categories</h5>
+                    <div class="footer-links">
+                        {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a>{% endfor %}
+                    </div>
+                </div>
+                <div class="footer-section col-lg-4 col-md-6 mb-4">
+                    <h5>Newsletter</h5>
+                    <p class="small text-muted">Subscribe for weekly updates!</p>
+                    <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">
+                        <div class="input-group">
+                            <input type="email" name="email" class="form-control form-control-sm" placeholder="Your Email" aria-label="Your Email" required style="background: #374151; border-color: #4B5563; color: white;">
+                            <button class="btn btn-sm btn-primary-modal" type="submit">Subscribe</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
+        </div>
+    </footer>
 
-        const dateFilterForm = document.getElementById('dateFilterForm');
-        if (dateFilterForm) {
-            dateFilterForm.addEventListener('submit', function(event) {
-                event.preventDefault();
-                const dateInput = document.getElementById('articleDateFilter');
-                const selectedDate = dateInput.value;
-                let targetUrl = new URL("{{ url_for('index', category_name='All Articles') }}", window.location.origin);
-                if (selectedDate) {
-                    targetUrl.searchParams.set('filter_date', selectedDate);
-                }
-                window.location.href = targetUrl.toString();
-            });
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const darkModeToggle = document.querySelector('.dark-mode-toggle');
+        const body = document.body;
+        function updateThemeIcon() { if(darkModeToggle) { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; } }
+        function applyTheme(theme) {
+            if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
+            updateThemeIcon();
+            localStorage.setItem('darkMode', theme);
+            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
+        }
+        if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
+        let storedTheme = localStorage.getItem('darkMode') || document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
+        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+        
+        const addArticleBtn = document.getElementById('addArticleBtn');
+        const addArticleModalEl = document.getElementById('addArticleModal');
+        if (addArticleBtn && addArticleModalEl) {
+            const addArticleModal = new bootstrap.Modal(addArticleModalEl);
+            addArticleBtn.addEventListener('click', () => addArticleModal.show());
+        }
+        
+        const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
+        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
 
-            const clearDateFilterBtn = document.getElementById('clearDateFilter');
-            if (clearDateFilterBtn) {
-                clearDateFilterBtn.addEventListener('click', function() {
-                    window.location.href = "{{ url_for('index', category_name='All Articles') }}";
-                });
-            }
-        }
-    });
-    </script>
-    {% block scripts_extra %}{% endblock %}
+        const dateFilterForm = document.getElementById('dateFilterForm');
+        if (dateFilterForm) {
+            dateFilterForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                const dateInput = document.getElementById('articleDateFilter');
+                const selectedDate = dateInput.value;
+                if (selectedDate) {
+                   let targetUrl = new URL("{{ url_for('index', category_name='All Articles') }}", window.location.origin);
+                   targetUrl.searchParams.set('filter_date', selectedDate);
+                   window.location.href = targetUrl.toString();
+                }
+            });
+
+            const clearDateFilterBtn = document.getElementById('clearDateFilter');
+            if (clearDateFilterBtn) {
+                clearDateFilterBtn.addEventListener('click', function() {
+                    window.location.href = "{{ url_for('index', category_name='All Articles') }}";
+                });
+            }
+        }
+    });
+    </script>
+    {% block scripts_extra %}{% endblock %}
 </body>
 </html>
 """
