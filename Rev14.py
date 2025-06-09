@@ -1101,273 +1101,340 @@ BASE_HTML_TEMPLATE = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Color Palette */
-            --navy-blue: #0D2C54;
-            --accent-yellow: #FFC107;
-            --light-bg: #F8F9FA;
-            --card-bg: #FFFFFF;
-            --text-heading: #1F2937;
-            --text-body: #374151;
-            --text-muted: #6B7280;
-            --card-border-color: #E5E7EB;
-            /* Action color is now black (text-heading color) */
-            --action-color: var(--text-heading); 
-
-            /* Common Variables */
-            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-            --border-radius: 0.75rem;
-            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --primary-color: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --secondary-color: #14B8A6; --secondary-light: #2DD4BF; --accent-color: #F97316; --text-color: #1F2937; --text-muted-color: #6B7280; --light-bg: #F9FAFB; --card-bg: #FFFFFF; --card-border-color: #E5E7EB; --footer-bg: #111827; --footer-text: #D1D5DB; --footer-link-hover: var(--primary-light);
+            --primary-color-rgb: 79, 70, 229; --secondary-color-rgb: 20, 184, 166;
+            --bookmark-active-color: var(--secondary-color);
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
         }
-
-        /* --- DARK MODE PALETTE --- */
-        body.dark-mode {
-            --light-bg: #111827;
-            --card-bg: #1F2937;
-            --text-heading: #F9FAFB;
-            --text-body: #D1D5DB;
-            --text-muted: #9CA3AF;
-            --card-border-color: #374151;
-            /* Action color is now white */
-            --action-color: #FFFFFF;
-        }
-
-        /* --- GLOBAL STYLES --- */
-        html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-        body { padding-top: 80px; font-family: 'Inter', sans-serif; line-height: 1.7; color: var(--text-body); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; }
+        body { padding-top: 145px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
-        h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; font-weight: 700; color: var(--text-heading); }
-        a { color: var(--action-color); text-decoration: none; }
-        a:hover { color: var(--action-color); text-decoration: underline; }
-        .alert-top { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2050; text-align: center; box-shadow: var(--shadow-lg); border-radius: 0.5rem; }
-
-        /* General Content Layout */
-        .article-card, .static-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--card-border-color); box-shadow: var(--shadow-sm); transition: var(--transition); }
-        .static-content-wrapper { max-width: 800px; margin: 0 auto; line-height: 1.8; }
-        .static-content-wrapper h1 { font-size: 2.5rem; }
-        .static-content-wrapper h2 { font-size: 1.75rem; margin-top: 2.5rem; margin-bottom: 1rem; color: var(--text-heading); font-weight: 600; border-bottom: 1px solid var(--card-border-color); padding-bottom: 0.5rem; }
-        .auth-container { max-width: 450px; }
-
-        /* --- HEADER & NAVIGATION --- */
-        .header-main { background-color: var(--navy-blue); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: var(--transition); height: 80px; }
-        .navbar-brand-custom { color: var(--accent-yellow) !important; font-weight: 700; font-size: 2rem; display: flex; align-items: center; gap: 0.6rem; }
-        .navbar-brand-custom:hover { text-decoration: none; }
-        .navbar-brand-custom .brand-icon { font-size: 1.8rem; }
-        .search-form { width: 100%; max-width: 480px; }
-        .search-input { border-radius: 50px; padding: 0.6rem 1rem 0.6rem 2.5rem; border: none; font-size: 0.9rem; background: rgba(255, 255, 255, 0.1); color: white; transition: var(--transition); }
-        .search-input::placeholder { color: rgba(255, 255, 255, 0.6); }
-        .search-input:focus { background: rgba(255, 255, 255, 0.2); box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.4); }
-        .search-icon { color: rgba(255, 255, 255, 0.7); left: 0.9rem; }
-        .header-controls .header-btn { background: transparent; border: 1px solid rgba(255, 255, 255, 0.3); color: white; transition: var(--transition); }
-        .header-controls .header-btn:hover { background: var(--accent-yellow); border-color: var(--accent-yellow); color: var(--navy-blue); }
-
+        body.dark-mode {
+            --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
+            --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
+            --bookmark-active-color: var(--secondary-light);
+        }
+        h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
+        .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
+        
+        /* --- HEADER LAYOUT FIX --- */
+        .navbar-main { background-color: var(--primary-color); padding: 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; height: 95px; }
+        .navbar-content-wrapper { position: relative; display: flex; justify-content: space-between; align-items: center; width: 100%; height: 100%; }
+        .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
+        .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
+        .search-form-container { position: absolute; left: 50%; transform: translateX(-50%); width: 45%; max-width: 550px; }
+        .search-container { position: relative; width: 100%; }
+        .navbar-search { border-radius: 50px; padding: 0.7rem 1.25rem 0.7rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
+        .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
+        .navbar-search:focus { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 4px rgba(255,255,255,0.2); border-color: var(--secondary-light); outline: none; color:white; }
+        .search-icon { color: rgba(255,255,255,0.8); transition: all 0.3s ease; left: 1.1rem; position: absolute; top: 50%; transform: translateY(-50%); }
+        .header-controls { display: flex; gap: 0.8rem; align-items: center; }
+        .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
+        .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
+        .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
+        
         /* Category Nav */
-        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); top: 80px; border-bottom: 1px solid var(--card-border-color); }
-        .category-link { color: var(--text-muted) !important; font-weight: 600; padding: 0.5rem 1.25rem !important; border-radius: 50px; transition: var(--transition); text-decoration: none; margin: 0 0.2rem; font-size: 0.9rem; }
-        .category-link.active { background: var(--text-heading) !important; color: var(--card-bg) !important; }
-        body.dark-mode .category-link.active { background: var(--text-heading) !important; color: var(--card-bg) !important; }
-        .category-link:hover:not(.active) { color: var(--text-heading) !important; background-color: var(--light-bg) !important; }
-        .date-filter-form .form-control, .date-filter-form .btn { font-size: 0.85rem; }
-        .category-link .fa-fw { margin-right: 0.4rem; }
+        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 95px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
+        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
+        .categories-wrapper::-webkit-scrollbar { display: none; }
+        .category-links-container { display: flex; flex-shrink: 0; }
+        .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
+        .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
+        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
+        body.dark-mode .category-link.active { color: var(--card-bg) !important; }
+        body.dark-mode .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-light) !important; }
 
-        /* Article Cards */
-        .article-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); }
-        .article-image-container { height: 220px; overflow: hidden; border-top-left-radius: var(--border-radius); border-top-right-radius: var(--border-radius); }
+        /* Cards */
+        .article-card, .featured-article, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
+        .article-card:hover, .featured-article:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+        .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
         .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
         .article-card:hover .article-image { transform: scale(1.05); }
-        .article-title a { color: var(--text-heading); text-decoration: none; }
-        .article-card:hover .article-title a { color: var(--text-heading) !important; text-decoration: underline; }
-        .read-more { background: var(--text-heading); color: var(--card-bg) !important; font-weight: 600; font-size: 0.9rem; transition: var(--transition); }
-        .read-more:hover { background-color: color-mix(in srgb, var(--text-heading) 85%, white); transform: translateY(-2px); }
-        body.dark-mode .read-more:hover { background-color: color-mix(in srgb, var(--text-heading) 85%, black); }
-
-        /* --- BOOKMARK BUTTON --- */
-        .bookmark-btn { background: transparent; border: none; padding: 0.25rem; color: var(--text-muted); cursor: pointer; transition: var(--transition); font-size: 1.5rem; line-height: 1; }
-        .bookmark-btn:hover { color: var(--text-heading); }
-        .bookmark-btn.active { color: var(--accent-yellow); transform: scale(1.2); }
-        .article-card .bookmark-btn { font-size: 1.25rem; }
-
-        /* --- FOOTER --- */
-        .footer { background: var(--navy-blue); color: #E5E7EB; margin-top: auto; padding: 4rem 0 2rem; font-size: 0.9rem; }
-        .footer h5 { color: white; font-weight: 600; }
-        .footer a { color: #D1D5DB; transition: var(--transition); text-decoration: none; }
-        .footer a:hover { color: var(--accent-yellow); }
-        .footer .social-links a:hover { transform: translateY(-2px) scale(1.1); }
-        .footer .newsletter-section p { color: white; }
-        .footer .copyright { text-align: center; padding-top: 2.5rem; margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.85rem; color: #9CA3AF; }
-        .footer .form-control { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white; }
-        .footer .form-control::placeholder { color: rgba(255,255,255,0.6); }
-        .footer .form-control:focus { background: rgba(255,255,255,0.2); box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.4); }
-        .footer .btn-subscribe { background-color: var(--accent-yellow); border-color: var(--accent-yellow); color: var(--navy-blue); font-weight: 600; }
-
-        /* --- COMMENT SECTION --- */
-        .comment-thread { position: relative; }
+        .article-body { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
+        .article-title { font-weight: 600; line-height: 1.4; margin-bottom: 0.6rem; font-size:1.15rem; }
+        .article-title a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
+        .article-card:hover .article-title a { color: var(--primary-color) !important; }
+        .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
+        .meta-item { display: flex; align-items: center; font-size: 0.8rem; color: var(--text-muted-color); }
+        .meta-item i { font-size: 0.9rem; margin-right: 0.4rem; color: var(--secondary-color); }
+        .article-description { color: var(--text-muted-color); margin-bottom: 1.25rem; font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.6rem 0; border-radius: var(--border-radius-md); font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
+        .read-more:hover { background: var(--primary-dark); transform: translateY(-2px); color: white !important; box-shadow: var(--shadow-md); }
+        body.dark-mode .read-more { color: var(--card-bg) !important; }
+        
+        /* Pagination */
+        .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--text-muted-color); background-color: var(--card-bg); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; margin: 0 0.2rem;}
+        .page-item .page-link:hover { border-color: var(--primary-light); color: var(--primary-color); }
+        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
+        .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
+        body.dark-mode .page-item.disabled .page-link { background-color: var(--card-bg); }
+        .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
+        
+        /* Footer */
+        footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
+        .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
+        .footer-links { display: flex; flex-direction: column; gap: 0.8rem; }
+        .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; }
+        .footer-links a:hover { color: var(--footer-link-hover); padding-left: 5px; }
+        .social-links { display: flex; gap: 1rem; margin-top: 0.5rem; }
+        .social-links a { color: var(--footer-text); font-size: 1.2rem; transition: all 0.2s ease; }
+        .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
+        .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); }
+        body.dark-mode .copyright { border-top-color: var(--card-border-color); color: var(--footer-text); }
+        
+        /* Modal & FAB */
+        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
+        .add-article-btn { width: 60px; height: 60px; border-radius: 50%; background: var(--primary-color); color: white; border: none; box-shadow: var(--shadow-lg); display: flex; align-items: center; justify-content: center; font-size: 26px; cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        .add-article-btn:hover { transform: translateY(-4px) scale(1.05); background: var(--primary-light); }
+        .add-article-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); align-items: center; justify-content: center; }
+        .modal-content { border-radius: var(--border-radius-lg); border: none; }
+        .close-modal { position: absolute; top: 12px; right: 12px; font-size: 20px; color: var(--text-muted-color); background: none; border: none; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .close-modal:hover { background: var(--light-bg); color: var(--text-color); }
+        .modal-form-control { border-radius: var(--border-radius-md); border: 1px solid var(--card-border-color); font-size: 0.95rem; transition: all 0.2s ease; background-color: var(--light-bg); }
+        .modal-form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb),0.2); outline: none; background-color: var(--card-bg); }
+        .btn-primary-modal { background-color: var(--primary-color); border-color: var(--primary-color); color:white; padding: 0.7rem 1.4rem; font-weight:600; border-radius: var(--border-radius-md); }
+        .btn-primary-modal:hover { background-color: var(--primary-dark); border-color: var(--primary-dark); }
+        
+        /* Auth pages */
+        .auth-container { max-width: 450px; margin: 3rem auto; padding: 2.5rem; }
+        
+        /* --- NEW Comment Section Styles (Replaces old comment CSS) --- */
+        .comment-thread { position: relative; animation: fadeIn 0.4s ease; }
         .comment-container { display: flex; gap: 1rem; align-items: flex-start; }
         #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
         .comment-replies { margin-top: 1rem; margin-left: calc(45px + 1rem); padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); }
         .comment-replies > .comment-thread + .comment-thread { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--card-border-color); }
-        .comment-avatar { width: 45px; height: 45px; border-radius:50%; background: var(--text-muted); color:white; display:flex; align-items:center; justify-content:center; font-weight:600; flex-shrink:0;}
+        .comment-avatar { width: 45px; height: 45px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
         .comment-replies .comment-avatar { width: 40px; height: 40px; }
-        .comment-actions button:hover { color: var(--action-color); background-color: color-mix(in srgb, var(--action-color) 10%, transparent); }
-        .reaction-pill { background-color: color-mix(in srgb, var(--action-color) 8%, transparent); }
-        .reaction-pill.user-reacted { background-color: var(--action-color); color: var(--card-bg); }
+        body.dark-mode .comment-avatar { background: var(--primary-dark); }
+        .comment-body { flex-grow: 1; }
+        .comment-author { font-weight: 600; color: var(--text-color); }
+        .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
+        .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
+        .comment-content { word-wrap: break-word; }
+        .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+        .comment-actions button { background: none; border: none; color: var(--text-muted-color); padding: 0.25rem 0.5rem; border-radius: var(--border-radius-md); font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 0.3rem; transition: all 0.2s ease; }
+        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
+        body.dark-mode .comment-actions button:hover { color: var(--primary-light); }
+        .react-btn { position: relative; }
+        .reaction-box { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background-color: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: 50px; padding: 4px 8px; box-shadow: var(--shadow-md); z-index: 10; white-space: nowrap; animation: fadeInUp 0.2s ease-out; }
+        .reaction-box.show { display: flex; gap: 5px; }
+        .reaction-emoji { font-size: 1.4rem; cursor: pointer; transition: transform 0.15s cubic-bezier(0.215, 0.610, 0.355, 1); padding: 2px; }
+        .reaction-emoji:hover { transform: scale(1.25); }
+        .reaction-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .reaction-pill { display: flex; align-items: center; background-color: rgba(var(--primary-color-rgb), 0.08); border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; font-weight: 500; cursor: default; transition: all 0.2s ease; }
+        .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        body.dark-mode .reaction-pill.user-reacted { background-color: var(--primary-light); color: var(--footer-bg); border-color: var(--primary-color); }
+        .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
+        .reply-form-container { display: none; padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
+        body.dark-mode .reply-form-container { background-color: var(--footer-bg); }
+        /* --- END NEW Comment Section Styles --- */
+
+        /* Profile Page */
+        .profile-card .profile-avatar { background-color: var(--primary-color); }
+        body.dark-mode .profile-card .profile-avatar { background-color: var(--primary-dark); }
+        .profile-tabs .nav-link { color: var(--text-muted-color); font-weight: 600; }
+        .profile-tabs .nav-link.active { color: var(--primary-color); border-bottom: 3px solid var(--primary-color); background: transparent; }
+        body.dark-mode .profile-tabs .nav-link.active { color: var(--primary-light); border-bottom-color: var(--primary-light); }
         
-        /* --- MOBILE RESPONSIVENESS --- */
+        /* Bookmark Button */
+        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
+        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
+        .bookmark-btn:hover { color: var(--secondary-light); }
+        .article-card .bookmark-btn { font-size: 1.3rem; }
+        
+        /* --- RESPONSIVE HEADER LAYOUT --- */
         @media (max-width: 991.98px) {
-            body { padding-top: 80px; }
-            .header-main { height: auto; padding: 0.75rem 0; }
-            .header-main .container > .d-flex { flex-wrap: wrap; }
-            .navbar-brand-custom { width: 50%; }
-            .search-form.d-lg-block { display: none !important; } .search-form.d-lg-none { display: block !important; order: 3; width: 100%; margin-top: 0.75rem; }
-            .header-controls { width: 50%; justify-content: flex-end; }
-            .category-nav { top: 80px; }
-            .categories-wrapper { flex-direction: column; gap: 1rem; padding: 0.75rem; }
-            .category-links-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
-            .date-filter-form { width: 100%; max-width: 320px; }
+            body { padding-top: 180px; }
+            .navbar-main { padding: 1rem 0 0.5rem; height: auto; }
+            .navbar-content-wrapper { position: static; flex-direction: column; align-items: flex-start; gap: 0.75rem; height: auto; }
+            .navbar-brand-custom { margin-bottom: 0.5rem; }
+            .search-form-container { position: static; transform: none; width: 100%; order: 3; }
+            .header-controls { position: absolute; top: 1.2rem; right: 1rem; }
+            .category-nav { top: 130px; }
+            .categories-wrapper { justify-content: flex-start; }
+            #dateFilterForm { width: 100%; margin-left: 0 !important; margin-top: 0.5rem; }
         }
+        @media (max-width: 767.98px) { body { padding-top: 170px; } .category-nav { top: 120px; } .featured-article .row { flex-direction: column; } .featured-image { margin-bottom: 1rem; height: 250px; } }
+        @media (max-width: 575.98px) { .navbar-brand-custom { font-size: 1.8rem;} .header-controls { gap: 0.3rem; } .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; } .dark-mode-toggle { font-size: 1rem; } .comment-replies { margin-left: 1rem; padding-left: 1rem; } }
+        
+        /* Animations */
+        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(25px); } to { opacity: 1; transform: translateY(0); } }
     </style>
     {% block head_extra %}{% endblock %}    
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7"></script>
     <script>
-      window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-CV5LWJ7NQ7');
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-CV5LWJ7NQ7');
     </script>
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}">
     <div id="alert-placeholder">
         {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}{% for category, message in messages %}
+            {% if messages %}
+                {% for category, message in messages %}
                 <div class="alert alert-{{ category }} alert-dismissible fade show alert-top" role="alert">
-                    <span>{{ message }}</span><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    <span>{{ message }}</span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
-            {% endfor %}{% endif %}
+                {% endfor %}
+            {% endif %}
         {% endwith %}
     </div>
 
-    <header class="header-main fixed-top">
-        <nav class="container h-100">
-            <div class="d-flex justify-content-between align-items-center h-100">
-                <a class="navbar-brand-custom" href="{{ url_for('index') }}"><i class="fas fa-bolt-lightning brand-icon"></i><span>Briefly</span></a>
-                <form action="{{ url_for('search_results') }}" method="GET" class="search-form position-relative d-none d-lg-block">
-                    <input type="search" name="query" class="form-control search-input" placeholder="Search news and articles..." value="{{ request.args.get('query', '') }}">
-                    <i class="fas fa-search position-absolute top-50 translate-middle-y search-icon"></i>
-                </form>
-                <div class="header-controls d-flex align-items-center gap-2">
-                    <button class="btn header-btn dark-mode-toggle rounded-circle p-0" style="width: 40px; height: 40px;" aria-label="Toggle dark mode" title="Toggle Dark Mode"><i class="fas fa-moon"></i></button>
+    <nav class="navbar navbar-main navbar-expand-lg fixed-top">
+        <div class="container">
+            <div class="navbar-content-wrapper">
+                <a class="navbar-brand-custom animate-fade-in" href="{{ url_for('index') }}">
+                    <i class="fas fa-bolt-lightning brand-icon"></i>
+                    <span>Briefly</span>
+                </a>
+                <div class="search-form-container">
+                    <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
+                        <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
+                        <i class="fas fa-search search-icon"></i>
+                        <button type="submit" class="d-none">Search</button>
+                    </form>
+                </div>
+                <div class="header-controls">
+                    <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
                     {% if session.user_id %}
                     <div class="dropdown">
-                        <button class="btn header-btn dropdown-toggle rounded-pill" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="fas fa-user-circle"></i><span class="d-none d-md-inline ms-2">Hi, {{ session.user_name|truncate(15) }}!</span></button>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card fa-fw me-2"></i>Profile</a></li>
+                        <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
+                            <i class="fas fa-user-circle"></i> <span class="d-none d-md-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt fa-fw me-2"></i>Logout</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
                         </ul>
                     </div>
                     {% else %}
-                    <a href="{{ url_for('login') }}" class="btn header-btn rounded-pill"><i class="fas fa-user"></i><span class="d-none d-sm-inline ms-2">Login</span></a>
+                    <a href="{{ url_for('login') }}" class="header-btn" title="Login/Register">
+                        <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
+                    </a>
                     {% endif %}
                 </div>
             </div>
-            <form action="{{ url_for('search_results') }}" method="GET" class="search-form position-relative d-lg-none">
-                <input type="search" name="query" class="form-control search-input" placeholder="Search..." value="{{ request.args.get('query', '') }}">
-                <i class="fas fa-search position-absolute top-50 translate-middle-y search-icon"></i>
-            </form>
-        </nav>
-    </header>
+        </div>
+    </nav>
 
-    <nav class="category-nav fixed-top">
+    <nav class="navbar navbar-expand-lg category-nav">
         <div class="container">
             <div class="categories-wrapper">
                 <div class="category-links-container">
-                    {% for cat_item in categories %}
-                        <a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                            {% if cat_item == 'All Articles' %}<i class="fas fa-globe-americas fa-fw"></i>{% elif cat_item == 'Community Hub' %}<i class="fas fa-users fa-fw"></i>{% endif %}
-                            <span>{{ cat_item }}</span>
-                        </a>
-                    {% endfor %}
+                {% for cat_item in categories %}
+                    {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
+                    {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
+                        {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
+                    {% endif %}
+                    <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
+                        {{ cat_item }}
+                    </a>
+                {% endfor %}
                 </div>
-                <form id="dateFilterForm" class="date-filter-form">
+                
+                <form id="dateFilterForm" class="ms-2 ms-md-3" style="min-width: 180px;">
+                    <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
                     <div class="input-group input-group-sm">
-                        <input type="date" id="articleDateFilter" class="form-control" value="{{ current_filter_date | default('', true) }}" title="Filter 'All Articles' by date">
-                        <button class="btn btn-outline-secondary" type="submit" title="Apply Date Filter"><i class="fas fa-check"></i></button>
-                        {% if current_filter_date %}<button class="btn btn-outline-danger" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>{% endif %}
+                        <input type="date" id="articleDateFilter" class="form-control form-control-sm" 
+                               value="{{ current_filter_date | default('', true) }}" 
+                               aria-label="Filter by date for All Articles"
+                               title="Filter 'All Articles' by date">
+                        <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
+                        {% if current_filter_date %}
+                        <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
+                        {% endif %}
                     </div>
                 </form>
             </div>
         </div>
     </nav>
 
-    <main class="container main-content my-4 my-md-5">
+    <main class="container main-content my-4">
         {% block content %}{% endblock %}
     </main>
 
     {% if session.user_id %}
     <div class="admin-controls">
-        <button class="btn p-0 add-article-btn rounded-circle" data-bs-toggle="modal" data-bs-target="#addArticleModal" title="Post a New Article" style="width: 60px; height: 60px; background-color: var(--text-heading); color:var(--card-bg); box-shadow: var(--shadow-lg);"><i class="fas fa-plus fs-4"></i></button>
+        <button class="add-article-btn" id="addArticleBtn" title="Post a New Article">
+            <i class="fas fa-plus"></i>
+        </button>
     </div>
-    <div class="modal fade" id="addArticleModal" tabindex="-1" aria-labelledby="addArticleModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="addArticleModalLabel">Post New Article</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="add-article-modal" id="addArticleModal">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content p-4">
+                <div class="modal-header border-0 pb-0">
+                    <h4 class="modal-title">Post New Article</h4>
+                    <button type="button" class="btn-close" id="closeModalBtn" aria-label="Close"></button>
                 </div>
-                <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
                 <div class="modal-body">
-                        <div class="mb-3"><label for="articleTitle" class="form-label">Title</label><input type="text" id="articleTitle" name="title" class="form-control" required></div>
-                        <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control" rows="3" required></textarea></div>
-                        <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control" value="Community Post" required></div>
-                        <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control"></div>
-                        <div class="mb-3"><label for="articleContent" class="form-label">Full Content</label><textarea id="articleContent" name="content" class="form-control" rows="7" required></textarea></div>
+                    <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
+                        <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control modal-form-control" required></div>
+                        <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control modal-form-control" rows="3" required></textarea></div>
+                        <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control modal-form-control" value="Community Post" required></div>
+                        <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control modal-form-control"></div>
+                        <div class="mb-3"><label for="articleContent" class="form-label">Full Article Content</label><textarea id="articleContent" name="content" class="form-control modal-form-control" rows="7" required></textarea></div>
+                        <div class="d-flex justify-content-end gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" id="cancelArticleBtn">Cancel</button><button type="submit" class="btn btn-primary-modal">Post Article</button></div>
+                    </form>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Post Article</button>
-                </div>
-                </form>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <footer class="footer">
+    <footer class="mt-auto">
         <div class="container">
-            <div class="row gy-4 align-items-center">
-                <div class="footer-brand col-lg-4 col-md-12 text-center text-lg-start">
-                    <a class="navbar-brand-custom mb-2 d-inline-flex" href="{{ url_for('index') }}"><i class="fas fa-bolt-lightning brand-icon me-2"></i><span>Briefly</span></a>
-                    <p class="ps-1" style="color: white !important;">Clarity in a Flash. India's News, Simplified by AI.</p>
+            <div class="footer-content row">
+                <div class="footer-section col-lg-4 col-md-6 mb-4">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-bolt-lightning footer-brand-icon me-2" style="color:var(--secondary-light);"></i>
+                        <span class="h5 mb-0" style="color:white; font-family: 'Poppins', sans-serif;">Briefly</span>
+                    </div>
+                    <p class="small text-muted">Your premier source for AI summarized, India-centric news.</p>
+                    <div class="social-links">
+                        <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
+                    </div>
                 </div>
-                <div class="footer-section col-lg-2 col-md-4 col-6">
+                <div class="footer-section col-lg-2 col-md-6 mb-4">
                     <h5>Quick Links</h5>
-                    <ul class="list-unstyled footer-links">
-                        <li><a href="{{ url_for('index') }}">Home</a></li>
-                        <li><a href="{{ url_for('about') }}">About Us</a></li>
-                        <li><a href="{{ url_for('contact') }}">Contact</a></li>
-                        <li><a href="{{ url_for('privacy') }}">Privacy Policy</a></li>
-                    </ul>
+                    <div class="footer-links">
+                        <a href="{{ url_for('index') }}">Home</a>
+                        <a href="{{ url_for('about') }}">About Us</a>
+                        <a href="{{ url_for('contact') }}">Contact</a>
+                        <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+                        {% if session.user_id %}<a href="{{ url_for('profile') }}">My Profile</a>{% endif %}
+                    </div>
                 </div>
-                <div class="footer-section col-lg-2 col-md-4 col-6">
+                <div class="footer-section col-lg-2 col-md-6 mb-4">
                     <h5>Categories</h5>
-                    <ul class="list-unstyled footer-links">
-                        {% for cat_item in categories %}<li><a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a></li>{% endfor %}
-                    </ul>
+                    <div class="footer-links">
+                        {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a>{% endfor %}
+                    </div>
                 </div>
-                <div class="footer-section newsletter-section col-lg-4 col-md-4">
+                <div class="footer-section col-lg-4 col-md-6 mb-4">
                     <h5>Newsletter</h5>
-                    <p>Subscribe for weekly updates!</p>
+                    <p class="small text-muted">Subscribe for weekly updates!</p>
                     <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">
                         <div class="input-group">
-                            <input type="email" name="email" class="form-control" placeholder="Your Email" aria-label="Your Email" required>
-                            <button class="btn btn-subscribe" type="submit">Subscribe</button>
+                            <input type="email" name="email" class="form-control form-control-sm" placeholder="Your Email" aria-label="Your Email" required style="background: #374151; border-color: #4B5563; color: white;">
+                            <button class="btn btn-sm btn-primary-modal" type="submit">Subscribe</button>
                         </div>
                     </form>
                 </div>
             </div>
-            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved.</div>
+            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
         </div>
     </footer>
 
@@ -1384,25 +1451,44 @@ BASE_HTML_TEMPLATE = """
             document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
         }
         if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
-        let storedTheme = localStorage.getItem('darkMode') || document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
+        let storedTheme = localStorage.getItem('darkMode');
+        if (!storedTheme) { const cookieTheme = document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1]; if (cookieTheme) storedTheme = cookieTheme; }
         if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
         
+        const addArticleBtn = document.getElementById('addArticleBtn');
+        const addArticleModalEl = document.getElementById('addArticleModal');
+        if (addArticleBtn && addArticleModalEl) {
+            const addArticleModal = new bootstrap.Modal(addArticleModalEl);
+            addArticleBtn.addEventListener('click', () => addArticleModal.show());
+            document.getElementById('closeModalBtn').addEventListener('click', () => addArticleModal.hide());
+            document.getElementById('cancelArticleBtn').addEventListener('click', () => addArticleModal.hide());
+            addArticleModalEl.addEventListener('hidden.bs.modal', () => {
+                const form = document.getElementById('addArticleForm');
+                if (form) form.reset();
+            });
+        }
+        
         const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
-        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 5000); });
+        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
 
         const dateFilterForm = document.getElementById('dateFilterForm');
         if (dateFilterForm) {
             dateFilterForm.addEventListener('submit', function(event) {
                 event.preventDefault();
                 const dateInput = document.getElementById('articleDateFilter');
-                if (!dateInput.value) return;
+                const selectedDate = dateInput.value;
                 let targetUrl = new URL("{{ url_for('index', category_name='All Articles') }}", window.location.origin);
-                targetUrl.searchParams.set('filter_date', dateInput.value);
+                if (selectedDate) {
+                    targetUrl.searchParams.set('filter_date', selectedDate);
+                }
                 window.location.href = targetUrl.toString();
             });
+
             const clearDateFilterBtn = document.getElementById('clearDateFilter');
             if (clearDateFilterBtn) {
-                clearDateFilterBtn.addEventListener('click', () => { window.location.href = "{{ url_for('index', category_name='All Articles') }}"; });
+                clearDateFilterBtn.addEventListener('click', function() {
+                    window.location.href = "{{ url_for('index', category_name='All Articles') }}";
+                });
             }
         }
     });
@@ -2005,122 +2091,22 @@ PROFILE_HTML_TEMPLATE = """
 {% endblock %}
 """
 
-# --- File: Rev14.py ---
-
 ABOUT_US_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}About Us - Briefly{% endblock %}
-{% block content %}
-<div class="article-card animate-fade-in p-4 p-md-5">
-    <div class="static-content-wrapper">
-        <h1 class="text-center mb-4">About Briefly</h1>
-        <p class="lead text-center mb-5">In an age of information overload, clarity is power. At Briefly, we're dedicated to cut through the noise, offering you the most relevant news from India and around the world, powered by intelligent summarization.</p>
-        
-        <h2>Our Mission</h2>
-        <p>Our mission is simple: to keep you informed, not overwhelmed. We believe that staying up-to-date with current events shouldn't be a chore. We harness the capabilities of state-of-the-art Artificial Intelligence to analyze and condense lengthy news articles into concise summaries and digestible key takeaways. This saves you valuable time while ensuring you never miss the stories that matter.</p>
-        
-        <h2>The Community Hub</h2>
-        <p>Briefly is more than just a news aggregator; it's a platform for dialogue and diverse perspectives. Our Community Hub empowers users like you to become part of the conversation. Here, you can publish your own articles, share unique insights, and engage in thoughtful discussions with a community of inquisitive minds. We are committed to fostering a respectful and enriching environment for all members.</p>
-        
-        <h2>Our Technology</h2>
-        <p>At the core of Briefly is a sophisticated Natural Language Processing (NLP) engine. We utilize advanced AI models to read, understand, and summarize content from a multitude of trusted sources. The system is meticulously trained to identify the crucial elements of any news story—the who, what, where, when, and why—and present them in a neutral, easy-to-read format. It’s the smarter way to consume news.</p>
-    </div>
-</div>
-{% endblock %}
+{% block title %}About Us - {% endblock %}
+{% block content %}<div class="static-content-wrapper animate-fade-in"><h1 class="mb-4">About </h1><p class="lead"> is your premier destination for the latest news from India and around the world, delivered in a concise and easy-to-digest format. We leverage the power of cutting-edge AI to summarize complex news articles into key takeaways, saving you time while keeping you informed.</p><h2 class="mt-5 mb-3">Our Mission</h2><p>In a world of information overload, our mission is to provide clarity and efficiency. We believe that everyone deserves access to accurate, unbiased news without spending hours sifting through lengthy articles.  cuts through the noise, offering insightful summaries that matter.</p><h2 class="mt-5 mb-3">Community Hub</h2><p>Beyond AI-driven news,  is a platform for discussion and community engagement. Our Community Hub allows users to post their own articles, share perspectives, and engage in meaningful conversations about the topics that shape our world. We are committed to fostering a respectful and intelligent environment for all our members.</p><h2 class="mt-5 mb-3">Our Technology</h2><p>We use state-of-the-art Natural Language Processing (NLP) models to analyze and summarize news content from trusted sources. Our system is designed to identify the most crucial points of an article, presenting them as a quick summary and a list of key takeaways.</p></div>{% endblock %}
 """
-
-# --- File: Rev14.py ---
 
 CONTACT_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}Contact Us - Briefly{% endblock %}
-{% block content %}
-<div class="article-card animate-fade-in p-4 p-md-5">
-    <div class="static-content-wrapper">
-        <h1 class="text-center mb-4">Get In Touch</h1>
-        <p class="lead text-center mb-5">We value our readers and community. Whether you have feedback, a news tip, a question, or a business inquiry, we'd love to hear from you.</p>
-
-        <div class="row text-center gy-4">
-            <div class="col-md-6">
-                <div class="p-4 h-100" style="background-color: var(--light-bg); border-radius: var(--border-radius-md);">
-                    <i class="fas fa-envelope-open-text fa-2x text-primary mb-3"></i>
-                    <h4 class='h5'>General & Support Inquiries</h4>
-                    <p class="text-muted small">For feedback, help, or questions about our platform.</p>
-                    <a href="mailto:vbansal639@gmail.com" class="fw-bold">vbansal639@gmail.com</a>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="p-4 h-100" style="background-color: var(--light-bg); border-radius: var(--border-radius-md);">
-                    <i class="fas fa-handshake fa-2x text-primary mb-3"></i>
-                    <h4 class='h5'>Partnerships & Media</h4>
-                    <p class="text-muted small">For business development, collaborations, or media inquiries.</p>
-                    <a href="mailto:vbansal639@gmail.com" class="fw-bold">vbansal639@gmail.com</a>
-                </div>
-            </div>
-        </div>
-
-        <div class="text-center mt-5">
-            <h3 class="h4">Follow Us</h3>
-            <p class="text-muted">Stay connected with Briefly on social media.</p>
-            <div class="social-links fs-2 justify-content-center">
-                <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a>
-                <a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a>
-                <a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
+{% block title %}Contact Us - {% endblock %}
+{% block content %}<div class="static-content-wrapper animate-fade-in"><h1 class="mb-4">Contact Us</h1><p class="lead">We'd love to hear from you! Whether you have a question, feedback, or a news tip, feel free to reach out.</p><div class="row mt-5"><div class="col-md-6"><h2 class="h4">General Inquiries</h2><p>For general questions, feedback, or support, please email us at:</p><p><i class="fas fa-envelope me-2"></i><a href="mailto:vbansal639@gmail.com">vbansal639@gmail.com</a></p></div><div class="col-md-6"><h2 class="h4">Partnerships & Media</h2><p>For partnership opportunities or media inquiries, please contact:</p><p><i class="fas fa-envelope me-2"></i><a href="mailto:vbansal639@gmail.com">vbansal639@gmail.com</a></p></div></div><div class="mt-5"><h2 class="h4">Follow Us</h2><p>Stay connected with us on social media:</p><div class="social-links fs-4"><a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a></div></div></div>{% endblock %}
 """
-
-# --- File: Rev14.py ---
 
 PRIVACY_POLICY_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}Privacy Policy - Briefly{% endblock %}
-{% block content %}
-<div class="article-card animate-fade-in p-4 p-md-5">
-    <div class="static-content-wrapper">
-        <h1 class="text-center mb-2">Privacy Policy</h1>
-        <p class="text-center text-muted">Last Updated: June 7, 2025</p>
-        
-        <p class="mt-4">BrieflyAI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our website and services (the "Service"). Please read this policy carefully. If you do not agree with the terms of this privacy policy, please do not access the site.</p>
-
-        <h2>1. Information We Collect</h2>
-        <p>We may collect information about you in a variety of ways. The information we may collect on the Service includes:</p>
-        <ul>
-            <li><strong>Personal Data:</strong> Personally identifiable information, such as your name, username, and email address, that you voluntarily give to us when you register with the Service or when you choose to participate in various activities related to the Service, such as posting comments, articles, or subscribing to newsletters.</li>
-            <li><strong>Derivative Data:</strong> Information our servers automatically collect when you access the Service, such as your IP address, your browser type, your operating system, your access times, and the pages you have viewed directly before and after accessing the Service.</li>
-            <li><strong>User-Generated Content:</strong> We collect the content you submit to the Service, including articles you post, comments, and reactions. This content is intended to be public.</li>
-        </ul>
-
-        <h2>2. How We Use Your Information</h2>
-        <p>Having accurate information about you permits us to provide you with a smooth, efficient, and customized experience. Specifically, we may use information collected about you via the Service to:</p>
-        <ul>
-            <li>Create and manage your account.</li>
-            <li>Personalize your user experience, such as showing your bookmarked articles.</li>
-            <li>Email you regarding your account or our newsletter.</li>
-            <li>Enable user-to-user communications and display your public comments and posts.</li>
-            <li>Monitor and analyze usage and trends to improve your experience with the Service.</li>
-            <li>Protect the security and integrity of our platform.</li>
-        </ul>
-
-        <h2>3. Disclosure of Your Information</h2>
-        <p>We do not sell or rent your personal information. We may share information we have collected about you in certain situations:</p>
-        <ul>
-            <li><strong>By Law or to Protect Rights:</strong> If we believe the release of information about you is necessary to respond to legal process, to investigate or remedy potential violations of our policies, or to protect the rights, property, and safety of others, we may share your information as permitted or required by any applicable law, rule, or regulation.</li>
-            <li><strong>Publicly-Visible Information:</strong> Your username, profile information, and any content you post to the Service (articles, comments) are publicly visible to all users of the Service.</li>
-            <li><strong>Third-Party Service Providers:</strong> We may share your information with third parties that perform services for us or on our behalf, including data analysis, hosting services, and customer service.</li>
-        </ul>
-
-        <h2>4. Data Security</h2>
-        <p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable, and no method of data transmission can be guaranteed against any interception or other type of misuse.</p>
-
-        <h2>5. Your Rights & Choices</h2>
-        <p>You have rights regarding your personal information, including the right to access, correct, or request the deletion of your personal data. You may review and change your profile information at any time by logging into your account. To terminate your account, please contact us at the email address provided in our Contact section.</p>
-    </div>
-</div>
-{% endblock %}
+{% block title %}Privacy Policy - {% endblock %}
+{% block content %}<div class="static-content-wrapper animate-fade-in"><h1 class="mb-4">Privacy Policy</h1><p class="text-muted">Last updated: May 31, 2025</p><p>BrieflyAI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website.</p><h2 class="mt-5 mb-3">1. Information We Collect</h2><p>We may collect personal information that you voluntarily provide to us when you register on the website, post articles or comments, bookmark articles, or subscribe to our newsletter. This information may include your name, username, email address, and your activities on our platform such as articles posted and bookmarked.</p><h2 class="mt-5 mb-3">2. How We Use Your Information</h2><p>We use the information we collect to:</p><ul><li>Create and manage your account.</li><li>Operate and maintain the website, including your profile page.</li><li>Display your posted and bookmarked articles as part of your profile.</li><li>Send you newsletters or promotional materials, if you have opted in.</li><li>Respond to your comments and inquiries.</li><li>Improve our website and services.</li></ul><h2 class="mt-5 mb-3">3. Disclosure of Your Information</h2><p>Your username and posted articles are publicly visible. Your bookmarked articles are visible on your profile page to you when logged in. We do not sell, trade, or otherwise transfer your personally identifiable information like your email address to outside parties without your consent, except to trusted third parties who assist us in operating our website, so long as those parties agree to keep this information confidential.</p><h2 class="mt-5 mb-3">4. Security of Your Information</h2><p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.</p><h2 class="mt-5 mb-3">5. Your Choices</h2><p>You can review and change your profile information by logging into your account. You may also request deletion of your account and associated data by contacting us.</p><h2 class="mt-5 mb-3">6. Changes to This Privacy Policy</h2><p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes.</p></div>{% endblock %}
 """
 
 ERROR_404_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}404 Not Found{% endblock %}{% block content %}<div class='text-center my-5 p-4 article-card animate-fade-in mx-auto' style='max-width: 600px;'><h1><i class='fas fa-exclamation-triangle text-warning me-2'></i>404 - Page Not Found</h1><p class='lead'>Sorry, the page you are looking for does not exist or has been moved.</p><a href='{{url_for("index")}}' class='btn btn-primary-modal mt-2'>Go to Homepage</a></div>{% endblock %}"""
