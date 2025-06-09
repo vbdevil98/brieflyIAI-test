@@ -1704,29 +1704,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
 ARTICLE_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}{{ article.title|truncate(50) if article else "Article" }} - BrieflyAI{% endblock %}
+{% block title %}{{ article.title|truncate(50) if article else "Article" }} - Briefly{% endblock %}
 {% block head_extra %}
 <style>
-    .article-full-content-wrapper { background-color: var(--white-bg); padding: 2rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.07); margin-bottom: 2rem; margin-top: 1rem; }
-    .article-full-content-wrapper .main-article-image { width: 100%; max-height: 480px; object-fit: cover; border-radius: 8px; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .article-title-main {font-weight: 700; color: var(--primary-color); line-height:1.3; font-family: 'Poppins', sans-serif;} /* For article detail page */
-    .article-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .article-full-content-wrapper { background-color: var(--card-bg); padding: 2rem; border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); margin-bottom: 2rem; margin-top: 1rem; }
+    .article-full-content-wrapper .main-article-image { width: 100%; max-height: 480px; object-fit: cover; border-radius: var(--border-radius-md); margin-bottom: 1.5rem; box-shadow: var(--shadow-md); }
+    .article-title-main {font-weight: 700; color: var(--text-color); line-height:1.3; font-family: 'Poppins', sans-serif;}
     .article-meta-detailed { font-size: 0.85rem; color: var(--text-muted-color); margin-bottom: 1.5rem; display:flex; flex-wrap:wrap; gap: 0.5rem 1.2rem; align-items:center; border-bottom: 1px solid var(--card-border-color); padding-bottom:1rem; }
     .article-meta-detailed .meta-item i { color: var(--secondary-color); margin-right: 0.4rem; font-size:0.95rem; }
-    .summary-box { background-color: rgba(var(--primary-color-rgb), 0.04); padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border: 1px solid rgba(var(--primary-color-rgb), 0.1); }
+    .summary-box { background-color: rgba(var(--primary-color-rgb), 0.05); padding: 1.5rem; border-radius: var(--border-radius-md); margin: 1.5rem 0; border: 1px solid rgba(var(--primary-color-rgb), 0.1); }
     .summary-box h5 { color: var(--primary-color); font-weight: 600; margin-bottom: 0.75rem; font-size:1.1rem; }
-    .summary-box p {font-size:0.95rem; line-height:1.7; color: var(--text-color);}
-    body.dark-mode .summary-box p { color: var(--text-muted-color); }
-    .takeaways-box { margin: 1.5rem 0; padding: 1.5rem 1.5rem 1.5rem 1.8rem; border-left: 4px solid var(--secondary-color); background-color: rgba(var(--primary-color-rgb), 0.04); border-radius: 0 8px 8px 0;}
+    .takeaways-box { margin: 1.5rem 0; padding: 1.5rem 1.5rem 1.5rem 1.8rem; border-left: 4px solid var(--secondary-color); background-color: rgba(var(--secondary-color-rgb), 0.05); border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;}
     .takeaways-box h5 { color: var(--primary-color); font-weight: 600; margin-bottom: 0.75rem; font-size:1.1rem; }
-    .takeaways-box ul { padding-left: 1.2rem; margin-bottom:0; color: var(--text-color); }
-    body.dark-mode .takeaways-box ul { color: var(--text-muted-color); }
-    .takeaways-box ul li { margin-bottom: 0.6rem; font-size:0.95rem; line-height:1.6; }
     .loader-container { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; padding: 2rem; font-size: 1rem; color: var(--text-muted-color); }
     .loader { border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
-    .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; color: var(--text-color); } 
-    body.dark-mode .content-text { color: var(--text-muted-color); } 
+    .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    body.dark-mode .summary-box { background-color: rgba(var(--primary-color-rgb), 0.1); border-color: rgba(var(--primary-color-rgb), 0.2); }
+    body.dark-mode .takeaways-box { background-color: rgba(var(--secondary-color-rgb), 0.1); border-left-color: var(--secondary-light); }
 </style>
 {% endblock %}
 {% block content %}
@@ -1762,32 +1757,31 @@ ARTICLE_HTML_TEMPLATE = """
     <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary in 5 to 6 seconds...</div></div>
 
     <div id="articleAnalysisContainer">
-    {% if is_community_article %}
-        {% if article.groq_summary %}
+        {% if is_community_article %}
+            {% if article.groq_summary %}
             <div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
-        {% elif not article.groq_summary and groq_client %} 
+            {% elif not article.groq_summary and groq_client %} 
             <div class="alert alert-secondary small p-3 mt-3">AI Summary not available for this community article.</div>
-        {% endif %}
-
-        {% if article.parsed_takeaways %}
+            {% endif %}
+            {% if article.parsed_takeaways %}
             <div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
                 <ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul>
             </div>
-        {% elif not article.groq_takeaways and groq_client %} 
+            {% elif not article.groq_takeaways and groq_client %} 
             <div class="alert alert-secondary small p-3 mt-3">AI Takeaways not available for this community article.</div>
+            {% endif %}
+            <hr class="my-4">
+            <h4 class="mb-3">Full Article Content</h4>
+            <div class="content-text">{{ article.full_text }}</div>
+        {% else %}
+            <div id="apiArticleContent"></div>
         {% endif %}
-        <hr class="my-4">
-        <h4 class="mb-3">Full Article Content</h4>
-        <div class="content-text">{{ article.full_text }}</div>
-    {% else %}
-        {# API Article content will be loaded here by JavaScript #}
-        <div id="apiArticleContent"></div>
-    {% endif %}
     </div>
 
     <section class="comment-section" id="comment-section">
         <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ comments|length }}</span>)</h3>
-        {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %}
+        
+        {% macro render_comment_with_replies(comment, comment_data, is_logged_in) %}
             <div class="comment-container" id="comment-{{ comment.id }}">
                 <div class="comment-card">
                     <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}">{{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }}</div>
@@ -1797,15 +1791,20 @@ ARTICLE_HTML_TEMPLATE = """
                             <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
                         </div>
                         <p class="comment-content mb-2">{{ comment.content }}</p>
+                        
                         {% if is_logged_in %}
+                        {% set current_comment_data = comment_data.get(comment.id, {}) %}
                         <div class="comment-actions">
-                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == 1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('likes', 0) }}</span></button>
-                            <button class="vote-btn {% if comment_data.get(comment.id, {}).get('user_vote') == -1 %}active{% endif %}" data-comment-id="{{ comment.id }}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-{{ comment.id }}">{{ comment_data.get(comment.id, {}).get('dislikes', 0) }}</span></button>
+                            {% for type, emoji in ALLOWED_REACTIONS.items() %}
+                            <button class="reaction-btn {% if current_comment_data.get('user_reaction') == type %}active{% endif %}" data-comment-id="{{ comment.id }}" data-reaction-type="{{ type }}" title="{{ type|capitalize }}">
+                                <span class="emoji">{{ emoji }}</span>
+                                <span class="reaction-count">{{ current_comment_data.get('reactions', {}).get(type, 0) }}</span>
+                            </button>
+                            {% endfor %}
                             <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
                         </div>
                         <div class="reply-form-container" id="reply-form-container-{{ comment.id }}">
                             <form class="reply-form mt-2">
-                                <input type="hidden" name="article_hash_id" value="{{ article_hash_id_for_js }}">
                                 <input type="hidden" name="parent_id" value="{{ comment.id }}">
                                 <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
                                 <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
@@ -1816,24 +1815,32 @@ ARTICLE_HTML_TEMPLATE = """
                     </div>
                 </div>
                 <div class="comment-replies" id="replies-of-{{ comment.id }}">
-                    {% for reply in comment.replies|sort(attribute='timestamp') %} {{ render_comment_with_replies(reply, comment_data, is_logged_in, article_hash_id_for_js) }} {% endfor %}
+                    {% for reply in comment.replies|sort(attribute='timestamp') %}
+                        {{ render_comment_with_replies(reply, comment_data, is_logged_in) }}
+                    {% endfor %}
                 </div>
             </div>
         {% endmacro %}
+        
         <div id="comments-list">
-            {% for comment in comments %} {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }}
-            {% else %}<p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>{% endfor %}
+            {% for comment in comments %}
+                {{ render_comment_with_replies(comment, comment_data, session.user_id) }}
+            {% else %}
+                <p id="no-comments-msg">No comments yet. Be the first to share your thoughts!</p>
+            {% endfor %}
         </div>
+        
         {% if session.user_id %}
             <div class="add-comment-form mt-4 pt-4 border-top">
                 <h5 class="mb-3">Leave a Comment</h5>
                 <form id="comment-form">
-                    <input type="hidden" name="article_hash_id" value="{{ article.article_hash_id if is_community_article else article.id }}">
                     <div class="mb-3"><textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea></div>
                     <button type="submit" class="btn btn-primary-modal">Post Comment</button>
                 </form>
             </div>
-        {% else %}<div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to join the discussion.</div>{% endif %}
+        {% else %}
+            <div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}">log in</a> to join the discussion.</div>
+        {% endif %}
     </section>
 </article>
 {% endif %}
@@ -1845,7 +1852,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const isCommunityArticle = {{ is_community_article | tojson }};
     const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
     const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
-    const groqConfiguredGlobal = {{ groq_client | tojson }}; // Passed from inject_global_vars
+    const groqConfiguredGlobal = {{ groq_client | tojson }};
+    const ALLOWED_REACTIONS_JS = {{ ALLOWED_REACTIONS | tojson }};
 
     function convertUTCToIST(utcIsoString) {
         if (!utcIsoString) return "N/A";
@@ -1856,7 +1864,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!isCommunityArticle && articleHashIdGlobal) {
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContent = document.getElementById('apiArticleContent');
-
         fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
             .then(response => {
                 if (!response.ok) { throw new Error('Network response error: ' + response.statusText + ' (' + response.status + ')'); }
@@ -1865,11 +1872,9 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(data => {
                 if(contentLoader) contentLoader.style.display = 'none';
                 if (!apiArticleContent) return;
-
                 let html = '';
                 const articleUrl = {{ article.url | tojson if article and not is_community_article else 'null' }};
                 const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
-
                 if (data.error && !data.groq_analysis) {
                     html = `<div class="alert alert-warning small p-3 mt-3">Could not load article content: ${data.error}</div>`;
                 } else {
@@ -1891,13 +1896,13 @@ document.addEventListener('DOMContentLoaded', function () {
                             if (!contentAdded && groqConfiguredGlobal) {
                                 html += `<div class="alert alert-secondary small p-3 mt-3">AI-generated summary and takeaways for this article are currently empty or not available.</div>`;
                             } else if (!groqConfiguredGlobal && !contentAdded) {
-                                 html += `<div class="alert alert-info small p-3 mt-3">AI analysis features are currently disabled.</div>`;
+                                html += `<div class="alert alert-info small p-3 mt-3">AI analysis features are currently disabled.</div>`;
                             }
                         }
                     } else if (groqConfiguredGlobal) {
                         html = `<div class="alert alert-warning small p-3 mt-3">AI analysis data is missing for this article.</div>`;
                     } else {
-                         html = `<div class="alert alert-info small p-3 mt-3">AI analysis features are currently disabled.</div>`;
+                        html = `<div class="alert alert-info small p-3 mt-3">AI analysis features are currently disabled.</div>`;
                     }
                 }
                 if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
@@ -1910,75 +1915,99 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const commentSection = document.getElementById('comment-section');
-    function createCommentHTML(comment, articleHashIdForJs) {
+
+    function createCommentHTML(comment) {
         const commentDate = convertUTCToIST(comment.timestamp);
         const authorName = comment.author && comment.author.name ? comment.author.name : 'Anonymous';
         const userInitial = authorName[0].toUpperCase();
         let actionsHTML = '';
+
         if (isUserLoggedIn) {
+            let reactionButtonsHTML = Object.entries(ALLOWED_REACTIONS_JS).map(([type, emoji]) => `
+                <button class="reaction-btn" data-comment-id="${comment.id}" data-reaction-type="${type}" title="${type.charAt(0).toUpperCase() + type.slice(1)}">
+                    <span class="emoji">${emoji}</span>
+                    <span class="reaction-count">${comment.reactions[type] || 0}</span>
+                </button>
+            `).join('');
+
             actionsHTML = `
             <div class="comment-actions">
-                <button class="vote-btn <span class="math-inline">\{comment\.user\_vote \=\=\= 1 ? 'active' \: ''\}" data\-comment\-id\="</span>{comment.id}" data-vote-type="1" title="Like"><i class="fas fa-thumbs-up"></i> <span class="vote-count" id="likes-count-<span class="math-inline">\{comment\.id\}"\></span>{comment.likes || 0}</span></button>
-                <button class="vote-btn <span class="math-inline">\{comment\.user\_vote \=\=\= \-1 ? 'active' \: ''\}" data\-comment\-id\="</span>{comment.id}" data-vote-type="-1" title="Dislike"><i class="fas fa-thumbs-down"></i> <span class="vote-count" id="dislikes-count-<span class="math-inline">\{comment\.id\}"\></span>{comment.dislikes || 0}</span></button>
-                <button class="reply-btn" data-comment-id="<span class="math-inline">\{comment\.id\}" title\="Reply"\><i class\="fas fa\-reply"\></i\> Reply</button\>
-</div\>
-<div class\="reply\-form\-container" id\="reply\-form\-container\-</span>{comment.id}">
+                ${reactionButtonsHTML}
+                <button class="reply-btn" data-comment-id="${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
+            </div>
+            <div class="reply-form-container" id="reply-form-container-${comment.id}">
                 <form class="reply-form mt-2">
-                    <input type="hidden" name="article_hash_id" value="<span class="math-inline">\{articleHashIdForJs\}"\><input type\="hidden" name\="parent\_id" value\="</span>{comment.id}">
+                    <input type="hidden" name="parent_id" value="${comment.id}">
                     <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
-                    <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button><button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary-modal cancel-reply-btn">Cancel</button>
                 </form>
             </div>`;
         }
-        return `<div class="comment-container" id="comment-<span class="math-inline">\{comment\.id\}"\><div class\="comment\-card"\><div class\="comment\-avatar" title\="</span>{authorName}"><span class="math-inline">\{userInitial\}</div\><div class\="comment\-body"\><div class\="comment\-header"\><span class\="comment\-author"\></span>{authorName}</span><span class="comment-date"><span class="math-inline">\{commentDate\}</span\></div\><p class\="comment\-content mb\-2"\></span>{comment.content}</p><span class="math-inline">\{actionsHTML\}</div\></div\><div class\="comment\-replies" id\="replies\-of\-</span>{comment.id}"></div></div>`;
+        
+        return \`<div class="comment-container" id="comment-${comment.id}"><div class="comment-card"><div class="comment-avatar" title="${authorName}">${userInitial}</div><div class="comment-body"><div class="comment-header"><span class="comment-author">${authorName}</span><span class="comment-date">${commentDate}</span></div><p class="comment-content mb-2">${comment.content}</p>${actionsHTML}</div></div><div class="comment-replies" id="replies-of-${comment.id}"></div></div>\`;
     }
-    function handleCommentSubmit(form, articleHashId, parentId = null) {
+
+    function handleCommentSubmit(form, parentId = null) {
         const content = form.querySelector('textarea[name="content"]').value; if (!content.trim()) return;
         const submitButton = form.querySelector('button[type="submit"]'); const originalButtonText = submitButton.innerHTML; submitButton.disabled = true; submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
-        fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId }) })
-        .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
-        .then(data => {
-            if (data.success) {
-                const newCommentHTML = createCommentHTML(data.comment, articleHashId); const tempDiv = document.createElement('div'); tempDiv.innerHTML = newCommentHTML.trim(); const newCommentNode = tempDiv.firstChild;
-                if (parentId) { document.getElementById(`replies-of-${parentId}`).appendChild(newCommentNode); form.closest('.reply-form-container').style.display = 'none'; }
-                else { const list = document.getElementById('comments-list'); const noCommentsMsg = document.getElementById('no-comments-msg'); if (noCommentsMsg) noCommentsMsg.remove(); list.appendChild(newCommentNode); const countEl = document.getElementById('comment-count'); countEl.textContent = parseInt(countEl.textContent) + 1; }
-                form.reset();
-            } else { alert('Error: ' + (data.error || 'Unknown error posting comment.')); }
-        })
-        .catch(err => { console.error("Comment submission error:", err); alert("Could not submit comment: " + err.message); })
-        .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
+        fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId }) })
+            .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+            .then(data => {
+                if (data.success) {
+                    const newCommentHTML = createCommentHTML(data.comment); const tempDiv = document.createElement('div'); tempDiv.innerHTML = newCommentHTML.trim(); const newCommentNode = tempDiv.firstChild;
+                    if (parentId) { document.getElementById(`replies-of-${parentId}`).appendChild(newCommentNode); form.closest('.reply-form-container').style.display = 'none'; }
+                    else { const list = document.getElementById('comments-list'); const noCommentsMsg = document.getElementById('no-comments-msg'); if (noCommentsMsg) noCommentsMsg.remove(); list.appendChild(newCommentNode); const countEl = document.getElementById('comment-count'); countEl.textContent = parseInt(countEl.textContent) + 1; }
+                    form.reset();
+                } else { alert('Error: ' + (data.error || 'Unknown error posting comment.')); }
+            })
+            .catch(err => { console.error("Comment submission error:", err); alert("Could not submit comment: " + err.message); })
+            .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
     }
+
     const mainCommentForm = document.getElementById('comment-form');
-    if (mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); const articleHashIdFromForm = this.querySelector('input[name="article_hash_id"]').value; handleCommentSubmit(this, articleHashIdFromForm); }); }
+    if (mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
+
     if (commentSection) {
         commentSection.addEventListener('click', function(e) {
-            const voteBtn = e.target.closest('.vote-btn');
-            if (voteBtn && isUserLoggedIn) {
-                const commentId = voteBtn.dataset.commentId; const voteType = parseInt(voteBtn.dataset.voteType);
-                fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vote_type: voteType }) })
-                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+            const reactionBtn = e.target.closest('.reaction-btn');
+            if (reactionBtn && isUserLoggedIn) {
+                const commentId = reactionBtn.dataset.commentId;
+                const reactionType = reactionBtn.dataset.reactionType;
+                fetch(\`{{ url_for('vote_comment', comment_id=0) }}\`.replace('0', commentId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reaction_type: reactionType })
+                })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || 'Server error'); }); } return res.json(); })
                 .then(data => {
-                    if(data.success) {
-                        document.getElementById(`likes-count-${commentId}`).textContent = data.likes; document.getElementById(`dislikes-count-${commentId}`).textContent = data.dislikes;
-                        const allVoteBtnsOnComment = document.querySelectorAll(`.vote-btn[data-comment-id="${commentId}"]`); allVoteBtnsOnComment.forEach(btn => btn.classList.remove('active'));
-                        if(data.user_vote === 1) { document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="1"]`).classList.add('active'); }
-                        else if (data.user_vote === -1) { document.querySelector(`.vote-btn[data-comment-id="${commentId}"][data-vote-type="-1"]`).classList.add('active'); }
-                    } else { alert('Error voting: ' + (data.error || 'Unknown error.')); }
-                }).catch(err => { console.error("Vote error:", err); alert("Could not process vote: " + err.message); });
+                    if (data.success) {
+                        const allReactionBtnsOnComment = document.querySelectorAll(\`.reaction-btn[data-comment-id="\${commentId}"]\`);
+                        allReactionBtnsOnComment.forEach(btn => {
+                            const rType = btn.dataset.reactionType;
+                            btn.querySelector('.reaction-count').textContent = data.reactions[rType] || 0;
+                            btn.classList.toggle('active', rType === data.user_reaction);
+                        });
+                    } else { alert('Error: ' + (data.error || 'Could not process reaction.')); }
+                }).catch(err => { console.error("Reaction error:", err); alert('Failed to save reaction: ' + err.message); });
             }
+            
             const replyBtn = e.target.closest('.reply-btn');
             if (replyBtn && isUserLoggedIn) {
                 const commentId = replyBtn.dataset.commentId; const formContainer = document.getElementById(`reply-form-container-${commentId}`);
                 if (formContainer) { const isDisplayed = formContainer.style.display === 'block'; document.querySelectorAll('.reply-form-container').forEach(fc => { if (fc.id !== `reply-form-container-${commentId}`) fc.style.display = 'none'; }); formContainer.style.display = isDisplayed ? 'none' : 'block'; if(formContainer.style.display === 'block') { formContainer.querySelector('textarea').focus(); } }
             }
+
             const cancelReplyBtn = e.target.closest('.cancel-reply-btn');
             if (cancelReplyBtn) { const formContainer = cancelReplyBtn.closest('.reply-form-container'); formContainer.style.display = 'none'; formContainer.querySelector('form').reset(); }
         });
+
         commentSection.addEventListener('submit', function(e) {
             const replyForm = e.target.closest('.reply-form');
-            if (replyForm) { e.preventDefault(); const articleHashIdFromForm = replyForm.querySelector('input[name="article_hash_id"]').value; const parentId = replyForm.querySelector('input[name="parent_id"]').value; handleCommentSubmit(replyForm, articleHashIdFromForm, parentId); }
+            if (replyForm) { e.preventDefault(); const parentId = replyForm.querySelector('input[name="parent_id"]').value; handleCommentSubmit(replyForm, parentId); }
         });
     }
+
     const bookmarkBtn = document.getElementById('bookmarkBtn');
     if (bookmarkBtn && isUserLoggedIn) {
         bookmarkBtn.addEventListener('click', function() {
