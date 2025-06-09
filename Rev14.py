@@ -804,76 +804,94 @@ def search_results(page=1):
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
-    article_data, is_community_article, comments_for_template, all_article_comments_list, comment_data = None, False, [], [], {}
+    article_data, is_community_article = None, False
     previous_list_page = session.get('previous_list_page', url_for('index'))
-    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
     is_bookmarked = False
+
+    article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
     if article_db:
-        article_data = article_db
-        is_community_article = True
-        try: article_data.parsed_takeaways = json.loads(article_data.groq_takeaways) if article_data.groq_takeaways else []
-        except json.JSONDecodeError:
-            app.logger.error(f"JSONDecodeError for groq_takeaways on community article {article_data.article_hash_id}")
-            article_data.parsed_takeaways = []
-        all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(community_article_id=article_db.id).order_by(Comment.timestamp.asc()).all()
-        comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+        article_data, is_community_article = article_db, True
     else:
-        if not MASTER_ARTICLE_STORE: fetch_news_from_api() # Default fetch if store is empty
+        if not MASTER_ARTICLE_STORE: fetch_news_from_api()
         article_api_dict = MASTER_ARTICLE_STORE.get(article_hash_id)
         if article_api_dict:
-            article_data = article_api_dict.copy()
-            is_community_article = False
-            all_article_comments_list = Comment.query.options(joinedload(Comment.author), joinedload(Comment.replies).options(joinedload(Comment.author))).filter_by(api_article_hash_id=article_hash_id).order_by(Comment.timestamp.asc()).all()
-            comments_for_template = [c for c in all_article_comments_list if c.parent_id is None]
+            article_data, is_community_article = article_api_dict.copy(), False
         else:
             flash("Article not found.", "danger"); return redirect(previous_list_page)
-            
+
     if 'user_id' in session and article_data:
         existing_bookmark = BookmarkedArticle.query.filter_by(user_id=session['user_id'], article_hash_id=article_hash_id).first()
-        if existing_bookmark: is_bookmarked = True
+        is_bookmarked = bool(existing_bookmark)
 
-    # --- MODIFIED VOTE FETCHING LOGIC ---
-    if all_article_comments_list:
-        # Collect all comment IDs (including replies) to fetch their reactions in bulk.
-        all_comment_ids = [c.id for c in all_article_comments_list]
-        for c in all_article_comments_list:
-            if c.replies:
-                all_comment_ids.extend([r.id for r in c.replies])
+    # --- NEW, MORE ROBUST COMMENT & REACTION HANDLING ---
+    comment_data = {}
+    comments_for_template = []
+    comment_map = {}
+    total_comment_count = 0
 
-        # Initialize the data structure for each comment.
-        for c_id in all_comment_ids:
-            comment_data[c_id] = {'reactions': {}, 'user_reaction': None}
+    # 1. Base query for all comments associated with the article
+    all_comments_query = None
+    if is_community_article:
+        all_comments_query = Comment.query.options(joinedload(Comment.author)).filter_by(community_article_id=article_data.id)
+    else:
+        all_comments_query = Comment.query.options(joinedload(Comment.author)).filter_by(api_article_hash_id=article_hash_id)
 
-        # Query for all reaction counts, grouped by comment and emoji.
-        reaction_counts_query = db.session.query(
-            CommentVote.comment_id,
-            CommentVote.vote_emoji,
-            func.count(CommentVote.vote_emoji)
-        ).filter(CommentVote.comment_id.in_(all_comment_ids)).group_by(
-            CommentVote.comment_id,
-            CommentVote.vote_emoji
-        ).all()
+    if all_comments_query:
+        # 2. Fetch all comments into a flat list, ordered by time
+        all_comments_flat_list = all_comments_query.order_by(Comment.timestamp.asc()).all()
+        total_comment_count = len(all_comments_flat_list)
+        all_comment_ids = {c.id for c in all_comments_flat_list}
+        comment_map = {c.id: c for c in all_comments_flat_list}
 
-        # Populate the reaction counts into our data structure.
-        for c_id, emoji, count in reaction_counts_query:
-            if c_id in comment_data:
-                comment_data[c_id]['reactions'][emoji] = count
-
-        # If a user is logged in, find their specific reaction for each comment.
-        if 'user_id' in session:
-            user_reactions = CommentVote.query.filter(
-                CommentVote.comment_id.in_(all_comment_ids),
-                CommentVote.user_id == session['user_id']
-            ).all()
-            for vote in user_reactions:
-                if vote.comment_id in comment_data:
-                    comment_data[vote.comment_id]['user_reaction'] = vote.vote_emoji
-    # --- END OF MODIFIED LOGIC ---
+        # 3. Fetch all reaction data in bulk
+        if all_comment_ids:
+            for c_id in all_comment_ids: comment_data[c_id] = {'reactions': {}, 'user_reaction': None}
             
+            reaction_counts_query = db.session.query(
+                CommentVote.comment_id, CommentVote.vote_emoji, func.count(CommentVote.vote_emoji)
+            ).filter(CommentVote.comment_id.in_(all_comment_ids)).group_by(
+                CommentVote.comment_id, CommentVote.vote_emoji
+            ).all()
+            for c_id, emoji, count in reaction_counts_query:
+                if c_id in comment_data: comment_data[c_id]['reactions'][emoji] = count
+
+            if 'user_id' in session:
+                user_reactions = CommentVote.query.filter(
+                    CommentVote.comment_id.in_(all_comment_ids), CommentVote.user_id == session['user_id']
+                ).all()
+                for vote in user_reactions:
+                    if vote.comment_id in comment_data: comment_data[vote.comment_id]['user_reaction'] = vote.vote_emoji
+        
+        # 4. Manually build the comment tree to ensure stability and efficiency
+        for comment in all_comments_flat_list:
+            comment.replies_list = []  # Use a custom attribute to avoid conflicts with the relationship
+
+        for comment in all_comments_flat_list:
+            if comment.parent_id and comment.parent_id in comment_map:
+                parent_comment = comment_map[comment.parent_id]
+                parent_comment.replies_list.append(comment)
+            else:
+                comments_for_template.append(comment)  # This is a root comment
+
     if isinstance(article_data, dict): article_data['is_community_article'] = False
     elif article_data: article_data.is_community_article = True
-    
-    return render_template("ARTICLE_HTML_TEMPLATE", article=article_data, is_community_article=is_community_article, comments=comments_for_template, comment_data=comment_data, previous_list_page=previous_list_page, is_bookmarked=is_bookmarked)
+
+    # Parse takeaways for community articles, done here to be safe
+    if is_community_article and article_data.groq_takeaways:
+        try:
+            article_data.parsed_takeaways = json.loads(article_data.groq_takeaways)
+        except json.JSONDecodeError:
+            article_data.parsed_takeaways = []
+            
+    return render_template("ARTICLE_HTML_TEMPLATE", 
+                           article=article_data, 
+                           is_community_article=is_community_article, 
+                           comments=comments_for_template, 
+                           comment_data=comment_data,
+                           comment_map=comment_map, # Pass the map for @mentions
+                           total_comment_count=total_comment_count,
+                           previous_list_page=previous_list_page, 
+                           is_bookmarked=is_bookmarked)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
@@ -1208,6 +1226,37 @@ BASE_HTML_TEMPLATE = """
         .auth-container { max-width: 450px; margin: 3rem auto; padding: 2.5rem; }
 
         /* --- Comment Reactions & Replies --- */
+       
+        .comment-container + .comment-container {
+            margin-top: 1.75rem; /* Adds space between top-level comment threads */
+            padding-top: 1.75rem;
+            border-top: 1px solid var(--card-border-color);
+        }
+        .comment-replies {
+            /* This ensures replies are grouped with their parent */
+            border-top: none;
+            margin-top: 1rem;
+            padding-top: 0;
+            padding-left: 2.5rem; /* Slightly adjust indentation */
+            border-left: 2px solid var(--card-border-color); /* This is the connector line */
+        }
+        .comment-replies .comment-avatar {
+            width: 40px; /* Make reply avatars slightly smaller */
+            height: 40px;
+        }
+        .comment-content .reply-mention {
+            color: var(--primary-color);
+            font-weight: 600;
+            text-decoration: none;
+            margin-right: 0.3rem;
+        }
+        .comment-content .reply-mention:hover {
+            text-decoration: underline;
+        }
+        body.dark-mode .comment-content .reply-mention {
+            color: var(--primary-light);
+        }
+
         .comment-actions {
             position: relative;
             display: flex;
@@ -1301,12 +1350,6 @@ BASE_HTML_TEMPLATE = """
         }
         .comment-card { display: contents; }
         .comment-body { flex-grow: 1; }
-        .comment-replies {
-            padding-left: 3.5rem;
-            margin-top: 1rem;
-            width: 100%;
-            border-left: 2px solid var(--card-border-color);
-        }
         .reply-form-container {
             display: none;
             padding: 1rem;
@@ -1788,27 +1831,18 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endblock %}
 """
 
-# --- File: Rev14.py ---
-
 ARTICLE_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}{{ article.title|truncate(50) if article else "Article" }} - BrieflyAI{% endblock %}
 {% block head_extra %}
 <style>
-    .article-full-content-wrapper { background-color: var(--card-bg); padding: 2rem; border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); margin-bottom: 2rem; margin-top: 1rem; }
-    .article-full-content-wrapper .main-article-image { width: 100%; max-height: 480px; object-fit: cover; border-radius: var(--border-radius-md); margin-bottom: 1.5rem; box-shadow: var(--shadow-md); }
+    /* Key styles for this page for context. Assumes extended styles are in BASE_HTML_TEMPLATE. */
+    .article-full-content-wrapper { background-color: var(--card-bg); padding: clamp(1rem, 4vw, 2rem); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); margin-bottom: 2rem; margin-top: 1rem; }
     .article-title-main {font-weight: 700; color: var(--text-color); line-height:1.3; font-family: 'Poppins', sans-serif;}
-    .article-meta-detailed { font-size: 0.85rem; color: var(--text-muted-color); margin-bottom: 1.5rem; display:flex; flex-wrap:wrap; gap: 0.5rem 1.2rem; align-items:center; border-bottom: 1px solid var(--card-border-color); padding-bottom:1rem; }
-    .article-meta-detailed .meta-item i { color: var(--secondary-color); margin-right: 0.4rem; font-size:0.95rem; }
-    .summary-box { background-color: rgba(var(--primary-color-rgb), 0.04); padding: 1.5rem; border-radius: 8px; margin: 1.5rem 0; border: 1px solid rgba(var(--primary-color-rgb), 0.1); }
-    .summary-box h5 { color: var(--primary-color); font-weight: 600; margin-bottom: 0.75rem; font-size:1.1rem; }
-    body.dark-mode .summary-box { background-color: #2a30422e; }
-    .takeaways-box { margin: 1.5rem 0; padding: 1.5rem 1.5rem 1.5rem 1.8rem; border-left: 4px solid var(--secondary-color); background-color: rgba(var(--primary-color-rgb), 0.04); border-radius: 0 8px 8px 0;}
-    .takeaways-box h5 { color: var(--primary-color); font-weight: 600; margin-bottom: 0.75rem; font-size:1.1rem; }
-    body.dark-mode .takeaways-box { background-color: #2a30422e; }
-    .takeaways-box ul { padding-left: 1.2rem; margin-bottom:0; }
-    .takeaways-box ul li { margin-bottom: 0.6rem; font-size:0.95rem; line-height:1.6; }
-    .loader-container { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; padding: 2rem; font-size: 1rem; color: var(--text-muted-color); }
+    .summary-box, .takeaways-box { background-color: rgba(var(--primary-color-rgb), 0.04); border: 1px solid rgba(var(--primary-color-rgb), 0.1); border-radius: var(--border-radius-md); margin: 1.5rem 0; padding: 1.5rem; }
+    body.dark-mode .summary-box, body.dark-mode .takeaways-box { background-color: #2a30422e; }
+    .takeaways-box { border-left: 4px solid var(--secondary-color); }
+    .loader-container { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; padding: 2rem; color: var(--text-muted-color); }
     .loader { border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
     .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -1837,30 +1871,21 @@ ARTICLE_HTML_TEMPLATE = """
     </div>
 
     <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
+    
     <div class="article-meta-detailed">
         <span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article and article.author else article.source.name }}</span>
         <span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span>
     </div>
-    {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
-    {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="main-article-image">{% endif %}
 
-    <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary in 5 to 6 seconds...</div></div>
+    {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
+    {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="img-fluid rounded my-3 shadow-sm">{% endif %}
+    
+    <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary...</div></div>
     
     <div id="articleAnalysisContainer">
     {% if is_community_article %}
-        {% if article.groq_summary %}
-            <div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>
-        {% elif not article.groq_summary and groq_client %}
-            <div class="alert alert-secondary small p-3 mt-3">AI Summary not available for this community article.</div>
-        {% endif %}
-
-        {% if article.parsed_takeaways %}
-            <div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5>
-                <ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul>
-            </div>
-        {% elif not article.groq_takeaways and groq_client %}
-            <div class="alert alert-secondary small p-3 mt-3">AI Takeaways not available for this community article.</div>
-        {% endif %}
+        {% if article.groq_summary %}<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>Article Summary (AI Enhanced)</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>{% endif %}
+        {% if article.parsed_takeaways %}<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>Key Takeaways (AI Enhanced)</h5><ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul></div>{% endif %}
         <hr class="my-4">
         <h4 class="mb-3">Full Article Content</h4>
         <div class="content-text">{{ article.full_text }}</div>
@@ -1870,10 +1895,10 @@ ARTICLE_HTML_TEMPLATE = """
     </div>
 
     <section class="comment-section mt-5" id="comment-section">
-        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ all_article_comments_list|length }}</span>)</h3>
+        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ total_comment_count }}</span>)</h3>
         
-        {# --- NEW RECURSIVE MACRO FOR COMMENTS AND REPLIES --- #}
-        {% macro render_comment_with_replies(comment, comment_data, is_logged_in, article_hash_id_for_js) %}
+        {# --- FINAL RECURSIVE MACRO FOR COMMENTS AND REPLIES --- #}
+        {% macro render_comment_with_replies(comment, comment_data, is_logged_in, comment_map) %}
             <div class="comment-container" id="comment-{{ comment.id }}">
                 <div class="comment-card">
                     <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}">{{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }}</div>
@@ -1882,45 +1907,44 @@ ARTICLE_HTML_TEMPLATE = """
                             <span class="comment-author">{{ comment.author.name if comment.author else 'Anonymous' }}</span>
                             <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
                         </div>
-                        <p class="comment-content mb-2">{{ comment.content }}</p>
+                        <p class="comment-content mb-2">
+                            {% if comment.parent_id and comment.parent_id in comment_map %}
+                                {% set parent_author_name = comment_map[comment.parent_id].author.name if comment_map[comment.parent_id].author else 'user' %}
+                                <a href="#comment-{{ comment.parent_id }}" class="reply-mention">@{{ parent_author_name }}</a>
+                            {% endif %}
+                            {{- comment.content -}}
+                        </p>
                         
                         {% if is_logged_in %}
                         <div class="comment-actions">
                             <div class="reaction-box" id="reaction-box-{{ comment.id }}">
-                                {% for emoji in ['👍', '❤️', '😂', '😮', '😢', '😠'] %}
-                                <span class="reaction-emoji" data-emoji="{{ emoji }}" data-comment-id="{{ comment.id }}" title="{{ emoji }}">{{ emoji }}</span>
-                                {% endfor %}
+                                {% for emoji in ['👍', '❤️', '😂', '😮', '😢', '😠'] %}<span class="reaction-emoji" data-emoji="{{ emoji }}" data-comment-id="{{ comment.id }}" title="{{ emoji }}">{{ emoji }}</span>{% endfor %}
                             </div>
                             <button class="react-btn" data-comment-id="{{ comment.id }}" title="React"><i class="far fa-smile"></i> React</button>
                             <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
                         </div>
                         <div class="reply-form-container" id="reply-form-container-{{ comment.id }}">
-                            <form class="reply-form">
-                                <input type="hidden" name="parent_id" value="{{ comment.id }}">
+                            <form class="reply-form"><input type="hidden" name="parent_id" value="{{ comment.id }}">
                                 <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
-                                <div class="d-flex justify-content-end gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary cancel-reply-btn">Cancel</button>
-                                    <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
-                                </div>
+                                <div class="d-flex justify-content-end gap-2"><button type="button" class="btn btn-sm btn-outline-secondary cancel-reply-btn">Cancel</button><button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button></div>
                             </form>
                         </div>
                         {% endif %}
 
                         <div class="reaction-summary" id="reaction-summary-{{ comment.id }}">
                             {% set reactions = comment_data.get(comment.id, {}).get('reactions', {}) %}
-                            {% for emoji, count in reactions.items() %}
-                                {% set user_reacted_class = 'user-reacted' if is_logged_in and comment_data.get(comment.id, {}).get('user_reaction') == emoji else '' %}
-                                <div class="reaction-pill {{ user_reacted_class }}" data-emoji="{{ emoji }}">
-                                    <span class="emoji">{{ emoji }}</span>
-                                    <span class="count">{{ count }}</span>
-                                </div>
-                            {% endfor %}
+                            {% if reactions %}
+                                {% for emoji, count in reactions.items() %}
+                                    {% set user_reacted_class = 'user-reacted' if is_logged_in and comment_data.get(comment.id, {}).get('user_reaction') == emoji else '' %}
+                                    <div class="reaction-pill {{ user_reacted_class }}" data-emoji="{{ emoji }}"><span class="emoji">{{ emoji }}</span><span class="count">{{ count }}</span></div>
+                                {% endfor %}
+                            {% endif %}
                         </div>
                     </div>
                 </div>
                 <div class="comment-replies" id="replies-of-{{ comment.id }}">
-                    {% for reply in comment.replies|sort(attribute='timestamp') %}
-                        {{ render_comment_with_replies(reply, comment_data, is_logged_in, article_hash_id_for_js) }}
+                    {% for reply in comment.replies_list %}
+                        {{ render_comment_with_replies(reply, comment_data, is_logged_in, comment_map) }}
                     {% endfor %}
                 </div>
             </div>
@@ -1928,7 +1952,7 @@ ARTICLE_HTML_TEMPLATE = """
 
         <div id="comments-list">
             {% for comment in comments %}
-                {{ render_comment_with_replies(comment, comment_data, session.user_id, (article.article_hash_id if is_community_article else article.id)) }}
+                {{ render_comment_with_replies(comment, comment_data, session.user_id, comment_map) }}
             {% else %}
                 <p id="no-comments-msg" class="text-muted mt-3">No comments yet. Be the first to share your thoughts!</p>
             {% endfor %}
@@ -1964,9 +1988,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata', timeZoneName: 'short' }).format(date);
     }
     
-    // --- Existing API Article Content Fetcher (Unchanged) ---
     if (!isCommunityArticle && articleHashIdGlobal) {
-        // ... (The JavaScript for fetching API article content remains the same as your original)
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContent = document.getElementById('apiArticleContent');
         fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
@@ -1994,7 +2016,6 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(error => { if(contentLoader) { contentLoader.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; }});
     }
 
-    // --- NEW/MODIFIED JAVASCRIPT FOR COMMENTS ---
     const commentSection = document.getElementById('comment-section');
 
     function updateReactionUI(commentId, reactions, userReaction) {
@@ -2002,9 +2023,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!summaryContainer) return;
         
         let summaryHTML = '';
-        for (const [emoji, count] of Object.entries(reactions)) {
-            const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
-            summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
+        if (reactions) {
+            for (const [emoji, count] of Object.entries(reactions)) {
+                const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
+                summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
+            }
         }
         summaryContainer.innerHTML = summaryHTML;
     }
@@ -2013,38 +2036,24 @@ document.addEventListener('DOMContentLoaded', function () {
         const commentDate = convertUTCToIST(comment.timestamp);
         const authorName = comment.author && comment.author.name ? comment.author.name : 'Anonymous';
         const userInitial = authorName[0].toUpperCase();
+        let mentionHTML = '';
+        if (comment.parent_id && comment.parent_author_name) {
+             mentionHTML = `<a href="#comment-${comment.parent_id}" class="reply-mention">@${comment.parent_author_name}</a> `;
+        }
+        
         let actionsHTML = '';
         if (isUserLoggedIn) {
             actionsHTML = `
             <div class="comment-actions">
-                <div class="reaction-box" id="reaction-box-${comment.id}">
-                    ${['👍', '❤️', '😂', '😮', '😢', '😠'].map(emoji => `<span class="reaction-emoji" data-emoji="${emoji}" data-comment-id="${comment.id}" title="${emoji}">${emoji}</span>`).join('')}
-                </div>
+                <div class="reaction-box" id="reaction-box-${comment.id}">${['👍', '❤️', '😂', '😮', '😢', '😠'].map(emoji => `<span class="reaction-emoji" data-emoji="${emoji}" data-comment-id="${comment.id}" title="${emoji}">${emoji}</span>`).join('')}</div>
                 <button class="react-btn" data-comment-id="${comment.id}" title="React"><i class="far fa-smile"></i> React</button>
                 <button class="reply-btn" data-comment-id="${comment.id}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
             </div>
             <div class="reply-form-container" id="reply-form-container-${comment.id}">
-                <form class="reply-form"><input type="hidden" name="parent_id" value="${comment.id}">
-                    <div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div>
-                    <div class="d-flex justify-content-end gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary cancel-reply-btn">Cancel</button>
-                        <button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button>
-                    </div>
-                </form>
+                <form class="reply-form"><input type="hidden" name="parent_id" value="${comment.id}"><div class="mb-2"><textarea class="form-control form-control-sm" name="content" rows="2" placeholder="Write a reply..." required></textarea></div><div class="d-flex justify-content-end gap-2"><button type="button" class="btn btn-sm btn-outline-secondary cancel-reply-btn">Cancel</button><button type="submit" class="btn btn-sm btn-primary-modal">Post Reply</button></div></form>
             </div>`;
         }
-        return `<div class="comment-container" id="comment-${comment.id}">
-                    <div class="comment-card">
-                        <div class="comment-avatar" title="${authorName}">${userInitial}</div>
-                        <div class="comment-body">
-                            <div class="comment-header"><span class="comment-author">${authorName}</span><span class="comment-date">${commentDate}</span></div>
-                            <p class="comment-content mb-2">${comment.content}</p>
-                            ${actionsHTML}
-                            <div class="reaction-summary" id="reaction-summary-${comment.id}"></div>
-                        </div>
-                    </div>
-                    <div class="comment-replies" id="replies-of-${comment.id}"></div>
-                </div>`;
+        return `<div class="comment-container" id="comment-${comment.id}"><div class="comment-card"><div class="comment-avatar" title="${authorName}">${userInitial}</div><div class="comment-body"><div class="comment-header"><span class="comment-author">${authorName}</span><span class="comment-date">${commentDate}</span></div><p class="comment-content mb-2">${mentionHTML}${comment.content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>${actionsHTML}<div class="reaction-summary" id="reaction-summary-${comment.id}"></div></div></div><div class="comment-replies" id="replies-of-${comment.id}"></div></div>`;
     }
 
     function handleCommentSubmit(form, parentId = null) {
@@ -2052,17 +2061,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!content.trim()) return;
         const submitButton = form.querySelector('button[type="submit"]');
         const originalButtonText = submitButton.innerHTML;
-        submitButton.disabled = true;
-        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
+        submitButton.disabled = true; submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
 
         fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: content, parent_id: parentId })
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content, parent_id: parentId })
         })
-        .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error ${res.status}`); }); } return res.json(); })
+        .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || 'HTTP Error ' + res.status); }); } return res.json(); })
         .then(data => {
             if (data.success) {
+                if (parentId) {
+                    const parentAuthorEl = document.querySelector(`#comment-${parentId} .comment-author`);
+                    if(parentAuthorEl) data.comment.parent_author_name = parentAuthorEl.textContent;
+                }
                 const newCommentHTML = createCommentHTML(data.comment);
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = newCommentHTML.trim();
@@ -2076,9 +2086,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     const noCommentsMsg = document.getElementById('no-comments-msg');
                     if (noCommentsMsg) noCommentsMsg.remove();
                     list.appendChild(newCommentNode);
-                    const countEl = document.getElementById('comment-count');
-                    countEl.textContent = parseInt(countEl.textContent) + 1;
                 }
+                const countEl = document.getElementById('comment-count');
+                countEl.textContent = parseInt(countEl.textContent) + 1;
                 form.reset();
             } else { alert('Error: ' + (data.error || 'Unknown error.')); }
         })
@@ -2099,25 +2109,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (reactionBox) {
                     const isShown = reactionBox.classList.contains('show');
                     document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
-                    if (!isShown) {
-                        reactionBox.classList.add('show');
-                    }
+                    if (!isShown) reactionBox.classList.add('show');
                 }
             } else if (reactionEmoji) {
                 const commentId = reactionEmoji.dataset.commentId;
                 const emoji = reactionEmoji.dataset.emoji;
+                reactionEmoji.closest('.reaction-box').classList.remove('show');
                 fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ emoji: emoji })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emoji: emoji })
                 })
                 .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        updateReactionUI(commentId, data.reactions, data.user_reaction);
-                        document.getElementById(`reaction-box-${commentId}`).classList.remove('show');
-                    }
-                }).catch(err => console.error("Reaction error:", err));
+                .then(data => { if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); } })
+                .catch(err => console.error("Reaction error:", err));
             } else if (replyBtn) {
                 const commentId = replyBtn.dataset.commentId;
                 const formContainer = document.getElementById(`reply-form-container-${commentId}`);
@@ -2132,9 +2135,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 formContainer.style.display = 'none';
                 formContainer.querySelector('form').reset();
             } else {
-                 // If clicking anywhere else, hide any open reaction boxes
                 if (!e.target.closest('.reaction-box')) {
-                    document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
+                    document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
                 }
             }
         });
@@ -2148,10 +2150,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // --- Bookmark Button Logic (Unchanged) ---
     const bookmarkBtn = document.getElementById('bookmarkBtn');
     if (bookmarkBtn && isUserLoggedIn) {
-        // ... (The JavaScript for bookmarking remains the same as your original)
         bookmarkBtn.addEventListener('click', function() {
             const articleHashId = this.dataset.articleHashId; const isCommunity = this.dataset.isCommunity; const title = this.dataset.title; const sourceName = this.dataset.sourceName; const imageUrl = this.dataset.imageUrl; const description = this.dataset.description; const publishedAt = this.dataset.publishedAt;
             fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt }) })
