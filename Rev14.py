@@ -1,7 +1,3 @@
-#Perfectly Working Code
-
-# Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AND AI DISPLAY FIXES
-
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -1267,6 +1263,7 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
+
 # In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this:
 
 BASE_HTML_TEMPLATE = """
@@ -1396,20 +1393,40 @@ BASE_HTML_TEMPLATE = """
         .bookmark-btn:hover { color: var(--secondary-light); }
         .article-card .bookmark-btn { font-size: 1.3rem; }
         
+        /* === COMMENT SECTION STYLES (IMPROVED) === */
+        .comment-section h3 { padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border-color); }
+        .comment-thread { position: relative; }
+        #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
+        .comment-container { display: flex; gap: 1rem; align-items: flex-start; }
+        .comment-replies { margin-left: 3.5rem; padding-left: 1.25rem; margin-top: 1.25rem; border-left: 2px solid var(--card-border-color); }
+        .comment-replies > .comment-thread + .comment-thread { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--card-border-color); }
+        .comment-avatar { width: 45px; height: 45px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+        .comment-replies .comment-avatar { width: 40px; height: 40px; }
+        .comment-body { flex-grow: 1; }
+        .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
+        .comment-author { font-weight: 600; }
+        .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
+        .comment-content { word-wrap: break-word; }
+        .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+        .comment-actions button { background: none; border: none; color: var(--text-muted-color); padding: 0.25rem 0.5rem; border-radius: var(--border-radius-md); font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 0.3rem; transition: all 0.2s ease; }
+        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
+        .react-btn { position: relative; }
+        .reaction-box { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background-color: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: 50px; padding: 4px 8px; box-shadow: var(--shadow-md); z-index: 10; white-space: nowrap; animation: fadeInUp 0.2s ease-out; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .reaction-box.show { display: flex; gap: 5px; }
+        .reaction-emoji { font-size: 1.4rem; cursor: pointer; transition: transform 0.15s cubic-bezier(0.215, 0.610, 0.355, 1); padding: 2px; }
+        .reaction-emoji:hover { transform: scale(1.25); }
+        .reaction-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .reaction-pill { display: flex; align-items: center; background-color: rgba(var(--primary-color-rgb), 0.08); border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; font-weight: 500; cursor: default; transition: all 0.2s ease; }
+        .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
+        .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
+        .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
+
         /* === FINAL UI FIXES (INCLUDED) === */
-        .navbar-main {
-            z-index: 1040; /* Ensures this bar is on top of the category bar */
-        }
-        .header-controls .dropdown {
-            position: static; /* Prevents dropdown from being trapped in a positioned parent */
-        }
-        .dropdown-menu {
-            z-index: 1041; /* Ensure dropdown menu is on top of everything */
-        }
-        .bookmark-btn:focus {
-            outline: none;
-            box-shadow: none;
-        }
+        .navbar-main { z-index: 1040; }
+        .header-controls .dropdown { position: static; }
+        .dropdown-menu { z-index: 1041; }
+        .bookmark-btn:focus { outline: none; box-shadow: none; }
 
         @media (max-width: 767.98px) {
             body { padding-top: 145px; }
@@ -1601,10 +1618,8 @@ BASE_HTML_TEMPLATE = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    // This robust script safely attaches all event listeners.
     document.addEventListener('DOMContentLoaded', function () {
         try {
-            // Dark Mode Toggle
             const darkModeToggle = document.querySelector('.dark-mode-toggle');
             if (darkModeToggle) {
                 const body = document.body;
@@ -1627,7 +1642,6 @@ BASE_HTML_TEMPLATE = """
                 }
             }
 
-            // Flashed Messages Hiding
             const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
             flashedAlerts.forEach(function(alert) { 
                 setTimeout(function() {
@@ -1636,7 +1650,6 @@ BASE_HTML_TEMPLATE = """
                 }, 7000);
             });
 
-            // Date Filter Form
             const dateFilterForm = document.getElementById('dateFilterForm');
             if (dateFilterForm) {
                 dateFilterForm.addEventListener('submit', function(event) {
@@ -1664,6 +1677,7 @@ BASE_HTML_TEMPLATE = """
 </body>
 </html>
 """
+
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
@@ -1933,7 +1947,6 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 {% endblock %}
 """
-
 # In Rev14.py, replace your entire ARTICLE_HTML_TEMPLATE variable with this:
 
 ARTICLE_HTML_TEMPLATE = """
@@ -1981,7 +1994,6 @@ ARTICLE_HTML_TEMPLATE = """
         <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ total_comment_count }}</span>)</h3>
         
         <div id="comments-list">
-            {# THE FIX IS HERE: "_COMMENT_TEMPLATE" instead of "_COMMENT_TEMPLATE.html" #}
             {% for comment in comments %}
                 {% include '_COMMENT_TEMPLATE' %}
             {% else %}
@@ -2006,7 +2018,6 @@ ARTICLE_HTML_TEMPLATE = """
 {% endblock %}
 {% block scripts_extra %}
 <script>
-// This is the robust script from the previous step. It is already correct.
 document.addEventListener('DOMContentLoaded', function () {
     try {
         {% if article %}
@@ -2014,16 +2025,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
         const isCommunityArticle = {{ is_community_article | tojson }};
 
-        // --- 1. Article Content/Analysis Fetcher (FIXED) ---
         if (!isCommunityArticle) {
             const contentLoader = document.getElementById('contentLoader');
             const apiArticleContent = document.getElementById('apiArticleContent');
-            
             fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
-                .then(response => {
-                    if (!response.ok) { throw new Error(`Network response was not ok, status: ${response.status}`); }
-                    return response.json();
-                })
+                .then(response => { if (!response.ok) { throw new Error(`Network response was not ok, status: ${response.status}`); } return response.json(); })
                 .then(data => {
                     if (data.error) { throw new Error(data.error); }
                     let html = '';
@@ -2031,9 +2037,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
                     const analysis = data.groq_analysis;
                     if (analysis) {
-                        if (analysis.error) {
-                            html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`;
-                        } else {
+                        if (analysis.error) { html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`; }
+                        else {
                             if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
                             if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
                         }
@@ -2041,20 +2046,27 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
                     apiArticleContent.innerHTML = html;
                 })
-                .catch(error => {
-                    console.error("Failed to load article content:", error);
-                    if (apiArticleContent) {
-                        apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`;
-                    }
-                })
-                .finally(() => {
-                    if (contentLoader) contentLoader.style.display = 'none';
-                });
+                .catch(error => { console.error("Failed to load article content:", error); if (apiArticleContent) { apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; } })
+                .finally(() => { if (contentLoader) contentLoader.style.display = 'none'; });
         }
 
-        // --- 2. Commenting System (FIXED) ---
         const commentSection = document.getElementById('comment-section');
         if (commentSection && isUserLoggedIn) {
+            const updateReactionUI = (commentId, reactions, userReaction) => {
+                const summaryContainer = document.getElementById(`reaction-summary-${commentId}`);
+                if (!summaryContainer) return;
+                let summaryHTML = '';
+                if (reactions) {
+                    for (const [emoji, count] of Object.entries(reactions)) {
+                        if (count > 0) {
+                            const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
+                            summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
+                        }
+                    }
+                }
+                summaryContainer.innerHTML = summaryHTML;
+            };
+
             const handleCommentSubmit = (formElement) => {
                 const content = formElement.querySelector('textarea[name="content"]').value;
                 const parentId = formElement.querySelector('input[name="parent_id"]')?.value || null;
@@ -2087,9 +2099,36 @@ document.addEventListener('DOMContentLoaded', function () {
                 .catch(err => { console.error("Comment submission error:", err); alert("Error: " + err.message); })
                 .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
             };
+
             commentSection.addEventListener('click', function(e) {
                 const replyBtn = e.target.closest('.reply-btn');
-                if (replyBtn) {
+                const cancelBtn = e.target.closest('.cancel-reply-btn');
+                const reactBtn = e.target.closest('.react-btn');
+                const reactionEmoji = e.target.closest('.reaction-emoji');
+
+                if (reactBtn) {
+                    const commentId = reactBtn.dataset.commentId;
+                    const reactionBox = document.getElementById(`reaction-box-${commentId}`);
+                    if (reactionBox) {
+                        const isShown = reactionBox.classList.contains('show');
+                        document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
+                        if (!isShown) reactionBox.classList.add('show');
+                    }
+                } else if (reactionEmoji) {
+                    const commentId = reactionEmoji.dataset.commentId;
+                    const emoji = reactionEmoji.dataset.emoji;
+                    reactionEmoji.closest('.reaction-box').classList.remove('show');
+                    fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ emoji: emoji })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); }
+                        else { throw new Error(data.error || "Failed to vote."); }
+                    })
+                    .catch(err => { console.error("Reaction error:", err); alert("Error: " + err.message); });
+                } else if (replyBtn) {
                     const commentId = replyBtn.dataset.commentId;
                     const formContainer = document.getElementById(`reply-form-container-${commentId}`);
                     if (formContainer) {
@@ -2098,26 +2137,18 @@ document.addEventListener('DOMContentLoaded', function () {
                         formContainer.style.display = isDisplayed ? 'none' : 'block';
                         if (!isDisplayed) formContainer.querySelector('textarea').focus();
                     }
+                } else if (cancelBtn) {
+                    cancelBtn.closest('.reply-form-container').style.display = 'none';
+                } else if (!e.target.closest('.reaction-box')) {
+                    document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
                 }
-                const cancelBtn = e.target.closest('.cancel-reply-btn');
-                if (cancelBtn) { cancelBtn.closest('.reply-form-container').style.display = 'none'; }
             });
+
             const mainCommentForm = document.getElementById('comment-form');
-            if(mainCommentForm) {
-                mainCommentForm.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    handleCommentSubmit(this);
-                });
-            }
-            commentSection.addEventListener('submit', function(e) {
-                if(e.target.matches('.reply-form')) {
-                    e.preventDefault();
-                    handleCommentSubmit(e.target);
-                }
-            });
+            if(mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
+            commentSection.addEventListener('submit', function(e) { if(e.target.matches('.reply-form')) { e.preventDefault(); handleCommentSubmit(e.target); } });
         }
 
-        // --- 3. Bookmark Button ---
         const bookmarkBtn = document.getElementById('bookmarkBtn');
         if (bookmarkBtn && isUserLoggedIn) {
             bookmarkBtn.addEventListener('click', function() {
