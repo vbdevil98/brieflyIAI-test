@@ -73,7 +73,7 @@ app.config['NEWS_API_DOMAINS'] = 'timesofindia.indiatimes.com,thehindu.com,ndtv.
 app.config['NEWS_API_DAYS_AGO'] = 7 # Fetch news from the last 7 days
 app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt' #relevance, popularity, publishedAt
-app.config['CACHE_EXPIRY_SECONDS'] = 7200 # 1 hour
+app.config['CACHE_EXPIRY_SECONDS'] = 1800 
 app.permanent_session_lifetime = timedelta(days=30)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -679,6 +679,14 @@ def index(page=1, category_name='All Articles'):
     query_str = request.args.get('query')
     filter_date_str = request.args.get('filter_date') # Will be passed to fetch_news_from_api
 
+    # If the user visits the homepage ('All Articles') without a specific date filter,
+    # default to showing articles for the current day in India.
+    if not filter_date_str and category_name == 'All Articles' and not query_str:
+        # Note: INDIAN_TIMEZONE is already defined globally in your script.
+        current_ist_time = datetime.now(INDIAN_TIMEZONE)
+        filter_date_str = current_ist_time.strftime('%Y-%m-%d')
+        app.logger.info(f"No date filter provided. Defaulting to current date in IST: {filter_date_str}")
+        
     # Validate filter_date_str format if present, clear if invalid
     if filter_date_str:
         try:
