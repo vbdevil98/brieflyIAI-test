@@ -1490,17 +1490,17 @@ BASE_HTML_TEMPLATE = """
         <div class="container">
             <div class="categories-wrapper">
                 <div class="category-links-container">
-                    {% for cat_item in categories %}
-                        {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
-                        {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
-                            {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
-                        {% endif %}
-                        <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                            <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
-                            {{ cat_item }}
-                        </a>
-                    {% endfor %}
-                </div>
+                {% for cat_item in categories %}
+                    {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
+                    {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
+                        {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
+                    {% endif %}
+                    <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
+                        {{ cat_item }}
+                    </a>
+                {% endfor %}
+                </div>
                 
                 <form id="dateFilterForm" class="ms-2 ms-md-3" style="min-width: 180px;">
                     <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
@@ -1666,10 +1666,11 @@ INDEX_HTML_TEMPLATE = """
 
 {% block content %}
 
-{# This is the main controller: It shows the tabbed view on the homepage, or the list view everywhere else. #}
+{# This is the main controller: It shows the tabbed view on the homepage, or the original list view everywhere else. #}
 {% if is_main_homepage %}
 
-    {# ============== LAYOUT 1: MAIN HOMEPAGE (TABBED VIEW) ============== #}
+    {# ============== LAYOUT 1: MAIN HOMEPAGE (NEW TABBED VIEW) ============== #}
+    {# This section uses your original article card design to prevent breaking the UI. #}
     <div class="animate-fade-in">
         <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist" style="font-weight: 600;">
             <li class="nav-item" role="presentation">
@@ -1690,10 +1691,11 @@ INDEX_HTML_TEMPLATE = """
                     {% if popular_articles %}
                         {% for art in popular_articles %}
                             <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card d-flex flex-column w-100">
+                                <article class="article-card animate-fade-in d-flex flex-column w-100">
                                     {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
                                     <div class="article-image-container">
-                                        <a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                                        <a href="{{ article_url }}">
+                                        <img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
                                     </div>
                                     <div class="article-body d-flex flex-column">
                                         <div class="d-flex justify-content-between align-items-start">
@@ -1731,11 +1733,12 @@ INDEX_HTML_TEMPLATE = """
                 <div class="row g-4 pt-3">
                     {% if latest_yesterday_articles %}
                         {% for art in latest_yesterday_articles %}
-                            <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card d-flex flex-column w-100">
+                             <div class="col-md-6 col-lg-4 d-flex">
+                                <article class="article-card animate-fade-in d-flex flex-column w-100">
                                     {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
                                     <div class="article-image-container">
-                                        <a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                                        <a href="{{ article_url }}">
+                                        <img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
                                     </div>
                                     <div class="article-body d-flex flex-column">
                                         <div class="d-flex justify-content-between align-items-start">
@@ -1774,8 +1777,13 @@ INDEX_HTML_TEMPLATE = """
 
 {% else %}
 
-    {# ============ LAYOUT 2: STANDARD PAGINATED LIST (FOR CATEGORIES/FILTERS) ============ #}
-    
+    {# ============ LAYOUT 2: YOUR ORIGINAL PAGINATED LIST VIEW ============ #}
+    {# This section is preserved to ensure all category pages look exactly as they did before. #}
+
+    {% if selected_category == 'All Articles' and current_filter_date %}
+        <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
+    {% endif %}
+
     {% if articles and articles[0] and featured_article_on_this_page %}
     <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
         <div class="row g-0 g-md-4">
@@ -1790,7 +1798,7 @@ INDEX_HTML_TEMPLATE = """
             </div>
             <div class="col-lg-6 d-flex flex-column ps-lg-3 pt-3 pt-lg-0">
                 <div class="d-flex justify-content-between align-items-start">
-                    <div>
+                    <div> {# Container for meta items except bookmark #}
                         <div class="article-meta mb-2">
                             <span class="badge bg-primary me-2" style="font-size:0.75rem;">{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|truncate(25) }}</span>
                             <span class="meta-item"><i class="far fa-calendar-alt"></i> {{ (art0.published_at | to_ist if art0.is_community_article else (art0.publishedAt | to_ist if art0.publishedAt else 'N/A')) }}</span>
