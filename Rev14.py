@@ -1151,9 +1151,18 @@ BASE_HTML_TEMPLATE = """
         h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; font-weight: 700; color: var(--text-heading); }
         .alert-top { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width: 300px; text-align: center; box-shadow: var(--shadow-lg); border-radius: 0.5rem; }
 
+        /* General Content Layout */
+        .article-card, .static-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--card-border-color); box-shadow: var(--shadow-sm); transition: var(--transition); }
+        .static-content-wrapper { max-width: 800px; margin: 0 auto; line-height: 1.8; }
+        .static-content-wrapper h1 { font-size: 2.5rem; }
+        .static-content-wrapper h2 { font-size: 1.75rem; margin-top: 2.5rem; margin-bottom: 1rem; color: var(--text-heading); font-weight: 600; border-bottom: 1px solid var(--card-border-color); padding-bottom: 0.5rem; }
+        .static-content-wrapper ul { padding-left: 1.5rem; }
+        .static-content-wrapper ul li { margin-bottom: 0.5rem; }
+        .auth-container { max-width: 450px; }
+
         /* --- HEADER & NAVIGATION --- */
         .header-main { background-color: var(--navy-blue); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: var(--transition); height: 80px; }
-        .navbar-brand-custom { color: var(--accent-yellow) !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 0.6rem; }
+        .navbar-brand-custom { color: var(--accent-yellow) !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
         .navbar-brand-custom .brand-icon { color: var(--accent-yellow) !important; font-size: 1.8rem; }
         .search-form { width: 100%; max-width: 480px; }
         .search-input { border-radius: 50px; padding: 0.6rem 1rem 0.6rem 2.5rem; border: none; font-size: 0.9rem; background: rgba(255, 255, 255, 0.1); color: white; transition: var(--transition); }
@@ -1170,8 +1179,7 @@ BASE_HTML_TEMPLATE = """
         .category-link:hover:not(.active) { color: var(--primary-action) !important; background-color: var(--light-bg) !important; }
         .date-filter-form .form-control, .date-filter-form .btn { font-size: 0.85rem; }
 
-        /* --- MAIN CONTENT & CARDS --- */
-        .article-card { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--card-border-color); box-shadow: var(--shadow-sm); transition: var(--transition); }
+        /* Article Cards */
         .article-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); }
         .article-image-container { height: 220px; overflow: hidden; border-top-left-radius: var(--border-radius); border-top-right-radius: var(--border-radius); }
         .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
@@ -1180,19 +1188,20 @@ BASE_HTML_TEMPLATE = """
         .article-card:hover .article-title a { color: var(--primary-action) !important; }
         .read-more { background: var(--primary-action); font-weight: 600; font-size: 0.9rem; transition: var(--transition); }
         .read-more:hover { background-color: color-mix(in srgb, var(--primary-action) 85%, black); transform: translateY(-2px); }
-        .static-content-wrapper { max-width: 800px; margin: 0 auto; }
-        .static-content-wrapper h1 { font-size: 2.5rem; }
-        .static-content-wrapper h2 { font-size: 1.75rem; margin-top: 2.5rem; margin-bottom: 1rem; color: var(--text-heading); font-weight: 600; border-bottom: 1px solid var(--card-border-color); padding-bottom: 0.5rem; }
 
         /* --- FOOTER --- */
         .footer { background: var(--navy-blue); color: #E5E7EB; margin-top: auto; padding: 4rem 0 2rem; font-size: 0.9rem; }
         .footer h5 { color: white; font-weight: 600; }
         .footer-brand .navbar-brand-custom { font-size: 1.8rem; }
-        .footer a { color: #D1D5DB; transition: var(--transition); }
+        .footer a { color: #D1D5DB; transition: var(--transition); text-decoration: none; }
         .footer a:hover { color: var(--accent-yellow); }
         .footer .social-links a:hover { transform: translateY(-2px) scale(1.1); }
         .footer .newsletter-section p { color: white; }
         .footer .copyright { text-align: center; padding-top: 2.5rem; margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.85rem; color: #9CA3AF; }
+        .footer .form-control { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white; }
+        .footer .form-control::placeholder { color: rgba(255,255,255,0.6); }
+        .footer .form-control:focus { background: rgba(255,255,255,0.2); box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.4); }
+        .footer .btn-subscribe { background-color: var(--accent-yellow); border-color: var(--accent-yellow); color: var(--navy-blue); font-weight: 600; }
 
         /* --- COMMENT SECTION --- */
         .comment-thread { position: relative; }
@@ -1200,24 +1209,51 @@ BASE_HTML_TEMPLATE = """
         #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
         .comment-replies { margin-top: 1rem; margin-left: calc(45px + 1rem); padding-left: 1.25rem; border-left: 2px solid var(--card-border-color); }
         .comment-replies > .comment-thread + .comment-thread { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--card-border-color); }
-        .comment-avatar { width: 45px; height: 45px; } .comment-replies .comment-avatar { width: 40px; height: 40px; }
-        /* Other comment styles from previous step are good and remain */
+        .comment-avatar { width: 45px; height: 45px; border-radius:50%; background:var(--primary-action); color:white; display:flex; align-items:center; justify-content:center; font-weight:600; flex-shrink:0;}
+        .comment-replies .comment-avatar { width: 40px; height: 40px; }
+        body.dark-mode .comment-avatar { background: var(--primary-action); }
+        .comment-body { flex-grow: 1; }
+        .comment-author { font-weight: 600; color: var(--text-heading); }
+        .comment-date { font-size: 0.8rem; color: var(--text-muted); }
+        .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
+        .comment-content { word-wrap: break-word; }
+        .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+        .comment-actions button { background: none; border: none; color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 0.3rem; transition: var(--transition); }
+        .comment-actions button:hover { color: var(--primary-action); background-color: color-mix(in srgb, var(--primary-action) 15%, transparent); }
+        .reaction-box { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background-color: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: 50px; padding: 4px 8px; box-shadow: var(--shadow-md); z-index: 10; animation: fadeInUp 0.2s ease-out; }
+        .reaction-box.show { display: flex; gap: 5px; }
+        .reaction-emoji { font-size: 1.4rem; cursor: pointer; transition: transform 0.15s cubic-bezier(0.215, 0.610, 0.355, 1); padding: 2px; }
+        .reaction-emoji:hover { transform: scale(1.25); }
+        .reaction-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .reaction-pill { display: flex; align-items: center; background-color: color-mix(in srgb, var(--primary-action) 10%, transparent); border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; font-weight: 500; transition: var(--transition); }
+        .reaction-pill.user-reacted { background-color: var(--primary-action); color: white; }
+        .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
+        .reply-form-container { display: none; padding: 1rem; border-radius: var(--border-radius); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
+        body.dark-mode .reply-form-container { background-color: var(--light-bg); }
 
         /* --- MOBILE RESPONSIVENESS --- */
         @media (max-width: 991.98px) {
             body { padding-top: 80px; }
             .header-main { height: auto; padding: 0.75rem 0; }
+            .header-main .container > .d-flex { flex-wrap: wrap; }
             .navbar-brand-custom { width: 50%; }
-            .search-form { order: 3; width: 100%; margin-top: 0.75rem; }
+            .search-form.d-lg-block { display: none !important; } .search-form.d-lg-none { display: block !important; order: 3; width: 100%; margin-top: 0.75rem; }
             .header-controls { width: 50%; justify-content: flex-end; }
             .category-nav { top: 80px; }
-            .categories-wrapper { flex-wrap: wrap; gap: 0.5rem; justify-content: center; padding: 0.5rem; }
+            .categories-wrapper { flex-direction: column; flex-wrap: nowrap; gap: 0.5rem; justify-content: center; padding: 0.5rem; }
             .category-links-container { width: 100%; overflow-x: auto; justify-content: flex-start; -ms-overflow-style: none; scrollbar-width: none; }
             .category-links-container::-webkit-scrollbar { display: none; }
             .date-filter-form { width: 100%; max-width: 320px; margin: 0.5rem auto 0; }
         }
+        @media (max-width: 575.98px) {
+            .comment-replies { margin-left: 1rem; padding-left: 0.75rem; }
+            .static-content-wrapper, .auth-container { padding: 1.5rem; }
+        }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
-    {% block head_extra %}{% endblock %}
+    {% block head_extra %}{% endblock %}    
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7"></script>
     <script>
@@ -1225,6 +1261,16 @@ BASE_HTML_TEMPLATE = """
     </script>
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}">
+    <div id="alert-placeholder">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}{% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show alert-top" role="alert">
+                    <span>{{ message }}</span><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}{% endif %}
+        {% endwith %}
+    </div>
+
     <header class="header-main fixed-top">
         <nav class="container h-100">
             <div class="d-flex justify-content-between align-items-center h-100">
@@ -1239,9 +1285,9 @@ BASE_HTML_TEMPLATE = """
                     <div class="dropdown">
                         <button class="btn header-btn dropdown-toggle rounded-pill" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="fas fa-user-circle"></i><span class="d-none d-md-inline ms-2">Hi, {{ session.user_name|truncate(15) }}!</span></button>
                         <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card fa-fw me-2"></i>Profile</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt fa-fw me-2"></i>Logout</a></li>
                         </ul>
                     </div>
                     {% else %}
@@ -1249,7 +1295,7 @@ BASE_HTML_TEMPLATE = """
                     {% endif %}
                 </div>
             </div>
-            <form action="{{ url_for('search_results') }}" method="GET" class="search-form position-relative d-lg-none mt-2">
+            <form action="{{ url_for('search_results') }}" method="GET" class="search-form position-relative d-lg-none">
                 <input type="search" name="query" class="form-control search-input" placeholder="Search..." value="{{ request.args.get('query', '') }}">
                 <i class="fas fa-search position-absolute top-50 translate-middle-y search-icon"></i>
             </form>
@@ -1259,7 +1305,7 @@ BASE_HTML_TEMPLATE = """
     <nav class="category-nav fixed-top">
         <div class="container">
             <div class="categories-wrapper">
-                <div class="category-links-container d-flex justify-content-center">
+                <div class="category-links-container">
                     {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">{{ cat_item }}</a>{% endfor %}
                 </div>
                 <form id="dateFilterForm" class="date-filter-form">
@@ -1279,16 +1325,28 @@ BASE_HTML_TEMPLATE = """
 
     {% if session.user_id %}
     <div class="admin-controls">
-        <button class="btn p-0 add-article-btn" id="addArticleBtn" title="Post a New Article" style="width: 60px; height: 60px; border-radius: 50%; background-color: var(--primary-action); color:white; box-shadow: var(--shadow-lg);"><i class="fas fa-plus fs-4"></i></button>
+        <button class="btn p-0 add-article-btn" data-bs-toggle="modal" data-bs-target="#addArticleModal" title="Post a New Article" style="width: 60px; height: 60px; border-radius: 50%; background-color: var(--primary-action); color:white; box-shadow: var(--shadow-lg);"><i class="fas fa-plus fs-4"></i></button>
     </div>
     <div class="modal fade" id="addArticleModal" tabindex="-1" aria-labelledby="addArticleModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="addArticleModalLabel">Post New Article</h5>
+                    <h5 class="modal-title" id="addArticleModalLabel">Post New Article to Community Hub</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body"><form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">...</form></div>
+                <div class="modal-body">
+                    <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
+                        <div class="mb-3"><label for="articleTitle" class="form-label">Title</label><input type="text" id="articleTitle" name="title" class="form-control" required></div>
+                        <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control" rows="3" required></textarea></div>
+                        <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control" value="Community Post" required></div>
+                        <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control"></div>
+                        <div class="mb-3"><label for="articleContent" class="form-label">Full Content</label><textarea id="articleContent" name="content" class="form-control" rows="7" required></textarea></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Post Article</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
@@ -1299,20 +1357,33 @@ BASE_HTML_TEMPLATE = """
             <div class="row gy-4">
                 <div class="footer-brand col-lg-4 col-md-12 text-center text-lg-start">
                     <a class="navbar-brand-custom mb-2 d-inline-flex" href="{{ url_for('index') }}"><i class="fas fa-bolt-lightning brand-icon me-2"></i><span>Briefly</span></a>
-                    <p class="small text-muted ps-1">Clarity in a Flash. India's News, Simplified by AI.</p>
+                    <p class="ps-1" style="color: white !important;">Clarity in a Flash. India's News, Simplified by AI.</p>
                 </div>
                 <div class="footer-section col-lg-2 col-md-4 col-6">
                     <h5>Quick Links</h5>
-                    <ul class="list-unstyled footer-links"><li_items>...</ul_items></ul>
+                    <ul class="list-unstyled footer-links">
+                        <li><a href="{{ url_for('index') }}">Home</a></li>
+                        <li><a href="{{ url_for('about') }}">About Us</a></li>
+                        <li><a href="{{ url_for('contact') }}">Contact</a></li>
+                        <li><a href="{{ url_for('privacy') }}">Privacy Policy</a></li>
+                        {% if session.user_id %}<li><a href="{{ url_for('profile') }}">My Profile</a></li>{% endif %}
+                    </ul>
                 </div>
                 <div class="footer-section col-lg-2 col-md-4 col-6">
                     <h5>Categories</h5>
-                    <ul class="list-unstyled footer-links">{% for cat_item in categories %}<li><a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a></li>{% endfor %}</ul>
+                    <ul class="list-unstyled footer-links">
+                        {% for cat_item in categories %}<li><a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a></li>{% endfor %}
+                    </ul>
                 </div>
                 <div class="footer-section newsletter-section col-lg-4 col-md-4">
                     <h5>Newsletter</h5>
                     <p>Subscribe for weekly updates!</p>
-                    <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">...</form>
+                    <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">
+                        <div class="input-group">
+                            <input type="email" name="email" class="form-control" placeholder="Your Email" aria-label="Your Email" required>
+                            <button class="btn btn-subscribe" type="submit">Subscribe</button>
+                        </div>
+                    </form>
                 </div>
             </div>
             <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved.</div>
@@ -1321,10 +1392,38 @@ BASE_HTML_TEMPLATE = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    // The JavaScript from the previous correct version remains the same and does not need to be changed.
-    // This script block handles dark mode, modals, alerts, and date filters.
     document.addEventListener('DOMContentLoaded', function () {
-        // ... (all previous JS logic is still valid and should be here)
+        const darkModeToggle = document.querySelector('.dark-mode-toggle');
+        const body = document.body;
+        function updateThemeIcon() { if(darkModeToggle) { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; } }
+        function applyTheme(theme) {
+            if (theme === 'enabled') { body.classList.add('dark-mode'); } else { body.classList.remove('dark-mode'); }
+            updateThemeIcon();
+            localStorage.setItem('darkMode', theme);
+            document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
+        }
+        if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
+        let storedTheme = localStorage.getItem('darkMode') || document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
+        if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+        
+        const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
+        flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 5000); });
+
+        const dateFilterForm = document.getElementById('dateFilterForm');
+        if (dateFilterForm) {
+            dateFilterForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                const dateInput = document.getElementById('articleDateFilter');
+                if (!dateInput.value) return;
+                let targetUrl = new URL("{{ url_for('index', category_name='All Articles') }}", window.location.origin);
+                targetUrl.searchParams.set('filter_date', dateInput.value);
+                window.location.href = targetUrl.toString();
+            });
+            const clearDateFilterBtn = document.getElementById('clearDateFilter');
+            if (clearDateFilterBtn) {
+                clearDateFilterBtn.addEventListener('click', () => { window.location.href = "{{ url_for('index', category_name='All Articles') }}"; });
+            }
+        }
     });
     </script>
     {% block scripts_extra %}{% endblock %}
