@@ -1372,7 +1372,17 @@ BASE_HTML_TEMPLATE = """
         .contact-social-links { display: flex; gap: 1.5rem; justify-content: center; font-size: 1.5rem; }
         .contact-social-links a { color: var(--text-muted-color); transition: all 0.3s ease; }
         .contact-social-links a:hover { color: var(--secondary-color); transform: scale(1.1); }
-        
+        /* === FINAL UI FIXES === */
+        .navbar-main {
+            z-index: 1040; /* Ensures this bar is on top of the category bar */
+        }
+        .header-controls .dropdown {
+            position: static; /* Prevents dropdown from being trapped in a positioned parent */
+        }
+        .bookmark-btn:focus {
+            outline: none;
+            box-shadow: none;
+        }
         @media (max-width: 767.98px) {
             body { padding-top: 145px; }
             .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
@@ -2074,60 +2084,76 @@ ARTICLE_HTML_TEMPLATE = """
 </article>
 {% endif %}
 {% endblock %}
+{# In ARTICLE_HTML_TEMPLATE, replace the entire scripts_extra block with this #}
+
 {% block scripts_extra %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // This script block will only run if an article is being displayed
     {% if article %}
     const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
     const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
+    const isCommunityArticle = {{ is_community_article | tojson }};
 
-    // --- Article Content/Analysis Fetcher ---
-    if ({{ not is_community_article | tojson }}) {
+    // --- 1. Article Content/Analysis Fetcher (FIXED) ---
+    if (!isCommunityArticle) {
         const contentLoader = document.getElementById('contentLoader');
         const apiArticleContent = document.getElementById('apiArticleContent');
+        
         fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
-            .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok.'))
+            .then(response => {
+                if (!response.ok) { throw new Error(`Network response was not ok, status: ${response.status}`); }
+                return response.json();
+            })
             .then(data => {
-                if(contentLoader) contentLoader.style.display = 'none';
-                if (!apiArticleContent) return;
+                if (data.error) { throw new Error(data.error); }
+
                 let html = '';
                 const articleUrl = {{ article.url | tojson if article and not is_community_article else 'null' }};
                 const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
-                if (data.error && !data.groq_analysis) { html = `<div class="alert alert-warning small p-3 mt-3">Could not load article content: ${data.error}</div>`; }
-                else {
-                    const analysis = data.groq_analysis;
-                    if (analysis) {
-                        if (analysis.error) { html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`; }
-                        else {
-                            if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
-                            if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
-                        }
+                
+                const analysis = data.groq_analysis;
+                if (analysis) {
+                    if (analysis.error) {
+                        html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`;
+                    } else {
+                        if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
+                        if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
                     }
                 }
                 if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
                 apiArticleContent.innerHTML = html;
             })
-            .catch(error => { if(contentLoader) { contentLoader.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Please try refreshing.</div>`; }});
+            .catch(error => {
+                console.error("Failed to load article content:", error);
+                if (apiArticleContent) {
+                    apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`;
+                }
+            })
+            .finally(() => {
+                // This GUARANTEES the loader is hidden
+                if (contentLoader) contentLoader.style.display = 'none';
+            });
     }
 
-    // --- Commenting System ---
+    // --- 2. Commenting System (FIXED) ---
     const commentSection = document.getElementById('comment-section');
-    if (commentSection) {
+    if (commentSection && isUserLoggedIn) {
         
-        function handleCommentSubmit(form) {
-            const content = form.querySelector('textarea[name="content"]').value;
-            const parentId = form.querySelector('input[name="parent_id"]')?.value || null;
+        const handleCommentSubmit = (formElement) => {
+            const content = formElement.querySelector('textarea[name="content"]').value;
+            const parentId = formElement.querySelector('input[name="parent_id"]')?.value || null;
             if (!content.trim()) return;
 
-            const submitButton = form.querySelector('button[type="submit"]');
+            const submitButton = formElement.querySelector('button[type="submit"]');
             const originalButtonText = submitButton.innerHTML;
             submitButton.disabled = true;
-            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Posting...';
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
 
             fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: content, parent_id: parentId })
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ content, parent_id: parentId })
             })
             .then(res => res.json())
             .then(data => {
@@ -2136,61 +2162,89 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (noCommentsMsg) noCommentsMsg.remove();
 
                     if (data.parent_id) {
-                        // It's a reply
                         document.getElementById(`replies-of-${data.parent_id}`).insertAdjacentHTML('beforeend', data.html);
-                        form.closest('.reply-form-container').style.display = 'none';
+                        formElement.closest('.reply-form-container').style.display = 'none';
                     } else {
-                        // It's a top-level comment
                         document.getElementById('comments-list').insertAdjacentHTML('beforeend', data.html);
                     }
                     
                     const countEl = document.getElementById('comment-count');
                     countEl.textContent = parseInt(countEl.textContent) + 1;
-                    form.reset();
+                    formElement.reset();
                 } else {
-                    alert('Error: ' + (data.error || 'Could not post comment.'));
+                    throw new Error(data.error || 'Could not post comment.');
                 }
             })
             .catch(err => {
-                console.error("Comment error:", err);
-                alert("An error occurred. Please try again.");
+                console.error("Comment submission error:", err);
+                alert("Error: " + err.message);
             })
             .finally(() => {
                 submitButton.disabled = false;
                 submitButton.innerHTML = originalButtonText;
             });
-        }
+        };
 
-        // --- Event Delegation for the entire comment section ---
-        commentSection.addEventListener('submit', function(e) {
-            if (e.target.matches('#comment-form') || e.target.matches('.reply-form')) {
-                e.preventDefault();
-                handleCommentSubmit(e.target);
-            }
-        });
-
+        // Delegated listener for the entire comment section
         commentSection.addEventListener('click', function(e) {
-            // Logic for reply button
-            if (e.target.matches('.reply-btn')) {
-                const commentId = e.target.dataset.commentId;
+            const replyBtn = e.target.closest('.reply-btn');
+            const cancelBtn = e.target.closest('.cancel-reply-btn');
+
+            if (replyBtn) {
+                const commentId = replyBtn.dataset.commentId;
                 const formContainer = document.getElementById(`reply-form-container-${commentId}`);
                 if (formContainer) {
                     const isDisplayed = formContainer.style.display === 'block';
-                    document.querySelectorAll('.reply-form-container').forEach(fc => fc.style.display = 'none'); // Hide all others
+                    document.querySelectorAll('.reply-form-container').forEach(fc => fc.style.display = 'none');
                     formContainer.style.display = isDisplayed ? 'none' : 'block';
                     if (!isDisplayed) formContainer.querySelector('textarea').focus();
                 }
             }
-
-            // Logic for cancel reply button
-            if (e.target.matches('.cancel-reply-btn')) {
-                 e.target.closest('.reply-form-container').style.display = 'none';
+            if (cancelBtn) {
+                cancelBtn.closest('.reply-form-container').style.display = 'none';
             }
-            
-            // (Your existing reaction/vote logic can go here and will work as before)
+        });
+
+        // Specific listeners for forms to prevent page refresh
+        const mainCommentForm = document.getElementById('comment-form');
+        if(mainCommentForm) {
+            mainCommentForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                handleCommentSubmit(this);
+            });
+        }
+        commentSection.addEventListener('submit', function(e) {
+            if(e.target.matches('.reply-form')) {
+                e.preventDefault();
+                handleCommentSubmit(e.target);
+            }
         });
     }
-    // (Your existing bookmark logic can go here and will work as before)
+
+    // --- 3. Bookmark Button ---
+    const bookmarkBtn = document.getElementById('bookmarkBtn');
+    if (bookmarkBtn && isUserLoggedIn) {
+        bookmarkBtn.addEventListener('click', function() {
+            // This logic was already working correctly
+            const articleHashId = this.dataset.articleHashId; 
+            const isCommunity = this.dataset.isCommunity; 
+            const title = this.dataset.title; 
+            const sourceName = this.dataset.sourceName; 
+            const imageUrl = this.dataset.imageUrl; 
+            const description = this.dataset.description; 
+            const publishedAt = this.dataset.publishedAt;
+            fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt }) })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    this.classList.toggle('active', data.status === 'added'); 
+                    this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    // The alert logic can be simplified or removed if not desired
+                } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+            })
+            .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
+        });
+    }
     {% endif %}
 });
 </script>
