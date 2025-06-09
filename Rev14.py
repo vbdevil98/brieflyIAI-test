@@ -1276,39 +1276,30 @@ BASE_HTML_TEMPLATE = """
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
         .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        
-        /* === HEADER LAYOUT FIX: Robust Flexbox Approach === */
         .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; }
         .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
         .navbar-left { flex-shrink: 0; }
         .navbar-center { flex-grow: 1; min-width: 150px; max-width: 550px; }
         .navbar-right { flex-shrink: 0; }
-        
         .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
         .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
-        
         .search-container { position: relative; width: 100%; }
         .navbar-search { width: 100%; border-radius: 50px; padding: 0.6rem 1.25rem 0.6rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
         .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
         .navbar-search:focus { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 4px rgba(255,255,255,0.2); border-color: var(--secondary-light); outline: none; color:white; }
         .search-icon { color: rgba(255,255,255,0.8); transition: all 0.3s ease; left: 1.1rem; position: absolute; top: 50%; transform: translateY(-50%); }
-
         .header-controls { display: flex; gap: 0.8rem; align-items: center; }
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
         .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
-        
-        /* Category Nav */
-        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 82px; /* Adjusted for new header height */ width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
+        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
         .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
         .categories-wrapper::-webkit-scrollbar { display: none; }
         .category-links-container { display: flex; flex-shrink: 0; }
         .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
         .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
         .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
-
-        /* Cards & General Layout */
-        .article-card, .article-full-content-wrapper, .auth-container, .static-content-wrapper, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
+        .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
         .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
         .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
@@ -1323,18 +1314,13 @@ BASE_HTML_TEMPLATE = """
         .article-description { color: var(--text-muted-color); margin-bottom: 1.25rem; font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.6rem 0; border-radius: var(--border-radius-md); font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
         .read-more:hover { background: var(--primary-dark); transform: translateY(-2px); color: white !important; box-shadow: var(--shadow-md); }
-        
-        /* Pagination */
         .pagination { flex-wrap: wrap; }
         .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--text-muted-color); background-color: var(--card-bg); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; margin: 0 0.2rem;}
-        .page-item .page-link:hover { border-color: var(--primary-light); color: var(--primary-color); }
         .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
         .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
         .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
-        
-        /* === FOOTER LAYOUT FIX === */
         footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
-        .footer-content.row { display: flex; flex-wrap: wrap; } /* Ensures wrapping on small screens */
+        .footer-content.row { display: flex; flex-wrap: wrap; }
         .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
         .footer-links { display: flex; flex-direction: column; gap: 0.8rem; }
         .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; }
@@ -1344,30 +1330,170 @@ BASE_HTML_TEMPLATE = """
         .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
         .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
 
-        /* Other styles */
-        .auth-container { max-width: 450px; margin: 3rem auto; padding: 2.5rem; }
-        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
-        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
-        .bookmark-btn:hover { color: var(--secondary-light); }
-        .article-card .bookmark-btn { font-size: 1.3rem; }
-
-        /* === RESPONSIVE FIXES === */
+        /* === ADD ARTICLE BUTTON (FAB) UPDATE === */
+        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
+        .add-article-btn { width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
+        .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(var(--primary-color-rgb), 0.4); }
+        
+        /* === NEW STYLES FOR STATIC PAGES === */
+        .page-header-static { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2rem; text-align: center; border-left: 5px solid var(--primary-color); }
+        .page-header-static h1 { color: var(--text-color); font-size: 2.8rem; font-weight: 700; }
+        body.dark-mode .page-header-static h1 { color: var(--primary-light); }
+        .static-content-container { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: clamp(1.5rem, 5vw, 3rem); font-size: 1.05rem; line-height: 1.8; box-shadow: var(--shadow-md); }
+        .static-content-container h2 { font-family: 'Poppins', sans-serif; color: var(--primary-dark); border-bottom: 2px solid var(--secondary-color); padding-bottom: 0.5rem; margin-top: 2.5rem; margin-bottom: 1.5rem; display: inline-block; }
+        .static-content-container h2 .icon { margin-right: 0.75rem; }
+        .static-content-container p.lead { font-size: 1.25rem; font-weight: 400; color: var(--text-muted-color); }
+        .static-content-container ul { padding-left: 25px; }
+        .static-content-container li { margin-bottom: 0.5rem; }
+        .contact-card { background-color: var(--light-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-md); padding: 1.5rem; height: 100%; text-align: center; transition: all 0.3s ease; }
+        .contact-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-md); }
+        .contact-card .icon { font-size: 2.5rem; color: var(--primary-color); margin-bottom: 1rem; }
+        body.dark-mode .contact-card { background-color: var(--card-bg); }
+        .contact-social-links { display: flex; gap: 1.5rem; justify-content: center; font-size: 1.5rem; }
+        .contact-social-links a { color: var(--text-muted-color); transition: all 0.3s ease; }
+        .contact-social-links a:hover { color: var(--secondary-color); transform: scale(1.1); }
+        
         @media (max-width: 767.98px) {
-            body { padding-top: 145px; } /* Reset to a reasonable value */
+            body { padding-top: 145px; }
             .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
             .navbar-left { width: 100%; text-align: center; margin-bottom: 0.5rem; }
             .navbar-right { position: absolute; top: 1.2rem; right: 1rem; }
             .navbar-center { order: 3; width: 100%; }
             .category-nav { top: 128px; }
+            .page-header-static h1 { font-size: 2rem; }
         }
-        @media (max-width: 575.98px) {
-            .navbar-brand-custom { font-size: 1.8rem; }
-            .header-controls { gap: 0.3rem; }
-            .header-btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
-            .dark-mode-toggle { font-size: 1rem; }
+        /* === ADD THIS CSS TO YOUR BASE TEMPLATE'S STYLE SECTION === */
+
+        /* Improved Auth (Login/Register) Pages */
+        .auth-card {
+            max-width: 480px;
+            margin: 3rem auto;
+            background: var(--card-bg);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--card-border-color);
+            overflow: hidden;
         }
-        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .auth-header {
+            padding: 2rem;
+            background-color: var(--primary-color);
+            text-align: center;
+        }
+        .auth-header .icon {
+            font-size: 2.5rem;
+            color: var(--secondary-light);
+        }
+        .auth-header h2 {
+            color: white;
+            font-weight: 600;
+            margin-top: 0.75rem;
+            margin-bottom: 0;
+        }
+        .auth-body {
+            padding: 2rem 2.5rem;
+        }
+        .input-group-icon {
+            position: relative;
+        }
+        .input-group-icon .form-control {
+            padding-left: 2.5rem;
+        }
+        .input-group-icon .input-icon {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted-color);
+        }
+        .auth-body .btn {
+            padding: 0.75rem;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        /* Improved Profile Page */
+        .profile-header-card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius-lg);
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .profile-avatar-wrapper {
+            position: relative;
+            margin-bottom: 1rem;
+        }
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background-image: linear-gradient(to top, var(--primary-color), var(--primary-light));
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 3.5rem;
+            font-family: 'Poppins', sans-serif;
+            border: 5px solid var(--card-bg);
+            box-shadow: var(--shadow-md);
+        }
+        .profile-header-card h2 {
+            margin-bottom: 0.25rem;
+            font-size: 2rem;
+        }
+        .profile-header-card .username {
+            color: var(--text-muted-color);
+            font-weight: 500;
+            margin-bottom: 1rem;
+        }
+        .profile-stats {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid var(--card-border-color);
+            padding-top: 1.5rem;
+            width: 100%;
+            justify-content: center;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-item .icon {
+            font-size: 1.5rem;
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+        }
+        .stat-item .count {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .stat-item .label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted-color);
+        }
+        .profile-tabs .nav-link {
+            padding: 0.75rem 1rem;
+        }
+        .empty-state-card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius-lg);
+            text-align: center;
+            padding: 3rem;
+            border: 2px dashed var(--card-border-color);
+        }
+        .empty-state-card .icon {
+            font-size: 3.5rem;
+            color: var(--text-muted-color);
+            opacity: 0.5;
+            margin-bottom: 1rem;
+        }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1475,35 +1601,33 @@ BASE_HTML_TEMPLATE = """
         {% block content %}{% endblock %}
     </main>
     
-    <div id="modals-placeholder">
-        {% if session.user_id %}
-        <div class="admin-controls">
-            <button class="add-article-btn" id="addArticleBtn" title="Post a New Article">
-                <i class="fas fa-plus"></i>
-            </button>
-        </div>
-        <div class="add-article-modal" id="addArticleModal" style="display:none;" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content p-4">
-                    <div class="modal-header border-0 pb-0">
-                        <h4 class="modal-title">Post New Article</h4>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
-                            <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control modal-form-control" required></div>
-                            <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control modal-form-control" rows="3" required></textarea></div>
-                            <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control modal-form-control" value="Community Post" required></div>
-                            <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control modal-form-control"></div>
-                            <div class="mb-3"><label for="articleContent" class="form-label">Full Article Content</label><textarea id="articleContent" name="content" class="form-control modal-form-control" rows="7" required></textarea></div>
-                            <div class="d-flex justify-content-end gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary-modal">Post Article</button></div>
-                        </form>
-                    </div>
+    {% if session.user_id %}
+    <div class="admin-controls">
+        <button class="add-article-btn" data-bs-toggle="modal" data-bs-target="#addArticleModal" title="Post a New Article">
+            <i class="fas fa-pen-to-square"></i>
+        </button>
+    </div>
+    <div class="modal fade" id="addArticleModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content p-4">
+                <div class="modal-header border-0 pb-0">
+                    <h4 class="modal-title">Post New Article</h4>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
+                        <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control" required></div>
+                        <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control" rows="3" required></textarea></div>
+                        <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control" value="Community Post" required></div>
+                        <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control"></div>
+                        <div class="mb-3"><label for="articleContent" class="form-label">Full Article Content</label><textarea id="articleContent" name="content" class="form-control" rows="7" required></textarea></div>
+                        <div class="d-flex justify-content-end gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Post Article</button></div>
+                    </form>
                 </div>
             </div>
         </div>
-        {% endif %}
     </div>
+    {% endif %}
 
     <footer class="mt-auto">
         <div class="container">
@@ -1540,7 +1664,7 @@ BASE_HTML_TEMPLATE = """
                     <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">
                         <div class="input-group">
                             <input type="email" name="email" class="form-control form-control-sm" placeholder="Your Email" aria-label="Your Email" required style="background: #374151; border-color: #4B5563; color: white;">
-                            <button class="btn btn-sm btn-primary-modal" type="submit">Subscribe</button>
+                            <button class="btn btn-sm btn-primary" type="submit">Subscribe</button>
                         </div>
                     </form>
                 </div>
@@ -1561,16 +1685,8 @@ BASE_HTML_TEMPLATE = """
             localStorage.setItem('darkMode', theme);
             document.cookie = "darkMode=" + theme + ";path=/;max-age=" + (60*60*24*365) + ";SameSite=Lax";
         }
-        if(darkModeToggle) { darkModeToggle.addEventListener('click', () => { applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled'); }); }
         let storedTheme = localStorage.getItem('darkMode') || document.cookie.split('; ').find(row => row.startsWith('darkMode='))?.split('=')[1];
         if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
-        
-        const addArticleBtn = document.getElementById('addArticleBtn');
-        const addArticleModalEl = document.getElementById('addArticleModal');
-        if (addArticleBtn && addArticleModalEl) {
-            const addArticleModal = new bootstrap.Modal(addArticleModalEl);
-            addArticleBtn.addEventListener('click', () => addArticleModal.show());
-        }
         
         const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
         flashedAlerts.forEach(function(alert) { setTimeout(function() { const bsAlert = bootstrap.Alert.getOrCreateInstance(alert); if (bsAlert) bsAlert.close(); }, 7000); });
@@ -1587,7 +1703,6 @@ BASE_HTML_TEMPLATE = """
                    window.location.href = targetUrl.toString();
                 }
             });
-
             const clearDateFilterBtn = document.getElementById('clearDateFilter');
             if (clearDateFilterBtn) {
                 clearDateFilterBtn.addEventListener('click', function() {
@@ -1601,7 +1716,6 @@ BASE_HTML_TEMPLATE = """
 </body>
 </html>
 """
-
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
@@ -2169,14 +2283,29 @@ LOGIN_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}Login - BrieflyAI{% endblock %}
 {% block content %}
-<div class="auth-container article-card animate-fade-in mx-auto">
-    <h2 class="auth-title mb-4"><i class="fas fa-sign-in-alt me-2"></i>Member Login</h2>
-    <form method="POST" action="{{ url_for('login', next=request.args.get('next')) }}">
-        <div class="modal-form-group"><label for="username" class="form-label">Username</label><input type="text" class="modal-form-control" id="username" name="username" required placeholder="Enter your username"></div>
-        <div class="modal-form-group"><label for="password" class="form-label">Password</label><input type="password" class="modal-form-control" id="password" name="password" required placeholder="Enter your password"></div>
-        <button type="submit" class="btn btn-primary-modal w-100 mt-3">Login</button>
-    </form>
-    <p class="mt-3 text-center small">Don't have an account? <a href="{{ url_for('register', next=request.args.get('next')) }}" class="fw-medium">Register here</a></p>
+<div class="auth-card animate-fade-in">
+    <div class="auth-header">
+        <div class="icon"><i class="fas fa-sign-in-alt"></i></div>
+        <h2>Member Login</h2>
+    </div>
+    <div class="auth-body">
+        <form method="POST" action="{{ url_for('login', next=request.args.get('next')) }}">
+            <div class="mb-3 input-group-icon">
+                <label for="username" class="form-label">Username</label>
+                <i class="fas fa-user input-icon"></i>
+                <input type="text" class="form-control" id="username" name="username" required placeholder="Enter your username">
+            </div>
+            <div class="mb-4 input-group-icon">
+                <label for="password" class="form-label">Password</label>
+                <i class="fas fa-lock input-icon"></i>
+                <input type="password" class="form-control" id="password" name="password" required placeholder="Enter your password">
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Login</button>
+        </form>
+        <p class="mt-4 text-center small text-muted">
+            Don't have an account? <a href="{{ url_for('register', next=request.args.get('next')) }}" class="fw-medium">Register here</a>
+        </p>
+    </div>
 </div>
 {% endblock %}
 """
@@ -2185,36 +2314,70 @@ REGISTER_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}Register - BrieflyAI{% endblock %}
 {% block content %}
-<div class="auth-container article-card animate-fade-in mx-auto">
-    <h2 class="auth-title mb-4"><i class="fas fa-user-plus me-2"></i>Create Account</h2>
-    <form method="POST" action="{{ url_for('register') }}">
-        <div class="modal-form-group"><label for="name" class="form-label">Full Name</label><input type="text" class="modal-form-control" id="name" name="name" required placeholder="Enter your full name"></div>
-        <div class="modal-form-group"><label for="username" class="form-label">Username</label><input type="text" class="modal-form-control" id="username" name="username" required placeholder="Choose a username (min 3 chars)"></div>
-        <div class="modal-form-group"><label for="password" class="form-label">Password</label><input type="password" class="modal-form-control" id="password" name="password" required placeholder="Create a strong password (min 6 chars)"></div>
-        <button type="submit" class="btn btn-primary-modal w-100 mt-3">Register</button>
-    </form>
-    <p class="mt-3 text-center small">Already have an account? <a href="{{ url_for('login') }}" class="fw-medium">Login here</a></p>
+<div class="auth-card animate-fade-in">
+     <div class="auth-header">
+        <div class="icon"><i class="fas fa-user-plus"></i></div>
+        <h2>Create Your Account</h2>
+    </div>
+    <div class="auth-body">
+        <form method="POST" action="{{ url_for('register') }}">
+             <div class="mb-3 input-group-icon">
+                <label for="name" class="form-label">Full Name</label>
+                <i class="fas fa-id-card input-icon"></i>
+                <input type="text" class="form-control" id="name" name="name" required placeholder="Enter your full name">
+            </div>
+            <div class="mb-3 input-group-icon">
+                <label for="username" class="form-label">Username</label>
+                <i class="fas fa-user input-icon"></i>
+                <input type="text" class="form-control" id="username" name="username" required placeholder="Choose a username (min 3 chars)">
+            </div>
+            <div class="mb-4 input-group-icon">
+                <label for="password" class="form-label">Password</label>
+                <i class="fas fa-lock input-icon"></i>
+                <input type="password" class="form-control" id="password" name="password" required placeholder="Create a password (min 6 chars)">
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Register</button>
+        </form>
+        <p class="mt-4 text-center small text-muted">
+            Already have an account? <a href="{{ url_for('login') }}" class="fw-medium">Login here</a>
+        </p>
+    </div>
 </div>
 {% endblock %}
 """
 
 PROFILE_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}{{ user.name }}'s Profile - {% endblock %}
+{% block title %}{{ user.name }}'s Profile - BrieflyAI{% endblock %}
 {% block content %}
-<div class="profile-card animate-fade-in">
-    <div class="profile-avatar">{{ user.name[0]|upper }}</div>
-    <h2 class="mb-1">{{ user.name }}</h2>
-    <p class="text-muted">@{{ user.username }}</p>
-    <p class="small text-muted">Joined: {{ user.created_at | to_ist }}</p>
+<div class="profile-header-card animate-fade-in">
+    <div class="profile-avatar-wrapper">
+        <div class="profile-avatar">{{ user.name[0]|upper }}</div>
+    </div>
+    <h2>{{ user.name }}</h2>
+    <p class="username">@{{ user.username }}</p>
+    <p class="small text-muted mb-0">Joined: {{ user.created_at | to_ist }}</p>
+    <div class="profile-stats">
+        <div class="stat-item">
+            <div class="icon"><i class="fas fa-feather-pointed"></i></div>
+            <div class="count">{{ posted_articles|length }}</div>
+            <div class="label">Articles Posted</div>
+        </div>
+        <div class="stat-item">
+            <div class="icon"><i class="fas fa-bookmark"></i></div>
+            <div class="count">{{ bookmarks_pagination.total if bookmarks_pagination else 0 }}</div>
+            <div class="label">Bookmarks</div>
+        </div>
+    </div>
 </div>
-<div class="mt-4 animate-fade-in">
+
+<div class="mt-4 animate-fade-in" style="animation-delay: 0.1s;">
     <ul class="nav nav-tabs profile-tabs nav-fill mb-4" id="profileTab" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="bookmarks-tab" data-bs-toggle="tab" data-bs-target="#bookmarks-content" type="button" role="tab" aria-controls="bookmarks-content" aria-selected="true"><i class="fas fa-bookmark me-1"></i>My Bookmarks ({{ bookmarks_pagination.total if bookmarks_pagination else 0 }})</button>
+            <button class="nav-link active" id="bookmarks-tab" data-bs-toggle="tab" data-bs-target="#bookmarks-content" type="button" role="tab" aria-controls="bookmarks-content" aria-selected="true"><i class="fas fa-bookmark me-2"></i>My Bookmarks</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="posted-tab" data-bs-toggle="tab" data-bs-target="#posted-content" type="button" role="tab" aria-controls="posted-content" aria-selected="false"><i class="fas fa-feather-alt me-1"></i>My Posted Articles ({{ posted_articles|length }})</button>
+            <button class="nav-link" id="posted-tab" data-bs-toggle="tab" data-bs-target="#posted-content" type="button" role="tab" aria-controls="posted-content" aria-selected="false"><i class="fas fa-feather-alt me-2"></i>My Articles</button>
         </li>
     </ul>
     <div class="tab-content" id="profileTabContent">
@@ -2226,7 +2389,7 @@ PROFILE_HTML_TEMPLATE = """
                     <article class="article-card d-flex flex-column w-100">
                         <div class="article-image-container">
                             <a href="{{ art.article_url }}"><img src="{{ art.urlToImage if art.urlToImage else 'https://via.placeholder.com/400x220/EEEEEE/AAAAAA?text=No+Image' }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                            {% if art.is_stale_bookmark %}<span class="category-tag" style="background-color: #777; color:white;">Cached Bookmark</span>{% endif %}
+                            {% if art.is_stale_bookmark %}<span class="badge bg-secondary position-absolute top-0 end-0 m-2">Cached Bookmark</span>{% endif %}
                         </div>
                         <div class="article-body d-flex flex-column">
                             <h5 class="article-title mb-2"><a href="{{ art.article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
@@ -2241,7 +2404,14 @@ PROFILE_HTML_TEMPLATE = """
                 </div>
                 {% endfor %}
             </div>
-            {% else %}<div class="alert alert-light text-center p-4">You haven't bookmarked any articles yet.</div>{% endif %}
+            {% else %}
+                <div class="empty-state-card">
+                    <div class="icon"><i class="fas fa-bookmark"></i></div>
+                    <h4>No Bookmarks Yet</h4>
+                    <p class="text-muted">You haven't bookmarked any articles. Find an article you like and click the bookmark icon to save it!</p>
+                </div>
+            {% endif %}
+
             {% if bookmarks_pagination and bookmarks_pagination.pages > 1 %}
             <nav aria-label="Bookmarks navigation" class="mt-5">
                 <ul class="pagination justify-content-center">
@@ -2257,7 +2427,7 @@ PROFILE_HTML_TEMPLATE = """
             <div class="row g-4">
                 {% for art in posted_articles %}
                 <div class="col-md-6 col-lg-4 d-flex">
-                     <article class="article-card d-flex flex-column w-100">
+                    <article class="article-card d-flex flex-column w-100">
                         {% set article_url = url_for('article_detail', article_hash_id=art.article_hash_id) %}
                         <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.image_url if art.image_url else 'https://via.placeholder.com/400x220/EEEEEE/AAAAAA?text=No+Image' }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
                         <div class="article-body d-flex flex-column">
@@ -2273,7 +2443,13 @@ PROFILE_HTML_TEMPLATE = """
                 </div>
                 {% endfor %}
             </div>
-            {% else %}<div class="alert alert-light text-center p-4">You haven't posted any articles yet. Click the '+' button to share your insights!</div>{% endif %}
+            {% else %}
+                <div class="empty-state-card">
+                    <div class="icon"><i class="fas fa-feather-alt"></i></div>
+                    <h4>Nothing Posted Yet</h4>
+                    <p class="text-muted">You haven't posted any articles. Click the <i class="fas fa-pen-to-square"></i> button to share your first story!</p>
+                </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -2282,20 +2458,122 @@ PROFILE_HTML_TEMPLATE = """
 
 ABOUT_US_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}About Us - {% endblock %}
-{% block content %}<div class="static-content-wrapper animate-fade-in"><h1 class="mb-4">About </h1><p class="lead"> is your premier destination for the latest news from India and around the world, delivered in a concise and easy-to-digest format. We leverage the power of cutting-edge AI to summarize complex news articles into key takeaways, saving you time while keeping you informed.</p><h2 class="mt-5 mb-3">Our Mission</h2><p>In a world of information overload, our mission is to provide clarity and efficiency. We believe that everyone deserves access to accurate, unbiased news without spending hours sifting through lengthy articles.  cuts through the noise, offering insightful summaries that matter.</p><h2 class="mt-5 mb-3">Community Hub</h2><p>Beyond AI-driven news,  is a platform for discussion and community engagement. Our Community Hub allows users to post their own articles, share perspectives, and engage in meaningful conversations about the topics that shape our world. We are committed to fostering a respectful and intelligent environment for all our members.</p><h2 class="mt-5 mb-3">Our Technology</h2><p>We use state-of-the-art Natural Language Processing (NLP) models to analyze and summarize news content from trusted sources. Our system is designed to identify the most crucial points of an article, presenting them as a quick summary and a list of key takeaways.</p></div>{% endblock %}
+{% block title %}About Us - BrieflyAI{% endblock %}
+{% block content %}
+<div class="animate-fade-in">
+    <div class="page-header-static">
+        <h1>About BrieflyAI</h1>
+    </div>
+    <div class="static-content-container">
+        <p class="lead">
+            Welcome to BrieflyAI, your premier destination for the latest news from India and around the world, delivered in a concise and easy-to-digest format. We leverage the power of cutting-edge AI to summarize complex news articles into key takeaways, saving you time while keeping you informed.
+        </p>
+
+        <h2><i class="icon fas fa-bullseye"></i>Our Mission</h2>
+        <p>
+            In a world of information overload, our mission is to provide clarity and efficiency. We believe that everyone deserves access to accurate, unbiased news without spending hours sifting through lengthy articles. BrieflyAI cuts through the noise, offering insightful summaries that matter.
+        </p>
+
+        <h2><i class="icon fas fa-users"></i>Community Hub</h2>
+        <p>
+            Beyond AI-driven news, BrieflyAI is a platform for discussion and community engagement. Our Community Hub allows users to post their own articles, share perspectives, and engage in meaningful conversations about the topics that shape our world. We are committed to fostering a respectful and intelligent environment for all our members.
+        </p>
+
+        <h2><i class="icon fas fa-microchip"></i>Our Technology</h2>
+        <p>
+            We use state-of-the-art Natural Language Processing (NLP) models to analyze and summarize news content from trusted sources. Our system is designed to identify the most crucial points of an article, presenting them as a quick summary and a list of key takeaways, ensuring you get the essence of the story in seconds.
+        </p>
+    </div>
+</div>
+{% endblock %}
 """
 
 CONTACT_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}Contact Us - {% endblock %}
-{% block content %}<div class="static-content-wrapper animate-fade-in"><h1 class="mb-4">Contact Us</h1><p class="lead">We'd love to hear from you! Whether you have a question, feedback, or a news tip, feel free to reach out.</p><div class="row mt-5"><div class="col-md-6"><h2 class="h4">General Inquiries</h2><p>For general questions, feedback, or support, please email us at:</p><p><i class="fas fa-envelope me-2"></i><a href="mailto:vbansal639@gmail.com">vbansal639@gmail.com</a></p></div><div class="col-md-6"><h2 class="h4">Partnerships & Media</h2><p>For partnership opportunities or media inquiries, please contact:</p><p><i class="fas fa-envelope me-2"></i><a href="mailto:vbansal639@gmail.com">vbansal639@gmail.com</a></p></div></div><div class="mt-5"><h2 class="h4">Follow Us</h2><p>Stay connected with us on social media:</p><div class="social-links fs-4"><a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a></div></div></div>{% endblock %}
+{% block title %}Contact Us - BrieflyAI{% endblock %}
+{% block content %}
+<div class="animate-fade-in">
+    <div class="page-header-static">
+        <h1>Get In Touch</h1>
+    </div>
+    <div class="static-content-container">
+        <p class="lead text-center mb-5">
+            We'd love to hear from you! Whether you have a question, feedback, or a news tip, feel free to reach out using one of the methods below.
+        </p>
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="contact-card">
+                    <div class="icon"><i class="fas fa-envelope"></i></div>
+                    <h4 class="h5">General Inquiries</h4>
+                    <p class="text-muted">For general questions, feedback, or support, please email us at:</p>
+                    <a href="mailto:vbansal639@gmail.com" class="fw-bold">vbansal639@gmail.com</a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="contact-card">
+                    <div class="icon"><i class="fas fa-handshake"></i></div>
+                    <h4 class="h5">Partnerships & Media</h4>
+                    <p class="text-muted">For partnership opportunities or media inquiries, please contact us at:</p>
+                    <a href="mailto:vbansal639@gmail.com" class="fw-bold">vbansal639@gmail.com</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-5">
+            <h2 class="h3">Follow Us</h2>
+            <p class="text-muted">Stay connected with us on social media.</p>
+            <div class="contact-social-links mt-3">
+                <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a>
+                <a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a>
+                <a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a>
+                <a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 """
 
 PRIVACY_POLICY_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
-{% block title %}Privacy Policy - {% endblock %}
-{% block content %}<div class="static-content-wrapper animate-fade-in"><h1 class="mb-4">Privacy Policy</h1><p class="text-muted">Last updated: May 31, 2025</p><p>BrieflyAI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website.</p><h2 class="mt-5 mb-3">1. Information We Collect</h2><p>We may collect personal information that you voluntarily provide to us when you register on the website, post articles or comments, bookmark articles, or subscribe to our newsletter. This information may include your name, username, email address, and your activities on our platform such as articles posted and bookmarked.</p><h2 class="mt-5 mb-3">2. How We Use Your Information</h2><p>We use the information we collect to:</p><ul><li>Create and manage your account.</li><li>Operate and maintain the website, including your profile page.</li><li>Display your posted and bookmarked articles as part of your profile.</li><li>Send you newsletters or promotional materials, if you have opted in.</li><li>Respond to your comments and inquiries.</li><li>Improve our website and services.</li></ul><h2 class="mt-5 mb-3">3. Disclosure of Your Information</h2><p>Your username and posted articles are publicly visible. Your bookmarked articles are visible on your profile page to you when logged in. We do not sell, trade, or otherwise transfer your personally identifiable information like your email address to outside parties without your consent, except to trusted third parties who assist us in operating our website, so long as those parties agree to keep this information confidential.</p><h2 class="mt-5 mb-3">4. Security of Your Information</h2><p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.</p><h2 class="mt-5 mb-3">5. Your Choices</h2><p>You can review and change your profile information by logging into your account. You may also request deletion of your account and associated data by contacting us.</p><h2 class="mt-5 mb-3">6. Changes to This Privacy Policy</h2><p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes.</p></div>{% endblock %}
+{% block title %}Privacy Policy - BrieflyAI{% endblock %}
+{% block content %}
+<div class="animate-fade-in">
+    <div class="page-header-static">
+        <h1>Privacy Policy</h1>
+    </div>
+    <div class="static-content-container">
+        <p class="text-muted">Last updated: June 10, 2025</p>
+        <p>BrieflyAI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website.</p>
+        
+        <h2><i class="icon fas fa-shield-halved"></i>1. Information We Collect</h2>
+        <p>We may collect personal information that you voluntarily provide to us when you register on the website, post articles or comments, bookmark articles, or subscribe to our newsletter. This information may include your name, username, email address, and your activities on our platform such as articles posted and bookmarked.</p>
+        
+        <h2><i class="icon fas fa-tasks"></i>2. How We Use Your Information</h2>
+        <p>We use the information we collect to:</p>
+        <ul>
+            <li>Create and manage your account.</li>
+            <li>Operate and maintain the website, including your profile page.</li>
+            <li>Display your posted and bookmarked articles as part of your profile.</li>
+            <li>Send you newsletters or promotional materials, if you have opted in.</li>
+            <li>Respond to your comments and inquiries.</li>
+            <li>Improve our website and services.</li>
+        </ul>
+
+        <h2><i class="icon fas fa-share-nodes"></i>3. Disclosure of Your Information</h2>
+        <p>Your username and posted articles are publicly visible. Your bookmarked articles are visible on your profile page to you when logged in. We do not sell, trade, or otherwise transfer your personally identifiable information like your email address to outside parties without your consent, except to trusted third parties who assist us in operating our website, so long as those parties agree to keep this information confidential.</p>
+        
+        <h2><i class="icon fas fa-lock"></i>4. Security of Your Information</h2>
+        <p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.</p>
+        
+        <h2><i class="icon fas fa-edit"></i>5. Your Choices</h2>
+        <p>You can review and change your profile information by logging into your account. You may also request deletion of your account and associated data by contacting us.</p>
+        
+        <h2><i class="icon fas fa-sync-alt"></i>6. Changes to This Privacy Policy</h2>
+        <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes.</p>
+    </div>
+</div>
+{% endblock %}
 """
 
 ERROR_404_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}404 Not Found{% endblock %}{% block content %}<div class='text-center my-5 p-4 article-card animate-fade-in mx-auto' style='max-width: 600px;'><h1><i class='fas fa-exclamation-triangle text-warning me-2'></i>404 - Page Not Found</h1><p class='lead'>Sorry, the page you are looking for does not exist or has been moved.</p><a href='{{url_for("index")}}' class='btn btn-primary-modal mt-2'>Go to Homepage</a></div>{% endblock %}"""
