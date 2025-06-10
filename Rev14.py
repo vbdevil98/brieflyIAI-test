@@ -1311,33 +1311,56 @@ def subscribe():
 @login_required
 def toggle_bookmark(article_hash_id):
     user_id = session['user_id']
-    is_community_str = request.json.get('is_community_article', 'false').lower()
-    is_community = True if is_community_str == 'true' else False
-    article_title_cache = request.json.get('title', 'Bookmarked Article')
-    article_source_cache = request.json.get('source_name', 'Unknown Source')
-    article_image_cache = request.json.get('image_url', None)
-    article_desc_cache = request.json.get('description', None)
-    article_published_at_cache_str = request.json.get('published_at', None)
-    article_published_at_dt = None
-    if article_published_at_cache_str:
-        try:
-            if article_published_at_cache_str.endswith('Z'): article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
-            else: article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
-            if article_published_at_dt.tzinfo is None: article_published_at_dt = pytz.utc.localize(article_published_at_dt)
-        except ValueError: app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}"); article_published_at_dt = None
+    
+    # Check if a bookmark for this article already exists for the user
     existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
+    
     if existing_bookmark:
-        db.session.delete(existing_bookmark); db.session.commit()
+        # If it exists, we are un-bookmarking it.
+        db.session.delete(existing_bookmark)
+        db.session.commit()
         return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
     else:
-        if is_community:
-            if not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): return jsonify({"success": False, "error": "Community article not found."}), 404
-        else:
-            if article_hash_id not in MASTER_ARTICLE_STORE:
-                fetch_news_from_api() 
-                if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
-        new_bookmark = BookmarkedArticle(user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community, title_cache=article_title_cache, source_name_cache=article_source_cache, image_url_cache=article_image_cache, description_cache=article_desc_cache, published_at_cache=article_published_at_dt)
-        db.session.add(new_bookmark); db.session.commit()
+        # If it doesn't exist, we are adding a new bookmark.
+        # We will trust the data sent from the client and create the bookmark directly
+        # without checking the volatile MASTER_ARTICLE_STORE.
+        
+        is_community_str = request.json.get('is_community_article', 'false').lower()
+        is_community = True if is_community_str == 'true' else False
+        
+        # Get all the cached details from the client request
+        article_title_cache = request.json.get('title', 'Bookmarked Article')
+        article_source_cache = request.json.get('source_name', 'Unknown Source')
+        article_image_cache = request.json.get('image_url', None)
+        article_desc_cache = request.json.get('description', None)
+        article_published_at_cache_str = request.json.get('published_at', None)
+        
+        article_published_at_dt = None
+        if article_published_at_cache_str:
+            try:
+                if article_published_at_cache_str.endswith('Z'):
+                    article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
+                else:
+                    article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
+                if article_published_at_dt.tzinfo is None:
+                    article_published_at_dt = pytz.utc.localize(article_published_at_dt)
+            except (ValueError, TypeError):
+                app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}")
+                article_published_at_dt = None
+        
+        new_bookmark = BookmarkedArticle(
+            user_id=user_id,
+            article_hash_id=article_hash_id,
+            is_community_article=is_community,
+            title_cache=article_title_cache,
+            source_name_cache=article_source_cache,
+            image_url_cache=article_image_cache,
+            description_cache=article_desc_cache,
+            published_at_cache=article_published_at_dt
+        )
+        
+        db.session.add(new_bookmark)
+        db.session.commit()
         return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
 
 @app.route('/profile')
