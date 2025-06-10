@@ -1804,6 +1804,61 @@ body.dark-mode .social-login-buttons .btn {
     border-color: var(--primary-color);
     transform: translateY(-2px);
 }
+    /*
+==============================================================================
+--- MOBILE RESPONSIVENESS FIXES ---
+Add this entire block at the end of your <style> section in BASE_HTML_TEMPLATE
+to fix the layout on mobile devices.
+==============================================================================
+*/
+@media (max-width: 991.98px) {
+    /* On tablets, stack the featured article vertically */
+    .featured-story {
+        flex-direction: column;
+    }
+    .featured-story-image {
+        min-height: 350px; /* Adjust image height for tablets */
+    }
+}
+
+@media (max-width: 767.98px) {
+    /* --- Fix 1: Category Bar & Date Filter --- */
+    
+    /* Allow category links to wrap onto multiple lines instead of scrolling */
+    .category-links-container {
+        flex-wrap: wrap;
+        justify-content: center; /* Center the links when they wrap */
+    }
+
+    /* Remove the horizontal scrollbar from the categories wrapper */
+    .categories-wrapper {
+        overflow-x: hidden;
+    }
+    
+    /* Hide the date filter form completely on small mobile screens */
+    #dateFilterForm {
+        display: none !important;
+    }
+
+    /* --- Fix 2: Featured Article --- */
+
+    /* Adjust the image height for a better mobile aspect ratio */
+    .featured-story-image {
+        min-height: 250px;
+    }
+
+    /* Reduce padding and font size for the featured article content */
+    .featured-story-content {
+        padding: 1.5rem;
+    }
+    .featured-story-content h2 {
+        font-size: 1.6rem;
+    }
+    .featured-story-content .description {
+        font-size: 1rem;
+    }
+}
+    
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
