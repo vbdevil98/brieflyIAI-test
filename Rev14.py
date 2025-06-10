@@ -770,9 +770,6 @@ def fetch_and_parse_article_content(article_hash_id, url):
 # ==============================================================================
 # --- 6. Flask Routes ---
 # ==============================================================================
-# Rev14.py - MODIFIED FOR ROBUST NEWS, COMMENTS, PROFILE, BOOKMARKS, AI DISPLAY FIXES, AND DATE FILTER (v2)
-
-# ... (context_processor, get_paginated_articles, get_sort_key remain unchanged from previous response) ...
 @app.context_processor
 def inject_global_vars():
     return {'categories': app.config['CATEGORIES'],
@@ -805,9 +802,6 @@ def get_sort_key(article):
             return datetime.min.replace(tzinfo=timezone.utc)
     elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
-
-
-# In Rev14.py, replace the entire index function with this:
 
 @app.route('/')
 @app.route('/page/<int:page>')
@@ -894,8 +888,18 @@ def index(page=1, category_name='All Articles'):
                                featured_article_on_this_page=False,
                                current_filter_date=filter_date_str, query=query_str)
 
-# In Rev14.py, replace the entire search_results function with this new version.
 
+@app.route('/user/<username>')
+def public_profile(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    
+    # Fetch all articles posted by this user
+    posted_articles = CommunityArticle.query.filter_by(user_id=user.id)\
+        .order_by(CommunityArticle.published_at.desc())\
+        .all()
+        
+    return render_template("PUBLIC_PROFILE_HTML_TEMPLATE", user=user, posted_articles=posted_articles)
+    
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
@@ -2450,7 +2454,8 @@ _COMMENT_TEMPLATE = """
         <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}">{{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }}</div>
         <div class="comment-body">
             <div class="comment-header">
-                <span class="comment-author">{{ comment.author.name if comment.author else 'Anonymous' }}</span>
+                {# THE CHANGE IS HERE: The span is now an <a> tag #}
+                <a href="{{ url_for('public_profile', username=comment.author.username) }}" class="comment-author text-decoration-none">{{ comment.author.name if comment.author else 'Anonymous' }}</a>
                 <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
             </div>
             <p class="comment-content mb-2">{{ comment.content }}</p>
@@ -2478,12 +2483,10 @@ _COMMENT_TEMPLATE = """
             {% endif %}
 
             <div class="reaction-summary" id="reaction-summary-{{ comment.id }}">
-                {# Reaction pills are populated by JavaScript #}
             </div>
         </div>
     </div>
     <div class="comment-replies" id="replies-of-{{ comment.id }}">
-        {# THE FINAL FIX IS HERE: Use a different but universally supported syntax #}
         {% for comment in comment.replies %}
             {% include '_COMMENT_TEMPLATE' %}
         {% endfor %}
@@ -2491,7 +2494,6 @@ _COMMENT_TEMPLATE = """
 </div>
 """
 
-# In Rev14.py, replace the LOGIN_HTML_TEMPLATE variable with this:
 LOGIN_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}Login - BrieflyAI{% endblock %}
@@ -2538,7 +2540,6 @@ LOGIN_HTML_TEMPLATE = """
 {% endblock %}
 """
 
-# In Rev14.py, replace the REGISTER_HTML_TEMPLATE variable with this:
 REGISTER_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}Register - BrieflyAI{% endblock %}
@@ -2695,6 +2696,54 @@ PROFILE_HTML_TEMPLATE = """
 {% endblock %}
 """
 
+PUBLIC_PROFILE_HTML_TEMPLATE = """
+{% extends "BASE_HTML_TEMPLATE" %}
+{% block title %}{{ user.name }}'s Profile - BrieflyAI{% endblock %}
+{% block content %}
+<div class="animate-fade-in">
+    <div class="profile-header-card mb-4">
+        <div class="profile-avatar-wrapper">
+            <div class="profile-avatar">{{ user.name[0]|upper }}</div>
+        </div>
+        <h2>{{ user.name }}</h2>
+        <p class="username">@{{ user.username }}</p>
+        <p class="small text-muted mb-0">Member Since: {{ user.created_at | to_ist }}</p>
+    </div>
+
+    <h3 class="mt-5 mb-4">Articles by {{ user.name }} ({{ posted_articles|length }})</h3>
+    
+    <div class="row g-4">
+    {% if posted_articles %}
+        {% for art in posted_articles %}
+        <div class="col-md-6 col-lg-4 d-flex">
+            <article class="article-card d-flex flex-column w-100">
+                {% set article_url = url_for('article_detail', article_hash_id=art.article_hash_id) %}
+                <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.image_url if art.image_url else 'https://via.placeholder.com/400x220/EEEEEE/AAAAAA?text=No+Image' }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
+                <div class="article-body d-flex flex-column">
+                    <h5 class="article-title mb-2"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                    <div class="article-meta small mb-2">
+                        <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ art.published_at | to_ist }}</span>
+                    </div>
+                    <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                    <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                </div>
+            </article>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="col-12">
+            <div class="empty-state-card">
+                <div class="icon"><i class="fas fa-feather-alt"></i></div>
+                <h4>No Articles Yet</h4>
+                <p class="text-muted">{{ user.name }} hasn't posted any articles yet.</p>
+            </div>
+        </div>
+    {% endif %}
+    </div>
+</div>
+{% endblock %}
+"""
+
 ABOUT_US_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}About Us - BrieflyAI{% endblock %}
@@ -2833,6 +2882,7 @@ template_storage['PRIVACY_POLICY_HTML_TEMPLATE'] = PRIVACY_POLICY_HTML_TEMPLATE
 template_storage['404_TEMPLATE'] = ERROR_404_TEMPLATE
 template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 template_storage['_COMMENT_TEMPLATE'] = _COMMENT_TEMPLATE
+template_storage['PUBLIC_PROFILE_HTML_TEMPLATE'] = PUBLIC_PROFILE_HTML_TEMPLATE
 
 
 # ==============================================================================
