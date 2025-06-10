@@ -292,9 +292,9 @@ def to_ist_filter(utc_dt):
     if isinstance(utc_dt, str):
         try:
             if utc_dt.endswith('Z'):
-                    utc_dt = datetime.fromisoformat(utc_dt[:-1] + '+00:00')
+                 utc_dt = datetime.fromisoformat(utc_dt[:-1] + '+00:00')
             else:
-                    utc_dt = datetime.fromisoformat(utc_dt)
+                 utc_dt = datetime.fromisoformat(utc_dt)
         except ValueError: return "Invalid date string"
     
     if not isinstance(utc_dt, datetime): return "Invalid date object"
@@ -371,54 +371,6 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         app.logger.error(f"Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
 
-
-@simple_cache(expiry_seconds_default=14400) # Cache the synthesis for 4 hours
-def get_daily_synthesis():
-    """
-    Fetches top stories and uses an LLM to create a high-level synthesis
-    of the day's main themes and extract keywords.
-    """
-    app.logger.info("Generating AI Daily Synthesis...")
-    if not groq_client:
-        return {"synthesis_text": None, "keywords": []}
-
-    # Get the articles to be synthesized
-    articles_to_synthesize = fetch_popular_news()
-    if not articles_to_synthesize:
-        return {"synthesis_text": None, "keywords": []}
-
-    # Prepare the content for the AI
-    # We'll combine titles and descriptions for a rich context
-    content_for_ai = ""
-    for art in articles_to_synthesize[:15]: # Use up to 15 articles for the context
-        content_for_ai += f"Title: {art.get('title', '')}\\nDescription: {art.get('description', '')}\\n\\n"
-
-    system_prompt = (
-        "You are a top-tier news editor for an Indian audience. Your task is to provide a 'big picture' summary of the day's news based on a collection of article titles and descriptions. "
-        "Analyze the provided text and generate a JSON object with two keys: 'synthesis_text' and 'keywords'. "
-        "1. For 'synthesis_text': Write a single, insightful, and cohesive paragraph (3-4 sentences) that synthesizes the most important themes, trends, or events of the day. Do not just list the news. Connect the ideas. "
-        "2. For 'keywords': Extract the 4-5 most significant and distinct keywords or key phrases from the articles. These should represent the main topics of the day."
-    )
-    
-    human_prompt = f"Here is the collection of today's news articles:\n\n{content_for_ai}"
-
-    try:
-        json_model = groq_client.bind(response_format={"type": "json_object"})
-        ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
-        analysis = json.loads(ai_response.content)
-        
-        # Validate the response from the AI
-        synthesis = analysis.get("synthesis_text")
-        keywords = analysis.get("keywords")
-        if not isinstance(synthesis, str) or not isinstance(keywords, list):
-            raise ValueError("AI response did not have the correct format.")
-
-        app.logger.info(f"Successfully generated AI Daily Synthesis. Keywords: {keywords}")
-        return {"synthesis_text": synthesis, "keywords": keywords}
-
-    except Exception as e:
-        app.logger.error(f"Error during AI Daily Synthesis generation: {e}", exc_info=True)
-        return {"synthesis_text": "The AI summary for the day could not be generated at this time.", "keywords": []}
 # ==============================================================================
 # --- NEWS FETCHING ---
 # ==============================================================================
@@ -463,9 +415,9 @@ def fetch_news_from_api(target_date_str=None):
                 app.logger.info(f"Fallback: Fetching news specifically for UTC date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
                 is_specific_date_fetch = True
             except ValueError: # If target_date_str is malformed even for simple parsing
-                app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
-                target_date_str = None # This will ensure it uses the default N-day range logic in the next block
-                is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
+                 app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
+                 target_date_str = None # This will ensure it uses the default N-day range logic in the next block
+                 is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
 
     if not is_specific_date_fetch: 
         # Default fetch logic (no specific date selected, or date was invalid)
@@ -537,7 +489,7 @@ def fetch_news_from_api(target_date_str=None):
     if not all_raw_articles or is_specific_date_fetch:
         log_prefix_attempt3 = "Fallback/Augment"
         if not all_raw_articles and not is_specific_date_fetch:
-                app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
+             app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
         elif not all_raw_articles and is_specific_date_fetch:
             app.logger.warning(f"No articles from query for specific date '{target_date_str}'. Trying with domains.")
         elif all_raw_articles and is_specific_date_fetch:
@@ -783,8 +735,8 @@ def fetch_and_parse_article_content(article_hash_id, url):
         # This is a redundancy check; the route get_article_content_json already does this.
         # However, keeping it ensures consistency if this function were called from elsewhere.
         if article_hash_id in MASTER_ARTICLE_STORE and \
-            MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
-            MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
+           MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
+           MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
             app.logger.info(f"Re-confirming pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id} within fetch_and_parse.")
             groq_analysis_result = {
                 "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
@@ -800,7 +752,7 @@ def fetch_and_parse_article_content(article_hash_id, url):
                 MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis_result.get("groq_takeaways")
                 app.logger.info(f"Groq analysis generated and cached in MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
             elif groq_analysis_result and groq_analysis_result.get("error"):
-                app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
+                 app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
 
 
         return {
@@ -851,8 +803,6 @@ def get_sort_key(article):
     elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
 
-# In Rev14.py, find your existing index function and REPLACE IT with this entire block.
-
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/category/<category_name>')
@@ -863,16 +813,14 @@ def index(page=1, category_name='All Articles'):
     query_str = request.args.get('query')
     filter_date_str = request.args.get('filter_date')
 
-    # This block handles the main homepage view
+    # This is the new logic for the main homepage view
     if page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str:
-        app.logger.info("Rendering main homepage with AI Synthesis and other sections.")
+        app.logger.info("Rendering main homepage with Featured, Popular and Yesterday's Latest sections.")
         
-        # --- NEW: Call the synthesis function ---
-        synthesis_data = get_daily_synthesis()
-        
-        # Fetch articles for the other sections
+        # --- LOGIC UPDATE HERE ---
         all_popular_articles = fetch_popular_news()
         featured_article = all_popular_articles[0] if all_popular_articles else None
+        # The rest of the popular articles for the grid
         popular_articles = all_popular_articles[1:] if all_popular_articles else [] 
         
         latest_yesterday_articles = fetch_yesterdays_latest_news()
@@ -885,23 +833,20 @@ def index(page=1, category_name='All Articles'):
             bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
             user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
+        # Add bookmark status to all articles that will be displayed
         for art in ([featured_article] + popular_articles + latest_yesterday_articles):
             if art:
                 art['is_bookmarked'] = art.get('id') in user_bookmarks_hashes
 
         return render_template("INDEX_HTML_TEMPLATE",
-                                # --- NEW: Pass synthesis data to the template ---
-                                synthesis=synthesis_data.get('synthesis_text'),
-                                keywords=synthesis_data.get('keywords', []),
-                                # --- Existing variables ---
-                                featured_article=featured_article,
-                                popular_articles=popular_articles[:POPULAR_NEWS_COUNT],
-                                latest_yesterday_articles=latest_yesterday_articles[:LATEST_NEWS_COUNT],
-                                selected_category=category_name,
-                                is_main_homepage=True,
-                                current_page=1, total_pages=1, query=None, current_filter_date=None)
+                               featured_article=featured_article,
+                               popular_articles=popular_articles[:POPULAR_NEWS_COUNT],
+                               latest_yesterday_articles=latest_yesterday_articles[:LATEST_NEWS_COUNT],
+                               selected_category=category_name,
+                               is_main_homepage=True,
+                               current_page=1, total_pages=1, query=None, current_filter_date=None)
 
-    # This 'else' block handles all other paginated views and remains unchanged
+    # This 'else' block for paginated views remains unchanged
     else:
         app.logger.info(f"Rendering standard list view for: category='{category_name}', page='{page}'")
         all_display_articles_raw = []
@@ -920,7 +865,6 @@ def index(page=1, category_name='All Articles'):
                 except ValueError: flash("Invalid date format.", "warning"); filter_date_str = None
             api_articles = fetch_news_from_api(target_date_str=filter_date_str)
             all_display_articles_raw.extend(api_articles)
-            
         all_display_articles_raw.sort(key=get_sort_key, reverse=True)
         paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
         paginated_display_articles_with_bookmark_status = []
@@ -937,12 +881,13 @@ def index(page=1, category_name='All Articles'):
                 art_item_copy['is_bookmarked'] = art_item_copy.get('id') in user_bookmarks_hashes
                 paginated_display_articles_with_bookmark_status.append(art_item_copy)
         return render_template("INDEX_HTML_TEMPLATE",
-                                articles=paginated_display_articles_with_bookmark_status,
-                                selected_category=category_name,
-                                is_main_homepage=False,
-                                current_page=page, total_pages=total_pages,
-                                featured_article_on_this_page=False,
-                                current_filter_date=filter_date_str, query=query_str)
+                               articles=paginated_display_articles_with_bookmark_status,
+                               selected_category=category_name,
+                               is_main_homepage=False,
+                               current_page=page, total_pages=total_pages,
+                               featured_article_on_this_page=False,
+                               current_filter_date=filter_date_str, query=query_str)
+
 
 @app.route('/user/<username>')
 def public_profile(username):
@@ -1051,14 +996,14 @@ def search_results(page=1):
             paginated_search_articles_with_bookmark_status.append(art_item_copy)
             
     return render_template("INDEX_HTML_TEMPLATE",
-                            articles=paginated_search_articles_with_bookmark_status,
-                            selected_category=f"Search: {query_str}",
-                            current_page=page,
-                            total_pages=total_pages,
-                            is_main_homepage=False,
-                            featured_article_on_this_page=False,
-                            query=query_str,
-                            current_filter_date=None)
+                           articles=paginated_search_articles_with_bookmark_status,
+                           selected_category=f"Search: {query_str}",
+                           current_page=page,
+                           total_pages=total_pages,
+                           is_main_homepage=False,
+                           featured_article_on_this_page=False,
+                           query=query_str,
+                           current_filter_date=None)
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
@@ -1120,13 +1065,13 @@ def article_detail(article_hash_id):
     elif article_data: article_data.is_community_article = True
             
     return render_template("ARTICLE_HTML_TEMPLATE", 
-                            article=article_data, 
-                            is_community_article=is_community_article, 
-                            comments=comments_for_template, 
-                            comment_data=comment_data,
-                            total_comment_count=total_comment_count,
-                            previous_list_page=previous_list_page, 
-                            is_bookmarked=is_bookmarked)
+                           article=article_data, 
+                           is_community_article=is_community_article, 
+                           comments=comments_for_template, 
+                           comment_data=comment_data,
+                           total_comment_count=total_comment_count,
+                           previous_list_page=previous_list_page, 
+                           is_bookmarked=is_bookmarked)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
@@ -1310,77 +1255,35 @@ def subscribe():
 @app.route('/toggle_bookmark/<article_hash_id>', methods=['POST'])
 @login_required
 def toggle_bookmark(article_hash_id):
-    """
-    Handles adding or removing a bookmark for the logged-in user.
-    This function is designed to be robust and stateless by relying on data
-    passed from the client, not on the server's temporary cache.
-    """
     user_id = session['user_id']
-    
-    # Check if a bookmark for this article already exists for the user.
-    existing_bookmark = BookmarkedArticle.query.filter_by(
-        user_id=user_id, 
-        article_hash_id=article_hash_id
-    ).first()
-    
+    is_community_str = request.json.get('is_community_article', 'false').lower()
+    is_community = True if is_community_str == 'true' else False
+    article_title_cache = request.json.get('title', 'Bookmarked Article')
+    article_source_cache = request.json.get('source_name', 'Unknown Source')
+    article_image_cache = request.json.get('image_url', None)
+    article_desc_cache = request.json.get('description', None)
+    article_published_at_cache_str = request.json.get('published_at', None)
+    article_published_at_dt = None
+    if article_published_at_cache_str:
+        try:
+            if article_published_at_cache_str.endswith('Z'): article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
+            else: article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
+            if article_published_at_dt.tzinfo is None: article_published_at_dt = pytz.utc.localize(article_published_at_dt)
+        except ValueError: app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}"); article_published_at_dt = None
+    existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
     if existing_bookmark:
-        # --- REMOVE BOOKMARK ---
-        # If it exists, the user is un-bookmarking it.
-        try:
-            db.session.delete(existing_bookmark)
-            db.session.commit()
-            return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
-        except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error removing bookmark for user {user_id}: {e}")
-            return jsonify({"success": False, "error": "Database error on removal."}), 500
+        db.session.delete(existing_bookmark); db.session.commit()
+        return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
     else:
-        # --- ADD BOOKMARK ---
-        # If it doesn't exist, create a new bookmark.
-        # All necessary article data is retrieved from the client request.
-        # This ensures we can cache the article's state at the moment of bookmarking.
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({"success": False, "error": "Invalid request data."}), 400
-
-            is_community_str = str(data.get('is_community_article', 'false')).lower()
-            
-            # Safely parse the published_at date string into a datetime object.
-            published_at_str = data.get('published_at')
-            published_at_dt = None
-            if published_at_str:
-                try:
-                    # Handle ISO 8601 format with or without 'Z'
-                    if published_at_str.endswith('Z'):
-                        published_at_dt = datetime.fromisoformat(published_at_str[:-1] + '+00:00')
-                    else:
-                        published_at_dt = datetime.fromisoformat(published_at_str)
-                    # Ensure timezone awareness for database consistency
-                    if published_at_dt.tzinfo is None:
-                       published_at_dt = pytz.utc.localize(published_at_dt)
-                except (ValueError, TypeError):
-                    app.logger.warning(f"Could not parse 'published_at' string for bookmark: {published_at_str}")
-                    # Keep published_at_dt as None if parsing fails.
-
-            new_bookmark = BookmarkedArticle(
-                user_id=user_id,
-                article_hash_id=article_hash_id,
-                is_community_article=(is_community_str == 'true'),
-                title_cache=data.get('title', 'Bookmarked Article'),
-                source_name_cache=data.get('source_name', 'Unknown Source'),
-                image_url_cache=data.get('image_url'),
-                description_cache=data.get('description'),
-                published_at_cache=published_at_dt
-            )
-            
-            db.session.add(new_bookmark)
-            db.session.commit()
-            return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
-        except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error adding bookmark for user {user_id}: {e}", exc_info=True)
-            return jsonify({"success": False, "error": "Could not save bookmark due to a server error."}), 500
+        if is_community:
+            if not CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first(): return jsonify({"success": False, "error": "Community article not found."}), 404
+        else:
+            if article_hash_id not in MASTER_ARTICLE_STORE:
+                fetch_news_from_api() 
+                if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
+        new_bookmark = BookmarkedArticle(user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community, title_cache=article_title_cache, source_name_cache=article_source_cache, image_url_cache=article_image_cache, description_cache=article_desc_cache, published_at_cache=article_published_at_dt)
+        db.session.add(new_bookmark); db.session.commit()
+        return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
 
 @app.route('/profile')
 @login_required
@@ -1388,75 +1291,21 @@ def profile():
     user = User.query.get_or_404(session['user_id'])
     page = request.args.get('page', 1, type=int)
     per_page = app.config['PER_PAGE']
-
-    # Fetch user's own posted articles (this part is separate from bookmarks)
     user_posted_articles = CommunityArticle.query.filter_by(user_id=user.id).order_by(CommunityArticle.published_at.desc()).all()
-
-    # --- REWRITTEN BOOKMARK DISPLAY LOGIC ---
-    # Fetch the user's bookmarks with pagination.
     bookmarks_query = BookmarkedArticle.query.filter_by(user_id=user.id).order_by(BookmarkedArticle.bookmarked_at.desc())
-    bookmarks_pagination = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
-
+    user_bookmarks_paginated_query = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
     user_bookmarked_articles_data = []
-    for bookmark in bookmarks_pagination.items:
-        article_data = None
-        # The goal is to create a consistent dictionary for the template,
-        # regardless of the article type, making the source of data reliable.
-
+    for bookmark in user_bookmarks_paginated_query.items:
+        article_detail_data = None
         if bookmark.is_community_article:
-            # For community articles, the DB is the source of truth.
-            # We try to fetch the live article.
-            live_article = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
-            if live_article:
-                # The article exists, use its current data.
-                article_data = {
-                    'id': live_article.article_hash_id,
-                    'title': live_article.title,
-                    'description': live_article.description,
-                    'urlToImage': live_article.image_url,
-                    'publishedAt': live_article.published_at.isoformat() if live_article.published_at else None,
-                    'source': {'name': live_article.author.name if live_article.author else live_article.source_name},
-                    'is_community_article': True,
-                    'article_url': url_for('article_detail', article_hash_id=live_article.article_hash_id)
-                }
-            else:
-                # The article has been deleted. Use the cached data as a fallback.
-                article_data = {
-                    'id': bookmark.article_hash_id,
-                    'title': bookmark.title_cache or "Deleted Community Article",
-                    'description': bookmark.description_cache or "This article was posted by a user but has since been deleted.",
-                    'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Deleted',
-                    'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None,
-                    'source': {'name': bookmark.source_name_cache or "Unknown"},
-                    'is_community_article': True,
-                    'article_url': '#' # No longer a valid link
-                }
+            comm_art = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
+            if comm_art: article_detail_data = {'id': comm_art.article_hash_id, 'title': comm_art.title, 'description': comm_art.description, 'urlToImage': comm_art.image_url, 'publishedAt': comm_art.published_at.isoformat() if comm_art.published_at else None, 'source': {'name': comm_art.author.name if comm_art.author else comm_art.source_name}, 'is_community_article': True, 'article_url': url_for('article_detail', article_hash_id=comm_art.article_hash_id)}
         else:
-            # For API articles, the bookmark's cache is ALWAYS the source of truth.
-            # This makes the feature robust and independent of the volatile MASTER_ARTICLE_STORE.
-            article_data = {
-                'id': bookmark.article_hash_id,
-                'title': bookmark.title_cache or "Bookmarked Article",
-                'description': bookmark.description_cache or "Description not available in cache.",
-                'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A',
-                'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None,
-                'source': {'name': bookmark.source_name_cache or "Unknown Source"},
-                'is_community_article': False,
-                'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id)
-            }
-        
-        if article_data:
-            user_bookmarked_articles_data.append(article_data)
-
-    return render_template(
-        "PROFILE_HTML_TEMPLATE",
-        user=user,
-        posted_articles=user_posted_articles,
-        bookmarked_articles=user_bookmarked_articles_data,
-        bookmarks_pagination=bookmarks_pagination,
-        current_page=page
-    )
-
+            api_art = MASTER_ARTICLE_STORE.get(bookmark.article_hash_id)
+            if api_art: article_detail_data = {'id': api_art['id'], 'title': api_art['title'], 'description': api_art['description'], 'urlToImage': api_art['urlToImage'], 'publishedAt': api_art['publishedAt'], 'source': {'name': api_art['source']['name']}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=api_art['id'])}
+            else: article_detail_data = {'id': bookmark.article_hash_id, 'title': bookmark.title_cache or "Bookmarked Article (Details N/A)", 'description': bookmark.description_cache or "Description not available.", 'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A', 'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None, 'source': {'name': bookmark.source_name_cache or "Unknown Source"}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id), 'is_stale_bookmark': True}
+        if article_detail_data: user_bookmarked_articles_data.append(article_detail_data)
+    return render_template("PROFILE_HTML_TEMPLATE", user=user, posted_articles=user_posted_articles, bookmarked_articles=user_bookmarked_articles_data, bookmarks_pagination=user_bookmarks_paginated_query, current_page=page)
 
 @app.errorhandler(404)
 def page_not_found(e): return render_template("404_TEMPLATE"), 404
@@ -1470,11 +1319,11 @@ def ads_txt():
     # If you have other ad partners, add their lines here, each on a new line.
     # e.g., ads_content += "\notheradsystem.com, theirPubId, DIRECT, theirTagId"
     return Response(ads_content, mimetype='text/plain')
-
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
-# In Rev14.py, replace the entire BASE_HTML_TEMPLATE variable with this.
+
+# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this:
 
 BASE_HTML_TEMPLATE = """
 <!doctype html>
@@ -1489,28 +1338,22 @@ BASE_HTML_TEMPLATE = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary-color: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --secondary-color: #14B8A6; --secondary-light: #2DD4BF; --accent-color: #F97316; --text-color: #1F2937; --text-muted-color: #6B7280; --card-bg: #FFFFFF; --card-border-color: #E5E7EB; --footer-bg: #111827; --footer-text: #D1D5DB; --footer-link-hover: var(--primary-light);
+            --primary-color: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --secondary-color: #14B8A6; --secondary-light: #2DD4BF; --accent-color: #F97316; --text-color: #1F2937; --text-muted-color: #6B7280; --light-bg: #F9FAFB; --card-bg: #FFFFFF; --card-border-color: #E5E7EB; --footer-bg: #111827; --footer-text: #D1D5DB; --footer-link-hover: var(--primary-light);
             --primary-color-rgb: 79, 70, 229; --secondary-color-rgb: 20, 184, 166;
             --bookmark-active-color: var(--secondary-color);
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
             --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
-            --bg-start: #FFFFFF;
-            --bg-end: #F0F2F5;
         }
-        body { 
-            padding-top: 165px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); display: flex; flex-direction: column; min-height: 100vh;
-            background-color: var(--bg-end); background-image: linear-gradient(to bottom, var(--bg-start), var(--bg-end) 400px); transition: background-color 0.3s ease, color 0.3s ease;
-        }
+        body { padding-top: 155px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
-            --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #111827; --footer-text: #9CA3AF;
+            --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
             --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
-            --bookmark-active-color: var(--secondary-light); --bg-start: #111827; --bg-end: #0d121c;
+            --bookmark-active-color: var(--secondary-light);
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
         .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: none; z-index: 1040; }
-        .category-nav { background: var(--card-bg); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); box-shadow: none; }
+        .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; }
         .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
         .navbar-left { flex-shrink: 0; }
         .navbar-center { flex-grow: 1; min-width: 150px; max-width: 550px; }
@@ -1523,17 +1366,16 @@ BASE_HTML_TEMPLATE = """
         .navbar-search:focus { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 4px rgba(255,255,255,0.2); border-color: var(--secondary-light); outline: none; color:white; }
         .search-icon { color: rgba(255,255,255,0.8); transition: all 0.3s ease; left: 1.1rem; position: absolute; top: 50%; transform: translateY(-50%); }
         .header-controls { display: flex; gap: 0.8rem; align-items: center; }
-        .header-controls .dropdown { position: static; }
-        .dropdown-menu { z-index: 1041; }
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
         .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
+        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
         .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
         .categories-wrapper::-webkit-scrollbar { display: none; }
         .category-links-container { display: flex; flex-shrink: 0; }
         .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
         .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
-        .category-link:hover:not(.active) { background: var(--bg-end) !important; color: var(--primary-color) !important; }
+        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
         .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
         .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
@@ -1554,16 +1396,6 @@ BASE_HTML_TEMPLATE = """
         .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
         .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
         .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
-        .featured-story { background-color: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); margin-bottom: 2.5rem; overflow: hidden; display: flex; border: 1px solid var(--card-border-color); }
-        .featured-story-image { flex: 0 0 55%; background-size: cover; background-position: center; min-height: 450px; }
-        .featured-story-content { flex: 0 0 45%; padding: 2.5rem; display: flex; flex-direction: column; justify-content: center; }
-        .featured-story-content .meta-item { font-size: 0.9rem; }
-        .featured-story-content h2 { font-size: 2.2rem; line-height: 1.3; margin: 1rem 0; }
-        .featured-story-content h2 a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
-        .featured-story-content h2 a:hover { color: var(--primary-color); }
-        .featured-story-content .description { font-size: 1.05rem; color: var(--text-muted-color); margin-bottom: 2rem; }
-        .featured-story-content .read-more-btn { background-color: var(--primary-color); color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 50px; font-weight: 600; transition: all 0.3s ease; align-self: flex-start; }
-        .featured-story-content .read-more-btn:hover { background-color: var(--primary-dark); transform: translateY(-2px); box-shadow: var(--shadow-md); }
         footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
         .footer-content.row { display: flex; flex-wrap: wrap; }
         .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
@@ -1592,29 +1424,15 @@ BASE_HTML_TEMPLATE = """
         .contact-social-links { display: flex; gap: 1.5rem; justify-content: center; font-size: 1.5rem; }
         .contact-social-links a { color: var(--text-muted-color); transition: all 0.3s ease; }
         .contact-social-links a:hover { color: var(--secondary-color); transform: scale(1.1); }
-        .body-auth { background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px); background-size: 20px 20px; }
-        body.dark-mode .body-auth { background-image: radial-gradient(#2c3341 1px, transparent 1px); }
-        .auth-card { max-width: 450px; margin: 2rem auto; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: 0 10px 40px rgba(0,0,0,0.1); border: 1px solid var(--card-border-color); overflow: hidden; }
-        .auth-header { padding: 2rem; background-color: var(--primary-color); text-align: center; border-bottom: 5px solid var(--secondary-color); }
-        .auth-header .brand-icon { font-size: 2.5rem; color: var(--secondary-light); }
-        .auth-header h2 { color: white; font-weight: 600; margin-top: 0.5rem; margin-bottom: 0; font-size: 1.5rem; }
-        .auth-body { padding: 2.5rem; }
+        .auth-card { max-width: 480px; margin: 3rem auto; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--card-border-color); overflow: hidden; }
+        .auth-header { padding: 2rem; background-color: var(--primary-color); text-align: center; }
+        .auth-header .icon { font-size: 2.5rem; color: var(--secondary-light); }
+        .auth-header h2 { color: white; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0; }
+        .auth-body { padding: 2rem 2.5rem; }
         .input-group-icon { position: relative; }
-        .input-group-icon .input-icon { position: absolute; left: 1rem; top: 0; bottom: 0; margin: auto 0; height: 1em; color: var(--text-muted-color); pointer-events: none; }
-        .input-group-icon .form-control { padding-left: 2.8rem; height: 50px; }
-        .auth-body .btn-primary { padding: 0.8rem; font-weight: 600; font-size: 1rem; border-radius: var(--border-radius-md); }
-        .auth-footer { padding: 1.5rem; background-color: var(--light-bg); text-align: center; border-top: 1px solid var(--card-border-color); }
-        body.dark-mode .auth-footer { background-color: var(--footer-bg); }
-        .social-login-divider { display: flex; align-items: center; text-align: center; color: var(--text-muted-color); font-size: 0.8rem; text-transform: uppercase; margin: 1.5rem 0; }
-        .social-login-divider::before, .social-login-divider::after { content: ''; flex: 1; border-bottom: 1px solid var(--card-border-color); }
-        .social-login-divider:not(:empty)::before { margin-right: .5em; }
-        .social-login-divider:not(:empty)::after { margin-left: .5em; }
-        .social-login-buttons .btn { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 0.9rem; padding: 0.6rem; border-color: var(--card-border-color); color: var(--text-color); }
-        body.dark-mode .social-login-buttons .btn { color: var(--text-color); }
-        .social-login-buttons .btn:hover { background-color: var(--light-bg); }
-        .social-login-buttons .btn i { font-size: 1.2rem; }
-        .fa-google { color: #DB4437; }
-        .fa-facebook { color: #4267B2; }
+        .input-group-icon .form-control { padding-left: 2.5rem; }
+        .input-group-icon .input-icon { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted-color); }
+        .auth-body .btn { padding: 0.75rem; font-weight: 600; font-size: 1rem; }
         .profile-header-card { background: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2rem; box-shadow: var(--shadow-md); display: flex; flex-direction: column; align-items: center; text-align: center; }
         .profile-avatar-wrapper { position: relative; margin-bottom: 1rem; }
         .profile-avatar { width: 120px; height: 120px; border-radius: 50%; background-image: linear-gradient(to top, var(--primary-color), var(--primary-light)); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 3.5rem; font-family: 'Poppins', sans-serif; border: 5px solid var(--card-bg); box-shadow: var(--shadow-md); }
@@ -1628,7 +1446,13 @@ BASE_HTML_TEMPLATE = """
         .profile-tabs .nav-link { padding: 0.75rem 1rem; }
         .empty-state-card { background-color: var(--card-bg); border-radius: var(--border-radius-lg); text-align: center; padding: 3rem; border: 2px dashed var(--card-border-color); }
         .empty-state-card .icon { font-size: 3.5rem; color: var(--text-muted-color); opacity: 0.5; margin-bottom: 1rem; }
-        .bookmark-btn:focus, .bookmark-btn:active { outline: none !important; box-shadow: none !important; }
+        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
+        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
+        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
+        .bookmark-btn:hover { color: var(--secondary-light); }
+        .article-card .bookmark-btn { font-size: 1.3rem; }
+        
+        /* === COMMENT SECTION STYLES (IMPROVED) === */
         .comment-section h3 { padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border-color); }
         .comment-thread { position: relative; }
         #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
@@ -1639,7 +1463,7 @@ BASE_HTML_TEMPLATE = """
         .comment-replies .comment-avatar { width: 40px; height: 40px; }
         .comment-body { flex-grow: 1; }
         .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
-        .comment-author, .comment-author a { font-weight: 600; color: var(--text-color); }
+        .comment-author { font-weight: 600; }
         .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
         .comment-content { word-wrap: break-word; }
         .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
@@ -1656,55 +1480,200 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-        .ai-synthesis-card { border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; border: 1px solid var(--card-border-color); background-color: #f7f7fe; background-image: linear-gradient(135deg, #f5f6ff 0%, #f0f2ff 100%); }
-        body.dark-mode .ai-synthesis-card { background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.15), rgba(var(--primary-color-rgb), 0.03)); border-color: rgba(var(--primary-color-rgb), 0.2); }
-        .synthesis-header { text-align: center; margin-bottom: 1.5rem; position: relative; }
-        .synthesis-header i { font-size: 2rem; color: var(--primary-color); }
-        .synthesis-header h2 { font-size: 1.5rem; margin-top: 0.5rem; color: var(--text-color); }
-        body.dark-mode .synthesis-header h2 { color: var(--text-color); }
-        .synthesis-text { font-size: 1.15rem; line-height: 1.7; text-align: center; color: var(--text-muted-color); position: relative; font-family: 'Inter', serif; font-weight: 500; }
-        .synthesis-keywords { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border-color); text-align: center; position: relative; }
-        .synthesis-keywords .keyword-tag { display: inline-block; background-color: var(--card-bg); border: 1px solid var(--card-border-color); color: var(--text-muted-color); padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out; }
-        .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-color); color: white; border-color: var(--primary-color); transform: translateY(-2px); }
-        body.dark-mode .synthesis-keywords .keyword-tag { background-color: rgba(var(--primary-color-rgb), 0.1); border-color: rgba(var(--primary-color-rgb), 0.3); color: var(--text-muted-color); }
-        body.dark-mode .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-light); color: var(--footer-bg); border-color: var(--primary-light); }
-        
-        /* === RESPONSIVE OVERHAUL (MOBILE-FIRST POLISH) === */
-        @media (max-width: 991.98px) {
-            body { padding-top: 155px; }
-            .navbar-content-wrapper { flex-wrap: wrap; }
-            .navbar-left { flex-basis: 50%; }
-            .navbar-right { flex-basis: 50%; display: flex; justify-content: flex-end; }
-            .navbar-center { flex-basis: 100%; order: 3; margin-top: 0.5rem; }
-            .category-nav { top: 125px; }
-            .featured-story { flex-direction: column; }
-            .featured-story-image { min-height: 300px; }
-            .featured-story-content { padding: 2rem; }
-            .featured-story-content h2 { font-size: 1.8rem; }
-        }
+
+        /* === FINAL UI FIXES (INCLUDED) === */
+        .navbar-main { z-index: 1040; }
+        .header-controls .dropdown { position: static; }
+        .dropdown-menu { z-index: 1041; }
+        .bookmark-btn:focus { outline: none; box-shadow: none; }
+
+        /* In BASE_HTML_TEMPLATE, add this block to your <style> section */
+
+/* === FEATURED STORY SECTION === */
+.featured-story {
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    margin-bottom: 2.5rem;
+    overflow: hidden;
+    display: flex;
+    border: 1px solid var(--card-border-color);
+}
+.featured-story-image {
+    flex: 0 0 55%;
+    background-size: cover;
+    background-position: center;
+    min-height: 450px;
+}
+.featured-story-content {
+    flex: 0 0 45%;
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.featured-story-content .meta-item {
+    font-size: 0.9rem;
+}
+.featured-story-content h2 {
+    font-size: 2.2rem;
+    line-height: 1.3;
+    margin: 1rem 0;
+}
+.featured-story-content h2 a {
+    color: var(--text-color);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+.featured-story-content h2 a:hover {
+    color: var(--primary-color);
+}
+.featured-story-content .description {
+    font-size: 1.05rem;
+    color: var(--text-muted-color);
+    margin-bottom: 2rem;
+}
+.featured-story-content .read-more-btn {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 0.8rem 1.5rem;
+    text-decoration: none;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    align-self: flex-start; /* Button does not stretch */
+}
+.featured-story-content .read-more-btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
         @media (max-width: 767.98px) {
             body { padding-top: 145px; }
-            .navbar-left { flex-basis: auto; }
-            .navbar-right { position: absolute; top: 1.1rem; right: 1rem; }
-            .navbar-brand-custom { font-size: 1.8rem; }
-            .category-nav { top: 72px; }
-            .categories-wrapper { justify-content: flex-start; }
-            #dateFilterForm { display: none; }
-            .ai-synthesis-card { padding: 1.5rem; }
-            .synthesis-header h2 { font-size: 1.3rem; }
-            .synthesis-text { font-size: 1rem; }
-            .featured-story-image { min-height: 250px; }
-            .featured-story-content { padding: 1.5rem; }
-            .featured-story-content h2 { font-size: 1.5rem; }
-            h2.border-bottom { font-size: 1.5rem; }
-            .article-body { padding: 1.25rem; }
-            .page-header-static { padding: 2rem; }
-            .page-header-static h1 { font-size: 2.2rem; }
-            .static-content-container { padding: 1.5rem; }
-            .auth-body { padding: 2rem 1.5rem; }
-            .footer-section { text-align: center; }
-            .social-links { justify-content: center; }
+            .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
+            .navbar-left { width: 100%; text-align: center; margin-bottom: 0.5rem; }
+            .navbar-right { position: absolute; top: 1.2rem; right: 1rem; }
+            .navbar-center { order: 3; width: 100%; }
+            .category-nav { top: 128px; }
+            .page-header-static h1 { font-size: 2rem; }
         }
+
+        /* In BASE_HTML_TEMPLATE, add this entire block to the end of your <style> section */
+
+/* === UPGRADED AUTHENTICATION PAGES UI === */
+.body-auth {
+    background-color: var(--light-bg);
+    background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+body.dark-mode .body-auth {
+    background-image: radial-gradient(#2c3341 1px, transparent 1px);
+}
+.auth-card {
+    max-width: 450px;
+    margin: 2rem auto;
+    background: var(--card-bg);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    border: 1px solid var(--card-border-color);
+    overflow: hidden;
+}
+.auth-header {
+    padding: 2rem;
+    background-color: var(--primary-color);
+    text-align: center;
+    border-bottom: 5px solid var(--secondary-color);
+}
+.auth-header .brand-icon {
+    font-size: 2.5rem;
+    color: var(--secondary-light);
+}
+.auth-header h2 {
+    color: white;
+    font-weight: 600;
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+    font-size: 1.5rem;
+}
+.auth-body {
+    padding: 2.5rem;
+}
+.input-group-icon {
+    position: relative;
+}
+/* This vertically centers the icon relative to the input box height */
+.input-group-icon .input-icon {
+    position: absolute;
+    left: 1rem;
+    top: 0;
+    bottom: 0;
+    margin: auto 0;
+    height: 1em; /* Intrinsic height of the icon */
+    color: var(--text-muted-color);
+    pointer-events: none; /* Make icon non-clickable */
+}
+.input-group-icon .form-control {
+    padding-left: 2.8rem; /* Make room for the icon */
+    height: 50px;
+}
+.auth-body .btn-primary {
+    padding: 0.8rem;
+    font-weight: 600;
+    font-size: 1rem;
+    border-radius: var(--border-radius-md);
+}
+.auth-footer {
+    padding: 1.5rem;
+    background-color: var(--light-bg);
+    text-align: center;
+    border-top: 1px solid var(--card-border-color);
+}
+body.dark-mode .auth-footer {
+    background-color: var(--footer-bg);
+}
+.social-login-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: var(--text-muted-color);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    margin: 1.5rem 0;
+}
+.social-login-divider::before,
+.social-login-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--card-border-color);
+}
+.social-login-divider:not(:empty)::before {
+    margin-right: .5em;
+}
+.social-login-divider:not(:empty)::after {
+    margin-left: .5em;
+}
+.social-login-buttons .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+    padding: 0.6rem;
+    border-color: var(--card-border-color);
+    color: var(--text-color);
+}
+body.dark-mode .social-login-buttons .btn {
+    color: var(--text-color);
+}
+.social-login-buttons .btn:hover {
+    background-color: var(--light-bg);
+}
+.social-login-buttons .btn i {
+    font-size: 1.2rem;
+}
+.fa-google { color: #DB4437; }
+.fa-facebook { color: #4267B2; }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1716,7 +1685,7 @@ BASE_HTML_TEMPLATE = """
         gtag('config', 'G-CV5LWJ7NQ7');
     </script>
 </head>
-<body class="{{ request.cookies.get('darkMode', 'disabled') }} {% block body_class %}{% endblock %}">
+<body class="{{ request.cookies.get('darkMode', 'disabled') }}{% block body_class %}{% endblock %}">
     <div id="alert-placeholder">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -1885,11 +1854,9 @@ BASE_HTML_TEMPLATE = """
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    
     <script>
     document.addEventListener('DOMContentLoaded', function () {
         try {
-            // Dark Mode Toggle
             const darkModeToggle = document.querySelector('.dark-mode-toggle');
             if (darkModeToggle) {
                 const body = document.body;
@@ -1905,9 +1872,13 @@ BASE_HTML_TEMPLATE = """
                     applyTheme(isEnabled ? 'disabled' : 'enabled');
                 });
                 let storedTheme = localStorage.getItem('darkMode');
-                if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
+                if (storedTheme) {
+                    applyTheme(storedTheme);
+                } else {
+                    updateThemeIcon();
+                }
             }
-            // Flashed Messages Hiding
+
             const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
             flashedAlerts.forEach(function(alert) { 
                 setTimeout(function() {
@@ -1915,7 +1886,7 @@ BASE_HTML_TEMPLATE = """
                     if (bsAlert) bsAlert.close();
                 }, 7000);
             });
-            // Date Filter Form
+
             const dateFilterForm = document.getElementById('dateFilterForm');
             if (dateFilterForm) {
                 dateFilterForm.addEventListener('submit', function(event) {
@@ -1934,44 +1905,11 @@ BASE_HTML_TEMPLATE = """
                     });
                 }
             }
-            // Global Bookmark Button Handler
-            const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
-            document.body.addEventListener('click', function(event) {
-                const bookmarkButton = event.target.closest('.bookmark-btn');
-                if (bookmarkButton && isUserLoggedIn) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    bookmarkButton.disabled = true;
-                    const data = bookmarkButton.dataset;
-                    fetch(`{{ url_for('toggle_bookmark', article_hash_id='_') }}`.replace('_', data.articleHashId), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({
-                            is_community_article: data.isCommunity,
-                            title: data.title,
-                            source_name: data.sourceName,
-                            image_url: data.imageUrl,
-                            description: data.description,
-                            published_at: data.publishedAt
-                        })
-                    })
-                    .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || 'Server error'); }); } return res.json(); })
-                    .then(data => {
-                        if (data.success) {
-                            bookmarkButton.classList.toggle('active', data.status === 'added');
-                            bookmarkButton.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                        } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
-                    })
-                    .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); })
-                    .finally(() => { bookmarkButton.disabled = false; });
-                }
-            });
         } catch (e) {
             console.error("An error occurred in the base layout script:", e);
         }
     });
     </script>
-    {# This empty block allows child templates to add their own page-specific scripts #}
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
@@ -1988,29 +1926,10 @@ INDEX_HTML_TEMPLATE = """
 
 {% block content %}
 
-{# This is the main controller: It shows the full homepage, or the list view for categories. #}
 {% if is_main_homepage %}
-
-    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH ALL FEATURES) ============== #}
+    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH FEATURED STORY) ============== #}
     <div class="animate-fade-in">
         
-        {% if synthesis %}
-        <div class="ai-synthesis-card">
-            <div class="synthesis-header">
-                <i class="fas fa-brain"></i>
-                <h2>Today's Briefing: The Big Picture</h2>
-            </div>
-            <p class="synthesis-text">"{{ synthesis }}"</p>
-            {% if keywords %}
-            <div class="synthesis-keywords">
-                {% for keyword in keywords %}
-                    <a href="{{ url_for('search_results', query=keyword) }}" class="keyword-tag">{{ keyword }}</a>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-
         {% if featured_article %}
         <article class="featured-story">
             <div class="featured-story-image" style="background-image: url('{{ featured_article.urlToImage }}')"></div>
@@ -2108,59 +2027,108 @@ INDEX_HTML_TEMPLATE = """
             </div>
         </div>
     </div>
-
 {% else %}
 
-    {# ============ LAYOUT 2: STANDARD PAGINATED LIST VIEW (RESTORED) ============ #}
-    {# This block handles all other pages like categories, search, and date filters. #}
+    {# ============ LAYOUT 2: YOUR ORIGINAL PAGINATED LIST VIEW ============ #}
+    {# This section is preserved to ensure all category pages look exactly as they did before. #}
 
     {% if selected_category == 'All Articles' and current_filter_date %}
         <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
-    {% elif selected_category != 'All Articles' and selected_category != 'Community Hub' %}
+    {% endif %}
+    
+    {# Added a title for the paginated category pages #}
+    {% if selected_category != 'All Articles' and selected_category != 'Community Hub' %}
          <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
     {% endif %}
 
-    {% if articles and not is_main_homepage %} {# This section is for the paginated list view only #}
-        <div class="row g-4">
-            {% for art in articles %}
-            <div class="col-md-6 col-lg-4 d-flex">
-                <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
-                    {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
-                    <div class="article-image-container">
-                        <a href="{{ article_url }}">
-                        <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                    </div>
-                    <div class="article-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                            {% if session.user_id %}
-                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
-                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                                    data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
-                                    data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
-                                    data-title="{{ art.title|e }}"
-                                    data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
-                                    data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
-                                    data-description="{{ (art.description if art.description else '')|e }}"
-                                    data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
-                                <i class="fa-solid fa-bookmark"></i>
-                            </button>
-                            {% endif %}
-                        </div>
-                        <div class="article-meta small mb-2">
-                            <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {% if art.is_community_article and art.author %}<a href="{{ url_for('public_profile', username=art.author.username) }}" class="text-muted text-decoration-none">{{ art.author.name|truncate(20) }}</a>{% else %}{{ art.source.name|truncate(20) }}{% endif %}</span>
-                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
-                        </div>
-                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                    </div>
-                </article>
+    {% if articles and articles[0] and featured_article_on_this_page %}
+    <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
+        <div class="row g-0 g-md-4">
+            {% set art0 = articles[0] %}
+            {% set article_url = url_for('article_detail', article_hash_id=(art0.article_hash_id if art0.is_community_article else art0.id)) %}
+            <div class="col-lg-6">
+                <div class="featured-image rounded overflow-hidden shadow-sm" style="height:320px;">
+                    <a href="{{ article_url }}">
+                    <img src="{{ art0.image_url if art0.is_community_article else art0.urlToImage }}" class="img-fluid w-100 h-100" style="object-fit:cover;" alt="Featured: {{ art0.title|truncate(50) }}">
+                    </a>
+                </div>
             </div>
-            {% endfor %}
+            <div class="col-lg-6 d-flex flex-column ps-lg-3 pt-3 pt-lg-0">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div> {# Container for meta items except bookmark #}
+                        <div class="article-meta mb-2">
+                            <span class="badge bg-primary me-2" style="font-size:0.75rem;">{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|truncate(25) }}</span>
+                            <span class="meta-item"><i class="far fa-calendar-alt"></i> {{ (art0.published_at | to_ist if art0.is_community_article else (art0.publishedAt | to_ist if art0.publishedAt else 'N/A')) }}</span>
+                        </div>
+                    </div>
+                    {% if session.user_id %}
+                    <button class="bookmark-btn homepage-bookmark-btn {% if art0.is_bookmarked %}active{% endif %}"
+                            title="{% if art0.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
+                            data-article-hash-id="{{ art0.article_hash_id if art0.is_community_article else art0.id }}"
+                            data-is-community="{{ 'true' if art0.is_community_article else 'false' }}"
+                            data-title="{{ art0.title|e }}"
+                            data-source-name="{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|e }}"
+                            data-image-url="{{ (art0.image_url if art0.is_community_article else art0.urlToImage)|e }}"
+                            data-description="{{ (art0.description if art0.description else '')|e }}"
+                            data-published-at="{{ (art0.published_at.isoformat() if art0.is_community_article and art0.published_at else (art0.publishedAt if not art0.is_community_article and art0.publishedAt else ''))|e }}">
+                        <i class="fa-solid fa-bookmark"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                <h2 class="mb-2 h4"><a href="{{ article_url }}" class="text-decoration-none article-title">{{ art0.title }}</a></h2>
+                <p class="article-description flex-grow-1 small">{{ art0.description|truncate(220) }}</p>
+                <a href="{{ article_url }}" class="read-more mt-auto align-self-start py-2 px-3" style="width:auto;">Read Full Article <i class="fas fa-arrow-right ms-1 small"></i></a>
+            </div>
         </div>
-    {% elif not articles %}
-        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No articles found.</h4><p>Please try a different category or search query.</p></div>
+    </article>
+    {% elif not articles and selected_category == 'All Articles' and current_filter_date %}
+        <div class="alert alert-info text-center my-4 p-3 small">No articles found for <strong>{{ current_filter_date }}</strong>. Please try a different date or clear the date filter.</div>
+    {% elif not articles and selected_category != 'Community Hub' and not query %}
+        <div class="alert alert-warning text-center my-4 p-3 small">No recent Indian news found. Please check back later.</div>
+    {% elif not articles and selected_category == 'Community Hub' %}
+        <div class="alert alert-info text-center my-4 p-3"><h4><i class="fas fa-feather-alt me-2"></i>No Articles Penned Yet</h4><p>No articles in the Community Hub. {% if session.user_id %}Click the '+' button to share your insights!{% else %}Login to add articles.{% endif %}</p></div>
+    {% elif not articles and query %}
+        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No results for "{{ query }}"</h4><p>Try different keywords or browse categories.</p></div>
     {% endif %}
+
+    <div class="row g-4">
+        {% set articles_to_display = (articles[1:] if featured_article_on_this_page and articles else articles) %}
+        {% for art in articles_to_display %}
+        <div class="col-md-6 col-lg-4 d-flex">
+        <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
+            {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
+            <div class="article-image-container">
+                <a href="{{ article_url }}">
+                <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+            </div>
+            <div class="article-body d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                    {% if session.user_id %}
+                    <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
+                            title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
+                            data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
+                            data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
+                            data-title="{{ art.title|e }}"
+                            data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
+                            data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
+                            data-description="{{ (art.description if art.description else '')|e }}"
+                            data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
+                        <i class="fa-solid fa-bookmark"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="article-meta small mb-2">
+                    <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {{ (art.author.name if art.is_community_article and art.author else art.source.name)|truncate(20) }}</span>
+                    <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
+                </div>
+                <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+            </div>
+        </article>
+        </div>
+        {% endfor %}
+    </div>
 
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
@@ -2179,7 +2147,53 @@ INDEX_HTML_TEMPLATE = """
     {% endif %}
 {% endif %}
 {% endblock %}
+
+
+{% block scripts_extra %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
+    document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
+        if (isUserLoggedInForHomepage) {
+            button.addEventListener('click', function(event) {
+                event.preventDefault(); event.stopPropagation();
+                const articleHashId = this.dataset.articleHashId;
+                const isCommunity = this.dataset.isCommunity;
+                const title = this.dataset.title;
+                const sourceName = this.dataset.sourceName;
+                const imageUrl = this.dataset.imageUrl;
+                const description = this.dataset.description;
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
+                })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added');
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                        const alertPlaceholder = document.getElementById('alert-placeholder');
+                        if(alertPlaceholder) {
+                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
+                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
+                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
+                            const newAlert = alertPlaceholder.lastChild;
+                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
+                        }
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
+            });
+        }
+    });
+});
+</script>
+{% endblock %}
 """
+# In Rev14.py, replace your entire ARTICLE_HTML_TEMPLATE variable with this:
 
 ARTICLE_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
@@ -2248,9 +2262,6 @@ ARTICLE_HTML_TEMPLATE = """
 </article>
 {% endif %}
 {% endblock %}
-
-{# The script block below ONLY contains logic for this specific page. #}
-{# All global logic, including bookmarking, is now handled by BASE_HTML_TEMPLATE. #}
 {% block scripts_extra %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -2260,16 +2271,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
         const isCommunityArticle = {{ is_community_article | tojson }};
 
-        // --- 1. Article Content/Analysis Fetcher ---
         if (!isCommunityArticle) {
             const contentLoader = document.getElementById('contentLoader');
             const apiArticleContent = document.getElementById('apiArticleContent');
             
             fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
-                .then(response => {
-                    if (!response.ok) { throw new Error(`Network response was not ok, status: ${response.status}`); }
-                    return response.json();
-                })
+                .then(response => { if (!response.ok) { throw new Error(`Network error, status: ${response.status}`); } return response.json(); })
                 .then(data => {
                     if (data.error) { throw new Error(data.error); }
                     let html = '';
@@ -2277,9 +2284,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
                     const analysis = data.groq_analysis;
                     if (analysis) {
-                        if (analysis.error) {
-                            html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`;
-                        } else {
+                        if (analysis.error) { html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`; }
+                        else {
                             if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
                             if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
                         }
@@ -2287,18 +2293,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
                     apiArticleContent.innerHTML = html;
                 })
-                .catch(error => {
-                    console.error("Failed to load article content:", error);
-                    if (apiArticleContent) {
-                        apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`;
-                    }
-                })
-                .finally(() => {
-                    if (contentLoader) contentLoader.style.display = 'none';
-                });
+                .catch(error => { console.error("Failed to load article content:", error); if (apiArticleContent) { apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; } })
+                .finally(() => { if (contentLoader) contentLoader.style.display = 'none'; });
         }
 
-        // --- 2. Commenting System ---
         const commentSection = document.getElementById('comment-section');
         if (commentSection && isUserLoggedIn) {
             
@@ -2311,8 +2309,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 submitButton.disabled = true;
                 submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
                 fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ content, parent_id: parentId })
                 })
                 .then(res => {
@@ -2339,9 +2336,108 @@ document.addEventListener('DOMContentLoaded', function () {
                 .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
             };
 
+            const updateReactionUI = (commentId, reactions, userReaction) => {
+                const summaryContainer = document.getElementById(`reaction-summary-${commentId}`);
+                if (!summaryContainer) return;
+                let summaryHTML = '';
+                if (reactions) {
+                    for (const [emoji, count] of Object.entries(reactions)) {
+                        if (count > 0) {
+                            const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
+                            summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
+                        }
+                    }
+                }
+                summaryContainer.innerHTML = summaryHTML;
+            };
+
+            // Main event listener for all actions in the comment section
+            commentSection.addEventListener('click', function(e) {
+                const target = e.target;
+                const replyBtn = target.closest('.reply-btn');
+                const cancelBtn = target.closest('.cancel-reply-btn');
+                const reactBtn = target.closest('.react-btn');
+                const reactionEmoji = target.closest('.reaction-emoji');
+
+                if (replyBtn) {
+                    e.preventDefault();
+                    const commentId = replyBtn.dataset.commentId;
+                    const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                    if (formContainer) {
+                        const isDisplayed = formContainer.style.display === 'block';
+                        document.querySelectorAll('.reply-form-container').forEach(fc => fc.style.display = 'none');
+                        formContainer.style.display = isDisplayed ? 'none' : 'block';
+                        if (!isDisplayed) formContainer.querySelector('textarea').focus();
+                    }
+                    return;
+                }
+
+                if (cancelBtn) {
+                    e.preventDefault();
+                    cancelBtn.closest('.reply-form-container').style.display = 'none';
+                    return;
+                }
+                
+                if (reactBtn) {
+                    e.preventDefault();
+                    const commentId = reactBtn.dataset.commentId;
+                    const reactionBox = document.getElementById(`reaction-box-${commentId}`);
+                    if (reactionBox) {
+                        const isShown = reactionBox.classList.contains('show');
+                        document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
+                        if (!isShown) reactionBox.classList.add('show');
+                    }
+                    return;
+                }
+                
+                if (reactionEmoji) {
+                    e.preventDefault();
+                    const commentId = reactionEmoji.dataset.commentId;
+                    const emoji = reactionEmoji.dataset.emoji;
+                    reactionEmoji.closest('.reaction-box').classList.remove('show');
+                    fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ emoji: emoji })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); }
+                        else { throw new Error(data.error || "Failed to vote."); }
+                    })
+                    .catch(err => { console.error("Reaction error:", err); alert("Error: " + err.message); });
+                    return;
+                }
+
+                if (!target.closest('.reaction-box') && !target.closest('.react-btn')) {
+                    document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
+                }
+            });
+
             const mainCommentForm = document.getElementById('comment-form');
             if(mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
             commentSection.addEventListener('submit', function(e) { if(e.target.matches('.reply-form')) { e.preventDefault(); handleCommentSubmit(e.target); } });
+        }
+
+        const bookmarkBtn = document.getElementById('bookmarkBtn');
+        if (bookmarkBtn && isUserLoggedIn) {
+            bookmarkBtn.addEventListener('click', function() {
+                const articleHashId = this.dataset.articleHashId; 
+                const isCommunity = this.dataset.isCommunity; 
+                const title = this.dataset.title; 
+                const sourceName = this.dataset.sourceName; 
+                const imageUrl = this.dataset.imageUrl; 
+                const description = this.dataset.description; 
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt }) })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added'); 
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
+            });
         }
         {% endif %}
     } catch (e) {
@@ -2533,6 +2629,7 @@ PROFILE_HTML_TEMPLATE = """
                     <article class="article-card d-flex flex-column w-100">
                         <div class="article-image-container">
                             <a href="{{ art.article_url }}"><img src="{{ art.urlToImage if art.urlToImage else 'https://via.placeholder.com/400x220/EEEEEE/AAAAAA?text=No+Image' }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                            {% if art.is_stale_bookmark %}<span class="badge bg-secondary position-absolute top-0 end-0 m-2">Cached Bookmark</span>{% endif %}
                         </div>
                         <div class="article-body d-flex flex-column">
                             <h5 class="article-title mb-2"><a href="{{ art.article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
