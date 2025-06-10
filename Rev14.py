@@ -292,9 +292,9 @@ def to_ist_filter(utc_dt):
     if isinstance(utc_dt, str):
         try:
             if utc_dt.endswith('Z'):
-                 utc_dt = datetime.fromisoformat(utc_dt[:-1] + '+00:00')
+                utc_dt = datetime.fromisoformat(utc_dt[:-1] + '+00:00')
             else:
-                 utc_dt = datetime.fromisoformat(utc_dt)
+                utc_dt = datetime.fromisoformat(utc_dt)
         except ValueError: return "Invalid date string"
     
     if not isinstance(utc_dt, datetime): return "Invalid date object"
@@ -370,8 +370,6 @@ def get_article_analysis_with_groq(article_text, article_title=""):
     except Exception as e:
         app.logger.error(f"Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
-
-# In Rev14.py, add this new function
 
 @simple_cache(expiry_seconds_default=14400) # Cache the synthesis for 4 hours
 def get_daily_synthesis():
@@ -465,9 +463,9 @@ def fetch_news_from_api(target_date_str=None):
                 app.logger.info(f"Fallback: Fetching news specifically for UTC date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
                 is_specific_date_fetch = True
             except ValueError: # If target_date_str is malformed even for simple parsing
-                 app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
-                 target_date_str = None # This will ensure it uses the default N-day range logic in the next block
-                 is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
+                app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
+                target_date_str = None # This will ensure it uses the default N-day range logic in the next block
+                is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
 
     if not is_specific_date_fetch: 
         # Default fetch logic (no specific date selected, or date was invalid)
@@ -539,7 +537,7 @@ def fetch_news_from_api(target_date_str=None):
     if not all_raw_articles or is_specific_date_fetch:
         log_prefix_attempt3 = "Fallback/Augment"
         if not all_raw_articles and not is_specific_date_fetch:
-             app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
+                app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
         elif not all_raw_articles and is_specific_date_fetch:
             app.logger.warning(f"No articles from query for specific date '{target_date_str}'. Trying with domains.")
         elif all_raw_articles and is_specific_date_fetch:
@@ -754,7 +752,7 @@ def fetch_yesterdays_latest_news():
     except Exception as e:
         app.logger.error(f"Exception in fetch_yesterdays_latest_news: {e}", exc_info=True)
         return []
-        
+    
 @simple_cache(expiry_seconds_default=3600 * 6)
 def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
@@ -785,8 +783,8 @@ def fetch_and_parse_article_content(article_hash_id, url):
         # This is a redundancy check; the route get_article_content_json already does this.
         # However, keeping it ensures consistency if this function were called from elsewhere.
         if article_hash_id in MASTER_ARTICLE_STORE and \
-           MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
-           MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
+            MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
+            MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
             app.logger.info(f"Re-confirming pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id} within fetch_and_parse.")
             groq_analysis_result = {
                 "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
@@ -802,7 +800,7 @@ def fetch_and_parse_article_content(article_hash_id, url):
                 MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis_result.get("groq_takeaways")
                 app.logger.info(f"Groq analysis generated and cached in MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
             elif groq_analysis_result and groq_analysis_result.get("error"):
-                 app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
+                app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
 
 
         return {
@@ -852,8 +850,6 @@ def get_sort_key(article):
             return datetime.min.replace(tzinfo=timezone.utc)
     elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
-
-# In Rev14.py, find your existing index function and REPLACE IT with this entire block.
 
 @app.route('/')
 @app.route('/page/<int:page>')
@@ -1141,8 +1137,6 @@ def get_article_content_json(article_hash_id):
     processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
     return jsonify(processed_content)
 
-# In Rev14.py, replace the entire add_comment function with this definitive version.
-
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
 def add_comment(article_hash_id):
@@ -1376,12 +1370,12 @@ def ads_txt():
     # If you have other ad partners, add their lines here, each on a new line.
     # e.g., ads_content += "\notheradsystem.com, theirPubId, DIRECT, theirTagId"
     return Response(ads_content, mimetype='text/plain')
+
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
 
-# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this:
-
+# **MODIFICATION**: Replaced BASE_HTML_TEMPLATE with a mobile-responsive version.
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1401,7 +1395,7 @@ BASE_HTML_TEMPLATE = """
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
             --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
         }
-        body { padding-top: 155px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
+        body { padding-top: 142px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
             --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
@@ -1409,14 +1403,15 @@ BASE_HTML_TEMPLATE = """
             --bookmark-active-color: var(--secondary-light);
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
-        .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; }
-        .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
-        .navbar-left { flex-shrink: 0; }
-        .navbar-center { flex-grow: 1; min-width: 150px; max-width: 550px; }
-        .navbar-right { flex-shrink: 0; }
+        .alert-top { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
+        
+        /* Navbar Styles */
+        .navbar-main { background-color: var(--primary-color); box-shadow: var(--shadow-md); transition: background-color 0.3s ease; z-index: 1040; padding: 0.5rem 0; }
         .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
         .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
+        .navbar-toggler { border-color: rgba(255,255,255,0.25); }
+        .navbar-toggler-icon { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.8%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e"); }
+        .navbar-center { min-width: 250px; max-width: 550px; }
         .search-container { position: relative; width: 100%; }
         .navbar-search { width: 100%; border-radius: 50px; padding: 0.6rem 1.25rem 0.6rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
         .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
@@ -1426,13 +1421,17 @@ BASE_HTML_TEMPLATE = """
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
         .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
-        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
+        
+        /* Category Nav */
+        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 76px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
         .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
         .categories-wrapper::-webkit-scrollbar { display: none; }
         .category-links-container { display: flex; flex-shrink: 0; }
         .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
         .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
         .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
+        
+        /* General Content Styles */
         .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
         .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
@@ -1448,11 +1447,15 @@ BASE_HTML_TEMPLATE = """
         .article-description { color: var(--text-muted-color); margin-bottom: 1.25rem; font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.6rem 0; border-radius: var(--border-radius-md); font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
         .read-more:hover { background: var(--primary-dark); transform: translateY(-2px); color: white !important; box-shadow: var(--shadow-md); }
+        
+        /* Pagination Styles */
         .pagination { flex-wrap: wrap; }
         .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--text-muted-color); background-color: var(--card-bg); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; margin: 0 0.2rem;}
         .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
         .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
         .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
+        
+        /* Footer Styles */
         footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
         .footer-content.row { display: flex; flex-wrap: wrap; }
         .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
@@ -1463,347 +1466,88 @@ BASE_HTML_TEMPLATE = """
         .social-links a { color: var(--footer-text); font-size: 1.2rem; transition: all 0.2s ease; }
         .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
         .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
-        .add-article-btn { width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
+        
+        .add-article-btn { position: fixed; bottom: 25px; right: 25px; z-index: 1030; width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
         .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(var(--primary-color-rgb), 0.4); }
-        .page-header-static { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2rem; text-align: center; border-left: 5px solid var(--primary-color); }
-        .page-header-static h1 { color: var(--text-color); font-size: 2.8rem; font-weight: 700; }
-        body.dark-mode .page-header-static h1 { color: var(--primary-light); }
-        .static-content-container { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: clamp(1.5rem, 5vw, 3rem); font-size: 1.05rem; line-height: 1.8; box-shadow: var(--shadow-md); }
-        .static-content-container h2 { font-family: 'Poppins', sans-serif; color: var(--primary-dark); border-bottom: 2px solid var(--secondary-color); padding-bottom: 0.5rem; margin-top: 2.5rem; margin-bottom: 1.5rem; display: inline-block; }
-        .static-content-container h2 .icon { margin-right: 0.75rem; }
-        .static-content-container p.lead { font-size: 1.25rem; font-weight: 400; color: var(--text-muted-color); }
-        .static-content-container ul { padding-left: 25px; }
-        .static-content-container li { margin-bottom: 0.5rem; }
-        .contact-card { background-color: var(--light-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-md); padding: 1.5rem; height: 100%; text-align: center; transition: all 0.3s ease; }
-        .contact-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-md); }
-        .contact-card .icon { font-size: 2.5rem; color: var(--primary-color); margin-bottom: 1rem; }
-        body.dark-mode .contact-card { background-color: var(--card-bg); }
-        .contact-social-links { display: flex; gap: 1.5rem; justify-content: center; font-size: 1.5rem; }
-        .contact-social-links a { color: var(--text-muted-color); transition: all 0.3s ease; }
-        .contact-social-links a:hover { color: var(--secondary-color); transform: scale(1.1); }
-        .auth-card { max-width: 480px; margin: 3rem auto; background: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--card-border-color); overflow: hidden; }
-        .auth-header { padding: 2rem; background-color: var(--primary-color); text-align: center; }
-        .auth-header .icon { font-size: 2.5rem; color: var(--secondary-light); }
-        .auth-header h2 { color: white; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0; }
-        .auth-body { padding: 2rem 2.5rem; }
-        .input-group-icon { position: relative; }
-        .input-group-icon .form-control { padding-left: 2.5rem; }
-        .input-group-icon .input-icon { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted-color); }
-        .auth-body .btn { padding: 0.75rem; font-weight: 600; font-size: 1rem; }
-        .profile-header-card { background: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2rem; box-shadow: var(--shadow-md); display: flex; flex-direction: column; align-items: center; text-align: center; }
-        .profile-avatar-wrapper { position: relative; margin-bottom: 1rem; }
-        .profile-avatar { width: 120px; height: 120px; border-radius: 50%; background-image: linear-gradient(to top, var(--primary-color), var(--primary-light)); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 3.5rem; font-family: 'Poppins', sans-serif; border: 5px solid var(--card-bg); box-shadow: var(--shadow-md); }
-        .profile-header-card h2 { margin-bottom: 0.25rem; font-size: 2rem; }
-        .profile-header-card .username { color: var(--text-muted-color); font-weight: 500; margin-bottom: 1rem; }
-        .profile-stats { display: flex; gap: 2rem; margin-top: 1.5rem; border-top: 1px solid var(--card-border-color); padding-top: 1.5rem; width: 100%; justify-content: center; }
-        .stat-item { text-align: center; }
-        .stat-item .icon { font-size: 1.5rem; color: var(--secondary-color); margin-bottom: 0.5rem; }
-        .stat-item .count { font-size: 1.25rem; font-weight: 700; color: var(--text-color); }
-        .stat-item .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted-color); }
-        .profile-tabs .nav-link { padding: 0.75rem 1rem; }
-        .empty-state-card { background-color: var(--card-bg); border-radius: var(--border-radius-lg); text-align: center; padding: 3rem; border: 2px dashed var(--card-border-color); }
-        .empty-state-card .icon { font-size: 3.5rem; color: var(--text-muted-color); opacity: 0.5; margin-bottom: 1rem; }
-        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
+        
+        /* Other component styles... */
         .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
         .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
         .bookmark-btn:hover { color: var(--secondary-light); }
-        .article-card .bookmark-btn { font-size: 1.3rem; }
-        
-        /* === COMMENT SECTION STYLES (IMPROVED) === */
-        .comment-section h3 { padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border-color); }
-        .comment-thread { position: relative; }
-        #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
-        .comment-container { display: flex; gap: 1rem; align-items: flex-start; }
-        .comment-replies { margin-left: 3.5rem; padding-left: 1.25rem; margin-top: 1.25rem; border-left: 2px solid var(--card-border-color); }
-        .comment-replies > .comment-thread + .comment-thread { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--card-border-color); }
-        .comment-avatar { width: 45px; height: 45px; border-radius: 50%; background: var(--primary-light); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
-        .comment-replies .comment-avatar { width: 40px; height: 40px; }
-        .comment-body { flex-grow: 1; }
-        .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
-        .comment-author { font-weight: 600; }
-        .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
-        .comment-content { word-wrap: break-word; }
-        .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
-        .comment-actions button { background: none; border: none; color: var(--text-muted-color); padding: 0.25rem 0.5rem; border-radius: var(--border-radius-md); font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 0.3rem; transition: all 0.2s ease; }
-        .comment-actions button:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
-        .react-btn { position: relative; }
-        .reaction-box { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; background-color: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: 50px; padding: 4px 8px; box-shadow: var(--shadow-md); z-index: 10; white-space: nowrap; animation: fadeInUp 0.2s ease-out; }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .reaction-box.show { display: flex; gap: 5px; }
-        .reaction-emoji { font-size: 1.4rem; cursor: pointer; transition: transform 0.15s cubic-bezier(0.215, 0.610, 0.355, 1); padding: 2px; }
-        .reaction-emoji:hover { transform: scale(1.25); }
-        .reaction-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .reaction-pill { display: flex; align-items: center; background-color: rgba(var(--primary-color-rgb), 0.08); border: 1px solid transparent; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; font-weight: 500; cursor: default; transition: all 0.2s ease; }
-        .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
-        .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
-        .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-
-        /* === FINAL UI FIXES (INCLUDED) === */
-        .navbar-main { z-index: 1040; }
-        .header-controls .dropdown { position: static; }
-        .dropdown-menu { z-index: 1041; }
         .bookmark-btn:focus { outline: none; box-shadow: none; }
+        .article-card .bookmark-btn { font-size: 1.3rem; }
 
-        /* In BASE_HTML_TEMPLATE, add this block to your <style> section */
+        /* === RESPONSIVE STYLES (MOBILE-FIRST APPROACH) === */
 
-/* === FEATURED STORY SECTION === */
-.featured-story {
-    background-color: var(--card-bg);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-lg);
-    margin-bottom: 2.5rem;
-    overflow: hidden;
-    display: flex;
-    border: 1px solid var(--card-border-color);
-}
-.featured-story-image {
-    flex: 0 0 55%;
-    background-size: cover;
-    background-position: center;
-    min-height: 450px;
-}
-.featured-story-content {
-    flex: 0 0 45%;
-    padding: 2.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-.featured-story-content .meta-item {
-    font-size: 0.9rem;
-}
-.featured-story-content h2 {
-    font-size: 2.2rem;
-    line-height: 1.3;
-    margin: 1rem 0;
-}
-.featured-story-content h2 a {
-    color: var(--text-color);
-    text-decoration: none;
-    transition: color 0.2s ease;
-}
-.featured-story-content h2 a:hover {
-    color: var(--primary-color);
-}
-.featured-story-content .description {
-    font-size: 1.05rem;
-    color: var(--text-muted-color);
-    margin-bottom: 2rem;
-}
-.featured-story-content .read-more-btn {
-    background-color: var(--primary-color);
-    color: white;
-    padding: 0.8rem 1.5rem;
-    text-decoration: none;
-    border-radius: 50px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    align-self: flex-start; /* Button does not stretch */
-}
-.featured-story-content .read-more-btn:hover {
-    background-color: var(--primary-dark);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-}
+        /* Featured Story Responsive Styles */
+        .featured-story {
+            background-color: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); margin-bottom: 2.5rem; overflow: hidden; display: flex; flex-direction: column; /* Stacked by default for mobile */ border: 1px solid var(--card-border-color);
+        }
+        .featured-story-image {
+            background-size: cover; background-position: center; min-height: 250px; /* Good height for mobile */
+        }
+        .featured-story-content {
+            padding: 1.5rem; display: flex; flex-direction: column; justify-content: center;
+        }
+        .featured-story-content .meta-item { font-size: 0.9rem; }
+        .featured-story-content h2 { font-size: 1.8rem; line-height: 1.3; margin: 1rem 0; }
+        .featured-story-content h2 a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
+        .featured-story-content h2 a:hover { color: var(--primary-color); }
+        .featured-story-content .description { font-size: 1rem; color: var(--text-muted-color); margin-bottom: 1.5rem; }
+        .featured-story-content .read-more-btn { background-color: var(--primary-color); color: white; padding: 0.7rem 1.2rem; text-decoration: none; border-radius: 50px; font-weight: 600; transition: all 0.3s ease; align-self: flex-start; }
+        .featured-story-content .read-more-btn:hover { background-color: var(--primary-dark); transform: translateY(-2px); box-shadow: var(--shadow-md); }
 
-        @media (max-width: 767.98px) {
-            body { padding-top: 145px; }
-            .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
-            .navbar-left { width: 100%; text-align: center; margin-bottom: 0.5rem; }
-            .navbar-right { position: absolute; top: 1.2rem; right: 1rem; }
-            .navbar-center { order: 3; width: 100%; }
-            .category-nav { top: 128px; }
-            .page-header-static h1 { font-size: 2rem; }
+        /* General Mobile-first adjustments */
+        body { padding-top: 125px; } /* Mobile padding: main nav + category nav heights */
+        .category-nav { top: 66px; } /* Position below mobile main nav */
+        .alert-top { top: 70px; }
+        
+        /* Tablet and Desktop Styles */
+        @media (min-width: 992px) {
+            body { padding-top: 142px; } /* Restore desktop padding */
+            .category-nav { top: 76px; } /* Restore desktop position */
+            .alert-top { top: 80px; }
+
+            /* Switch featured story to side-by-side layout on desktop */
+            .featured-story {
+                flex-direction: row;
+            }
+            .featured-story-image {
+                flex: 0 0 55%;
+                min-height: 450px;
+            }
+            .featured-story-content {
+                flex: 0 0 45%;
+                padding: 2.5rem;
+            }
+            .featured-story-content h2 { font-size: 2.2rem; }
+            .featured-story-content .description { font-size: 1.05rem; }
+            .featured-story-content .read-more-btn { padding: 0.8rem 1.5rem; }
+            
+            /* Styles for dropdown menu on desktop */
+            .navbar-expand-lg .navbar-nav .dropdown-menu { border-radius: var(--border-radius-md); box-shadow: var(--shadow-lg); border: 1px solid var(--card-border-color); background-color: var(--card-bg); }
+            .navbar-expand-lg .navbar-nav .dropdown-item { color: var(--text-color); }
+            .navbar-expand-lg .navbar-nav .dropdown-item:hover { background-color: var(--light-bg); color: var(--primary-color); }
         }
 
-        /* In BASE_HTML_TEMPLATE, add this entire block to the end of your <style> section */
+        /* Styles for collapsed navbar menu */
+        @media (max-width: 991.98px) {
+            .navbar-collapse {
+                padding-bottom: 1rem;
+            }
+            .header-controls-wrapper { 
+                width: 100%; 
+                margin-top: 1rem;
+                padding-top: 1rem; 
+                border-top: 1px solid rgba(255,255,255,0.1); 
+            }
+            .header-controls { 
+                flex-direction: row-reverse; 
+                justify-content: space-between; 
+                width: 100%;
+            }
+        }
 
-/* === UPGRADED AUTHENTICATION PAGES UI === */
-.body-auth {
-    background-color: var(--light-bg);
-    background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px);
-    background-size: 20px 20px;
-}
-body.dark-mode .body-auth {
-    background-image: radial-gradient(#2c3341 1px, transparent 1px);
-}
-.auth-card {
-    max-width: 450px;
-    margin: 2rem auto;
-    background: var(--card-bg);
-    border-radius: var(--border-radius-lg);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-    border: 1px solid var(--card-border-color);
-    overflow: hidden;
-}
-.auth-header {
-    padding: 2rem;
-    background-color: var(--primary-color);
-    text-align: center;
-    border-bottom: 5px solid var(--secondary-color);
-}
-.auth-header .brand-icon {
-    font-size: 2.5rem;
-    color: var(--secondary-light);
-}
-.auth-header h2 {
-    color: white;
-    font-weight: 600;
-    margin-top: 0.5rem;
-    margin-bottom: 0;
-    font-size: 1.5rem;
-}
-.auth-body {
-    padding: 2.5rem;
-}
-.input-group-icon {
-    position: relative;
-}
-/* This vertically centers the icon relative to the input box height */
-.input-group-icon .input-icon {
-    position: absolute;
-    left: 1rem;
-    top: 0;
-    bottom: 0;
-    margin: auto 0;
-    height: 1em; /* Intrinsic height of the icon */
-    color: var(--text-muted-color);
-    pointer-events: none; /* Make icon non-clickable */
-}
-.input-group-icon .form-control {
-    padding-left: 2.8rem; /* Make room for the icon */
-    height: 50px;
-}
-.auth-body .btn-primary {
-    padding: 0.8rem;
-    font-weight: 600;
-    font-size: 1rem;
-    border-radius: var(--border-radius-md);
-}
-.auth-footer {
-    padding: 1.5rem;
-    background-color: var(--light-bg);
-    text-align: center;
-    border-top: 1px solid var(--card-border-color);
-}
-body.dark-mode .auth-footer {
-    background-color: var(--footer-bg);
-}
-.social-login-divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    color: var(--text-muted-color);
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    margin: 1.5rem 0;
-}
-.social-login-divider::before,
-.social-login-divider::after {
-    content: '';
-    flex: 1;
-    border-bottom: 1px solid var(--card-border-color);
-}
-.social-login-divider:not(:empty)::before {
-    margin-right: .5em;
-}
-.social-login-divider:not(:empty)::after {
-    margin-left: .5em;
-}
-.social-login-buttons .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    font-size: 0.9rem;
-    padding: 0.6rem;
-    border-color: var(--card-border-color);
-    color: var(--text-color);
-}
-body.dark-mode .social-login-buttons .btn {
-    color: var(--text-color);
-}
-.social-login-buttons .btn:hover {
-    background-color: var(--light-bg);
-}
-.social-login-buttons .btn i {
-    font-size: 1.2rem;
-}
-.fa-google { color: #DB4437; }
-.fa-facebook { color: #4267B2; }
-
-/* In BASE_HTML_TEMPLATE, add this block to your <style> section */
-
-/* === AI DAILY SYNTHESIS COMPONENT === */
-.ai-synthesis-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border-color);
-    border-radius: var(--border-radius-lg);
-    padding: 2rem;
-    margin-bottom: 2.5rem;
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
-}
-.ai-synthesis-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
-                      linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
-    background-size: 20px 20px;
-    opacity: 0.5;
-}
-.synthesis-header {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    position: relative;
-}
-.synthesis-header i {
-    font-size: 2rem;
-    color: var(--primary-color);
-}
-.synthesis-header h2 {
-    font-size: 1.5rem;
-    margin-top: 0.5rem;
-}
-.synthesis-text {
-    font-size: 1.15rem;
-    line-height: 1.7;
-    text-align: center;
-    color: var(--text-color);
-    position: relative;
-    font-family: 'Inter', serif;
-}
-.synthesis-keywords {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--card-border-color);
-    text-align: center;
-    position: relative;
-}
-.synthesis-keywords .keyword-tag {
-    display: inline-block;
-    background-color: var(--light-bg);
-    border: 1px solid var(--card-border-color);
-    color: var(--text-muted-color);
-    padding: 0.4rem 1rem;
-    border-radius: 50px;
-    margin: 0.25rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: all 0.2s ease-in-out;
-}
-.synthesis-keywords .keyword-tag:hover {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
-}
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1830,23 +1574,27 @@ body.dark-mode .social-login-buttons .btn {
     </div>
 
     <header class="fixed-top">
-        <nav class="navbar-main">
+        <nav class="navbar navbar-expand-lg navbar-main">
             <div class="container">
-                <div class="navbar-content-wrapper">
-                    <div class="navbar-left">
-                        <a class="navbar-brand-custom" href="{{ url_for('index') }}">
-                            <i class="fas fa-bolt-lightning brand-icon"></i>
-                            <span>Briefly</span>
-                        </a>
-                    </div>
-                    <div class="navbar-center">
+                <a class="navbar-brand-custom" href="{{ url_for('index') }}">
+                    <i class="fas fa-bolt-lightning brand-icon"></i>
+                    <span class="d-none d-sm-inline">Briefly</span>
+                </a>
+                
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbarContent" aria-controls="mainNavbarContent" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <div class="collapse navbar-collapse" id="mainNavbarContent">
+                    <div class="navbar-center mx-auto my-2 my-lg-0">
                         <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
-                            <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
+                            <input type="search" name="query" class="form-control navbar-search" placeholder="Search articles..." value="{{ request.args.get('query', '') }}">
                             <i class="fas fa-search search-icon"></i>
                             <button type="submit" class="d-none">Search</button>
                         </form>
                     </div>
-                    <div class="navbar-right">
+
+                    <div class="navbar-nav ms-lg-3 header-controls-wrapper">
                         <div class="header-controls">
                             <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
                                 <i class="fas fa-moon"></i>
@@ -1854,7 +1602,7 @@ body.dark-mode .social-login-buttons .btn {
                             {% if session.user_id %}
                             <div class="dropdown">
                                 <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
-                                    <i class="fas fa-user-circle"></i> <span class="d-none d-md-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
+                                    <i class="fas fa-user-circle"></i> <span class="d-none d-lg-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                                     <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
@@ -1888,8 +1636,7 @@ body.dark-mode .social-login-buttons .btn {
                             </a>
                         {% endfor %}
                     </div>
-                    
-                    <form id="dateFilterForm" class="ms-auto">
+                    <form id="dateFilterForm" class="ms-auto d-none d-md-flex">
                         <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
                         <div class="input-group input-group-sm">
                             <input type="date" id="articleDateFilter" class="form-control form-control-sm"
@@ -2045,8 +1792,8 @@ body.dark-mode .social-login-buttons .btn {
 </html>
 """
 
-# In Rev14.py, replace your entire INDEX_HTML_TEMPLATE variable with this final, correct version.
-
+# **MODIFICATION**: The template for the index page is updated to correctly display the featured article
+# and other sections, which will now be responsive due to the changes in the base template.
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
@@ -2065,16 +1812,16 @@ INDEX_HTML_TEMPLATE = """
     <div class="animate-fade-in">
         
         {% if synthesis %}
-        <div class="ai-synthesis-card">
-            <div class="synthesis-header">
-                <i class="fas fa-brain"></i>
-                <h2>Today's Briefing: The Big Picture</h2>
+        <div class="ai-synthesis-card" style="background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-lg); padding: 2rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg);">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <i class="fas fa-brain" style="font-size: 2rem; color: var(--primary-color);"></i>
+                <h2 style="font-size: 1.5rem; margin-top: 0.5rem;">Today's Briefing: The Big Picture</h2>
             </div>
-            <p class="synthesis-text">"{{ synthesis }}"</p>
+            <p style="font-size: 1.15rem; line-height: 1.7; text-align: center; color: var(--text-color); font-family: 'Inter', serif;">"{{ synthesis }}"</p>
             {% if keywords %}
-            <div class="synthesis-keywords">
+            <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border-color); text-align: center;">
                 {% for keyword in keywords %}
-                    <a href="{{ url_for('search_results', query=keyword) }}" class="keyword-tag">{{ keyword }}</a>
+                    <a href="{{ url_for('search_results', query=keyword) }}" style="display: inline-block; background-color: var(--light-bg); border: 1px solid var(--card-border-color); color: var(--text-muted-color); padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out;">{{ keyword }}</a>
                 {% endfor %}
             </div>
             {% endif %}
