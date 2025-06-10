@@ -1806,29 +1806,143 @@ body.dark-mode .social-login-buttons .btn {
 }
     /*
 ==============================================================================
---- MOBILE RESPONSIVENESS FIXES ---
-Add this entire block at the end of your <style> section in BASE_HTML_TEMPLATE
-to fix the layout on mobile devices.
+--- MOBILE VIEW OVERHAUL (CSS) ---
+For best results, REPLACE your entire @media (max-width: 991.98px) and
+@media (max-width: 767.98px) blocks in BASE_HTML_TEMPLATE with this one.
 ==============================================================================
 */
+
+/* === Tablet View (Medium Screens) === */
 @media (max-width: 991.98px) {
-    /* On tablets, stack the featured article vertically */
+    /* Adjust body padding for the potentially taller navbar */
+    body {
+        padding-top: 155px;
+    }
+
+    /* Rearrange header for better tablet layout */
+    .navbar-content-wrapper {
+        flex-wrap: wrap;
+    }
+    .navbar-left { flex-basis: 50%; }
+    .navbar-right { flex-basis: 50%; display: flex; justify-content: flex-end; }
+    .navbar-center { flex-basis: 100%; order: 3; margin-top: 0.5rem; }
+    .category-nav {
+        top: 125px; /* Position below the wrapped main nav */
+    }
+
+    /* Stack featured article's image and content vertically */
     .featured-story {
         flex-direction: column;
     }
     .featured-story-image {
-        min-height: 350px; /* Adjust image height for tablets */
+        min-height: 350px; /* A good height for tablets */
+    }
+    .featured-story-content {
+        padding: 2rem;
+    }
+    .featured-story-content h2 {
+        font-size: 1.8rem;
     }
 }
 
+
+/* === Mobile View (Small Screens) === */
 @media (max-width: 767.98px) {
-    /* --- Fix 1: Category Bar & Date Filter --- */
-    
-    /* Allow category links to wrap onto multiple lines instead of scrolling */
-    .category-links-container {
-        flex-wrap: wrap;
-        justify-content: center; /* Center the links when they wrap */
+    /* Increase body top padding to prevent content from hiding under the fixed navbars,
+       especially when the category bar wraps to two lines. */
+    body {
+        padding-top: 180px;
     }
+
+    /* --- Header & Navbar Fixes --- */
+    .navbar-main {
+        padding-bottom: 0.5rem;
+    }
+    .navbar-content-wrapper {
+        justify-content: center;
+    }
+    .navbar-left {
+        width: 100%;
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+    .navbar-brand-custom {
+        font-size: 1.8rem; /* Slightly smaller brand name */
+    }
+    .navbar-right {
+        position: absolute;
+        top: 1.1rem;
+        right: 1rem;
+    }
+    .category-nav {
+        top: 128px; /* Recalculate based on new navbar height */
+    }
+
+    /* --- Fix #1: Category Bar --- */
+    .categories-wrapper {
+        flex-wrap: wrap;       /* CRITICAL: Allow the container itself to wrap */
+        justify-content: center; /* Center the links */
+        overflow-x: hidden;      /* Hide horizontal scrollbar */
+        padding-bottom: 0.2rem;
+    }
+    .category-links-container {
+        flex-wrap: wrap;         /* Also allow the inner container to wrap */
+        justify-content: center;
+    }
+    .category-link {
+        margin: 0.2rem; /* Add some vertical margin for wrapped items */
+        padding: 0.5rem 1rem !important; /* Slightly reduce padding to fit more items */
+        font-size: 0.85rem;
+    }
+    #dateFilterForm {
+        display: none !important; /* Ensure date filter is hidden */
+    }
+
+    /* --- Fix #2: Search/Category Title Overlap --- */
+    /* Add space between the category nav and the page title */
+    .main-content h2.border-bottom,
+    .main-content h4.fst-italic {
+        margin-top: 1rem;
+    }
+
+    /* --- Fix #3: Overall Mobile UI Improvements --- */
+    .featured-story-image {
+        min-height: 220px; /* Better image height for mobile phones */
+    }
+    .featured-story-content {
+        padding: 1.5rem;
+    }
+    .featured-story-content h2 {
+        font-size: 1.5rem;
+    }
+
+    /* Reduce padding on general article cards for more space */
+    .article-body {
+        padding: 1.25rem;
+    }
+    .article-title {
+        font-size: 1.05rem;
+    }
+    
+    /* Improve typography for static page titles */
+    .page-header-static {
+        padding: 2rem;
+    }
+    .page-header-static h1 {
+        font-size: 2.2rem;
+    }
+    .static-content-container {
+        padding: 1.5rem;
+    }
+
+    /* Center-align footer sections for a cleaner mobile look */
+    .footer-section {
+        text-align: center;
+    }
+    .social-links {
+        justify-content: center;
+    }
+}
 
     /* Remove the horizontal scrollbar from the categories wrapper */
     .categories-wrapper {
