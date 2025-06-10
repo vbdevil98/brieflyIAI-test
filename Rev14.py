@@ -2213,9 +2213,9 @@ _COMMENT_TEMPLATE = """
         </div>
     </div>
     <div class="comment-replies" id="replies-of-{{ comment.id }}">
-        {# THE FIX IS ON THE LINE BELOW: The syntax is now correct. #}
-        {% for reply in comment.replies %}
-            {% include '_COMMENT_TEMPLATE' with comment=reply %}
+        {# THE FINAL FIX IS HERE: Use a different but universally supported syntax #}
+        {% for comment in comment.replies %}
+            {% include '_COMMENT_TEMPLATE' %}
         {% endfor %}
     </div>
 </div>
