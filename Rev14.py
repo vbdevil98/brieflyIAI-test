@@ -1377,7 +1377,8 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
-# In Rev14.py, replace the entire BASE_HTML_TEMPLATE variable with this final version.
+
+# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this final, correct, and complete version.
 
 BASE_HTML_TEMPLATE = """
 <!doctype html>
@@ -1410,6 +1411,7 @@ BASE_HTML_TEMPLATE = """
             min-height: 100vh;
             background-color: var(--bg-end);
             background-image: linear-gradient(to bottom, var(--bg-start), var(--bg-end) 400px);
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         .main-content { flex-grow: 1; }
         body.dark-mode {
@@ -1495,7 +1497,8 @@ BASE_HTML_TEMPLATE = """
         .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
         .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
 
-        /* === POLISHED UI COMPONENTS (MODALS, BUTTONS, STATIC PAGES) === */
+        /* === POLISHED UI COMPONENTS === */
+        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
         .add-article-btn { width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
         .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(var(--primary-color-rgb), 0.4); }
         .page-header-static { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2rem; text-align: center; border-left: 5px solid var(--primary-color); }
@@ -1550,12 +1553,9 @@ BASE_HTML_TEMPLATE = """
         .profile-tabs .nav-link { padding: 0.75rem 1rem; }
         .empty-state-card { background-color: var(--card-bg); border-radius: var(--border-radius-lg); text-align: center; padding: 3rem; border: 2px dashed var(--card-border-color); }
         .empty-state-card .icon { font-size: 3.5rem; color: var(--text-muted-color); opacity: 0.5; margin-bottom: 1rem; }
-        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
-        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
-        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
-        .bookmark-btn:hover { color: var(--secondary-light); }
-        .article-card .bookmark-btn { font-size: 1.3rem; }
         .bookmark-btn:focus { outline: none; box-shadow: none; }
+        
+        /* === COMMENT SECTION === */
         .comment-section h3 { padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border-color); }
         .comment-thread { position: relative; }
         #comments-list > .comment-thread + .comment-thread { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--card-border-color); }
@@ -1566,7 +1566,7 @@ BASE_HTML_TEMPLATE = """
         .comment-replies .comment-avatar { width: 40px; height: 40px; }
         .comment-body { flex-grow: 1; }
         .comment-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.25rem; }
-        .comment-author { font-weight: 600; }
+        .comment-author, .comment-author a { font-weight: 600; color: var(--text-color); }
         .comment-date { font-size: 0.8rem; color: var(--text-muted-color); }
         .comment-content { word-wrap: break-word; }
         .comment-actions { position: relative; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
@@ -1583,92 +1583,44 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-
-        /* === RESPONSIVE FIXES === */
-        @media (max-width: 767.98px) {
-            body { padding-top: 145px; }
-            .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
-            .navbar-left { width: 100%; text-align: center; margin-bottom: 0.5rem; }
-            .navbar-right { position: absolute; top: 1.2rem; right: 1rem; }
-            .navbar-center { order: 3; width: 100%; }
-            .category-nav { top: 128px; }
-            .page-header-static h1 { font-size: 2rem; }
+        
+        /* === RESPONSIVE OVERHAUL (MOBILE-FIRST POLISH) === */
+        @media (max-width: 991.98px) {
+            body { padding-top: 155px; }
+            .navbar-content-wrapper { flex-wrap: wrap; }
+            .navbar-left { flex-basis: 50%; }
+            .navbar-right { flex-basis: 50%; display: flex; justify-content: flex-end; }
+            .navbar-center { flex-basis: 100%; order: 3; margin-top: 0.5rem; }
+            .category-nav { top: 125px; }
             .featured-story { flex-direction: column; }
-            .featured-story-image { min-height: 250px; }
+            .featured-story-image { min-height: 300px; }
+            .featured-story-content { padding: 2rem; }
+            .featured-story-content h2 { font-size: 1.8rem; }
         }
 
-        /* In BASE_HTML_TEMPLATE, add this block to your <style> section */
-
-/* === AI DAILY SYNTHESIS COMPONENT === */
-.ai-synthesis-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border-color);
-    border-radius: var(--border-radius-lg);
-    padding: 2rem;
-    margin-bottom: 2.5rem;
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
-}
-.ai-synthesis-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
-                      linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
-    background-size: 20px 20px;
-    opacity: 0.5;
-}
-.synthesis-header {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    position: relative;
-}
-.synthesis-header i {
-    font-size: 2rem;
-    color: var(--primary-color);
-}
-.synthesis-header h2 {
-    font-size: 1.5rem;
-    margin-top: 0.5rem;
-}
-.synthesis-text {
-    font-size: 1.15rem;
-    line-height: 1.7;
-    text-align: center;
-    color: var(--text-color);
-    position: relative;
-    font-family: 'Inter', serif;
-}
-.synthesis-keywords {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--card-border-color);
-    text-align: center;
-    position: relative;
-}
-.synthesis-keywords .keyword-tag {
-    display: inline-block;
-    background-color: var(--light-bg);
-    border: 1px solid var(--card-border-color);
-    color: var(--text-muted-color);
-    padding: 0.4rem 1rem;
-    border-radius: 50px;
-    margin: 0.25rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: all 0.2s ease-in-out;
-}
-.synthesis-keywords .keyword-tag:hover {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
-}
+        @media (max-width: 767.98px) {
+            body { padding-top: 145px; }
+            .navbar-left { flex-basis: auto; }
+            .navbar-right { position: absolute; top: 1.1rem; right: 1rem; }
+            .navbar-brand-custom { font-size: 1.8rem; }
+            .category-nav { top: 72px; }
+            .categories-wrapper { justify-content: flex-start; }
+            #dateFilterForm { display: none; }
+            .ai-synthesis-card { padding: 1.5rem; }
+            .synthesis-header h2 { font-size: 1.3rem; }
+            .synthesis-text { font-size: 1rem; }
+            .featured-story-image { min-height: 250px; }
+            .featured-story-content { padding: 1.5rem; }
+            .featured-story-content h2 { font-size: 1.5rem; }
+            h2.border-bottom { font-size: 1.5rem; }
+            .article-body { padding: 1.25rem; }
+            .page-header-static { padding: 2rem; }
+            .page-header-static h1 { font-size: 2.2rem; }
+            .static-content-container { padding: 1.5rem; }
+            .auth-body { padding: 2rem 1.5rem; }
+            .footer-section { text-align: center; }
+            .social-links { justify-content: center; }
+        }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1873,7 +1825,6 @@ BASE_HTML_TEMPLATE = """
                     updateThemeIcon();
                 }
             }
-
             const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
             flashedAlerts.forEach(function(alert) { 
                 setTimeout(function() {
@@ -1881,7 +1832,6 @@ BASE_HTML_TEMPLATE = """
                     if (bsAlert) bsAlert.close();
                 }, 7000);
             });
-
             const dateFilterForm = document.getElementById('dateFilterForm');
             if (dateFilterForm) {
                 dateFilterForm.addEventListener('submit', function(event) {
@@ -1909,8 +1859,6 @@ BASE_HTML_TEMPLATE = """
 </body>
 </html>
 """
-
-# In Rev14.py, replace your entire INDEX_HTML_TEMPLATE variable with this final, correct version.
 
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
