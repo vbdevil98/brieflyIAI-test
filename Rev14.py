@@ -1039,7 +1039,7 @@ def get_article_content_json(article_hash_id):
     processed_content = fetch_and_parse_article_content(article_hash_id, article_data['url'])
     return jsonify(processed_content)
 
-# In Rev14.py, replace the entire add_comment function with this corrected block.
+# In Rev14.py, replace the entire add_comment function with this definitive version.
 
 @app.route('/add_comment/<article_hash_id>', methods=['POST'])
 @login_required
@@ -1051,27 +1051,36 @@ def add_comment(article_hash_id):
     
     user = User.query.get(session['user_id'])
     if not user:
+        # This is a fallback, the decorator should handle it.
         return jsonify({"success": False, "error": "User not found."}), 401
 
-    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+    # --- ROBUST LOGIC ---
+    # The new logic is simpler and more reliable.
+    # It trusts the article_hash_id from the page the user is on.
     
     new_comment = Comment(content=content, user_id=user.id, parent_id=parent_id)
+    
+    # First, check if it's a permanent community article from our database.
+    community_article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+    
     if community_article:
+        # If it is, link the comment to it.
         new_comment.community_article_id = community_article.id
-    elif article_hash_id in MASTER_ARTICLE_STORE:
-        new_comment.api_article_hash_id = article_hash_id
     else:
-        fetch_news_from_api() 
-        if article_hash_id in MASTER_ARTICLE_STORE:
-             new_comment.api_article_hash_id = article_hash_id
-        else:
-            return jsonify({"success": False, "error": "Article not found to comment on."}), 404
+        # If not, assume it's an API article and save the hash ID.
+        # We no longer check against the volatile MASTER_ARTICLE_STORE cache.
+        new_comment.api_article_hash_id = article_hash_id
 
-    db.session.add(new_comment)
-    db.session.commit()
-    db.session.refresh(new_comment)
+    try:
+        db.session.add(new_comment)
+        db.session.commit()
+        db.session.refresh(new_comment)
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error saving comment to database: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "A database error occurred. Could not save comment."}), 500
 
-    # THE FIX IS ON THE LINE BELOW: "_COMMENT_TEMPLATE" instead of "_COMMENT_TEMPLATE.html"
+    # Render the new comment's HTML on the server.
     comment_html = render_template("_COMMENT_TEMPLATE", comment=new_comment, session=session)
 
     return jsonify({
