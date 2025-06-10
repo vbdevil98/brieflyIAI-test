@@ -1378,8 +1378,6 @@ def ads_txt():
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
 
-# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this final, correct, and complete version.
-
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1606,9 +1604,69 @@ BASE_HTML_TEMPLATE = """
             .category-nav { top: 72px; }
             .categories-wrapper { justify-content: flex-start; }
             #dateFilterForm { display: none; }
-            .ai-synthesis-card { padding: 1.5rem; }
-            .synthesis-header h2 { font-size: 1.3rem; }
-            .synthesis-text { font-size: 1rem; }
+            .ai-synthesis-card {
+    border-radius: var(--border-radius-lg);
+    padding: 2.5rem;
+    margin-bottom: 2.5rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+    color: white;
+    border: none;
+    background-image: linear-gradient(135deg, var(--primary-dark) 0%, #3a32c3 100%);
+    }
+            body.dark-mode .ai-synthesis-card {
+     background-image: linear-gradient(135deg, #1e293b 0%, var(--primary-dark) 100%);
+}
+            .synthesis-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+.synthesis-header i {
+    font-size: 2rem;
+    color: var(--secondary-light);
+}
+            
+.synthesis-header h2 {
+    font-size: 1.5rem;
+    margin-top: 0.5rem;
+    color: white;
+}            
+.synthesis-text {
+    font-size: 1.15rem;
+    line-height: 1.7;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.9);
+    position: relative;
+    font-family: 'Inter', serif;
+    font-weight: 500;
+}
+.synthesis-keywords {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    text-align: center;
+    position: relative;
+}
+.synthesis-keywords .keyword-tag {
+    display: inline-block;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 0.4rem 1rem;
+    border-radius: 50px;
+    margin: 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s ease-in-out;
+}
+.synthesis-keywords .keyword-tag:hover {
+    background-color: white;
+    color: var(--primary-dark);
+    transform: translateY(-2px);
+}
             .featured-story-image { min-height: 250px; }
             .featured-story-content { padding: 1.5rem; }
             .featured-story-content h2 { font-size: 1.5rem; }
