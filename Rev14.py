@@ -894,7 +894,8 @@ def index(page=1, category_name='All Articles'):
                                featured_article_on_this_page=False,
                                current_filter_date=filter_date_str, query=query_str)
 
-# search_results route remains largely the same, ensuring current_filter_date=None is passed
+# In Rev14.py, replace the entire search_results function with this new version.
+
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
@@ -902,35 +903,79 @@ def search_results(page=1):
     query_str = request.args.get('query', '').strip()
     per_page = app.config['PER_PAGE']
 
-    if not query_str: return redirect(url_for('index'))
-    app.logger.info(f"Search query: '{query_str}'")
+    if not query_str:
+        return redirect(url_for('index'))
+
+    app.logger.info(f"Performing LIVE API search for query: '{query_str}'")
     
-    # Search should ideally search through all available articles, not just date-filtered ones.
-    # For simplicity with MASTER_ARTICLE_STORE, we ensure it's populated with general news.
-    # If MASTER_ARTICLE_STORE could be filtered by a date from a previous call, search might be limited.
-    # To ensure search is broad, we can call fetch_news_from_api() without a date to populate MASTER_ARTICLE_STORE.
-    if not MASTER_ARTICLE_STORE: # Or if you want to ensure it has the latest general set for searching
-        fetch_news_from_api() # Fetches default 7 days
+    # --- NEW: Live Search Logic ---
+    api_articles = []
+    if newsapi:
+        try:
+            # Perform a live search against the NewsAPI for the user's query
+            search_response = newsapi.get_everything(
+                q=query_str,
+                language='en',
+                sort_by='relevancy', # Sort by the most relevant articles for the query
+                page_size=100 # Get a full set of results for pagination
+            )
 
-    api_results = []
-    for art_id, art_data in MASTER_ARTICLE_STORE.items(): # Search all in-memory API articles
-        if query_str.lower() in art_data.get('title', '').lower() or \
-           query_str.lower() in art_data.get('description', '').lower():
-            art_copy = art_data.copy()
-            art_copy['is_community_article'] = False
-            api_results.append(art_copy)
+            if search_response.get('status') == 'ok':
+                # Process the results just like our other fetch functions
+                raw_articles = search_response.get('articles', [])
+                unique_urls = set()
+                for art_data in raw_articles:
+                    url = art_data.get('url')
+                    if not url or url in unique_urls: continue
+                    title = art_data.get('title')
+                    description = art_data.get('description')
+                    if not all([title, description, art_data.get('source')]) or title == '[Removed]':
+                        continue
+                    
+                    unique_urls.add(url)
+                    article_id = generate_article_id(url)
+                    source_name = art_data['source'].get('name', 'Unknown Source')
+                    placeholder_text = urllib.parse.quote_plus(source_name[:20])
+                    published_at_dt = None
+                    if art_data.get('publishedAt'):
+                        try: published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
+                        except ValueError: published_at_dt = datetime.now(timezone.utc)
+                    else:
+                        published_at_dt = datetime.now(timezone.utc)
+                    
+                    standardized_article = {
+                        'id': article_id, 'title': title, 'description': description, 'url': url,
+                        'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
+                        'publishedAt': published_at_dt.isoformat(), 'source': {'name': source_name},
+                        'is_community_article': False
+                    }
+                    MASTER_ARTICLE_STORE[article_id] = standardized_article # Add to cache
+                    api_articles.append(standardized_article)
+            else:
+                app.logger.error(f"NewsAPI error on search: {search_response.get('message')}")
+                flash(f"Could not perform search at this time. Error: {search_response.get('message')}", "danger")
 
-    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
-        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))).order_by(CommunityArticle.published_at.desc())
+        except Exception as e:
+            app.logger.error(f"Exception during API search for '{query_str}': {e}", exc_info=True)
+            flash("An unexpected error occurred during the search.", "danger")
+    
+    # Also search our own community-posted articles
     community_db_articles = []
+    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
+        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))
+    ).order_by(CommunityArticle.published_at.desc())
     for art in community_db_articles_query.all():
         art.is_community_article = True
         community_db_articles.append(art)
 
-    all_search_results_raw = api_results + community_db_articles
+    # Combine and sort results
+    all_search_results_raw = api_articles + community_db_articles
     all_search_results_raw.sort(key=get_sort_key, reverse=True)
+
+    # Paginate the combined results
     paginated_search_articles_raw, total_pages = get_paginated_articles(all_search_results_raw, page, per_page)
 
+    # Add bookmark status to the paginated results
     paginated_search_articles_with_bookmark_status = []
     user_bookmarks_hashes = set()
     if 'user_id' in session:
@@ -938,27 +983,23 @@ def search_results(page=1):
         user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
     for art_item in paginated_search_articles_raw:
-        current_article_hash_id = None
         if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
-            current_article_hash_id = art_item.article_hash_id
-            art_item.is_bookmarked = current_article_hash_id in user_bookmarks_hashes
+            art_item.is_bookmarked = art_item.article_hash_id in user_bookmarks_hashes
             paginated_search_articles_with_bookmark_status.append(art_item)
         elif isinstance(art_item, dict):
-            current_article_hash_id = art_item.get('id')
             art_item_copy = art_item.copy()
-            art_item_copy['is_bookmarked'] = current_article_hash_id in user_bookmarks_hashes
+            art_item_copy['is_bookmarked'] = art_item_copy.get('id') in user_bookmarks_hashes
             paginated_search_articles_with_bookmark_status.append(art_item_copy)
-        else:
-            paginated_search_articles_with_bookmark_status.append(art_item)
             
     return render_template("INDEX_HTML_TEMPLATE",
                            articles=paginated_search_articles_with_bookmark_status,
                            selected_category=f"Search: {query_str}",
                            current_page=page,
                            total_pages=total_pages,
+                           is_main_homepage=False,
                            featured_article_on_this_page=False,
                            query=query_str,
-                           current_filter_date=None) # Search results don't use date filter
+                           current_filter_date=None)
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
