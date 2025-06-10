@@ -1401,8 +1401,6 @@ def ads_txt():
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
 
-# In Rev14.py, replace the entire BASE_HTML_TEMPLATE variable with this final, correct, and complete version.
-
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1446,7 +1444,11 @@ BASE_HTML_TEMPLATE = """
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
         .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        
+
+.bookmark-btn:focus, .bookmark-btn:active {
+    outline: none !important;
+    box-shadow: none !important;
+}
         .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: none; z-index: 1040; }
         .category-nav { background: var(--card-bg); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); box-shadow: none; }
         .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
@@ -1954,6 +1956,73 @@ body.dark-mode .synthesis-keywords .keyword-tag:hover {
     });
     </script>
     {% block scripts_extra %}{% endblock %}
+    {% block scripts_extra %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    try {
+        // This is the global bookmarking script.
+        const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
+        
+        document.body.addEventListener('click', function(event) {
+            const bookmarkButton = event.target.closest('.bookmark-btn');
+
+            if (bookmarkButton && isUserLoggedIn) {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Disable button to prevent double-clicks
+                bookmarkButton.disabled = true;
+
+                // Gather all the data from the button's data attributes
+                const articleHashId = bookmarkButton.dataset.articleHashId;
+                const isCommunity = bookmarkButton.dataset.isCommunity;
+                const title = bookmarkButton.dataset.title;
+                const sourceName = bookmarkButton.dataset.sourceName;
+                const imageUrl = bookmarkButton.dataset.imageUrl;
+                const description = bookmarkButton.dataset.description;
+                const publishedAt = bookmarkButton.dataset.publishedAt;
+                
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        is_community_article: isCommunity,
+                        title: title,
+                        source_name: sourceName,
+                        image_url: imageUrl,
+                        description: description,
+                        published_at: publishedAt
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || 'Server error'); }); }
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // This logic now reliably updates the button that was clicked
+                        bookmarkButton.classList.toggle('active', data.status === 'added');
+                        bookmarkButton.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    } else {
+                        alert('Error: ' + (data.error || 'Could not update bookmark.'));
+                    }
+                })
+                .catch(err => {
+                    console.error("Bookmark error:", err);
+                    alert("Could not update bookmark: " + err.message);
+                })
+                .finally(() => {
+                    // Re-enable the button after the action is complete
+                    bookmarkButton.disabled = false;
+                });
+            }
+        });
+    } catch (e) {
+        console.error("A critical error occurred in global scripts:", e);
+    }
+});
+</script>
+{% endblock %}
 </body>
 </html>
 """
@@ -2159,50 +2228,6 @@ INDEX_HTML_TEMPLATE = """
     </ul></nav>
     {% endif %}
 {% endif %}
-{% endblock %}
-
-{% block scripts_extra %}
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
-    document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
-        if (isUserLoggedInForHomepage) {
-            button.addEventListener('click', function(event) {
-                event.preventDefault(); event.stopPropagation();
-                const articleHashId = this.dataset.articleHashId;
-                const isCommunity = this.dataset.isCommunity;
-                const title = this.dataset.title;
-                const sourceName = this.dataset.sourceName;
-                const imageUrl = this.dataset.imageUrl;
-                const description = this.dataset.description;
-                const publishedAt = this.dataset.publishedAt;
-                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
-                })
-                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
-                .then(data => {
-                    if (data.success) {
-                        this.classList.toggle('active', data.status === 'added');
-                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                        const alertPlaceholder = document.getElementById('alert-placeholder');
-                        if(alertPlaceholder) {
-                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
-                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
-                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
-                            const newAlert = alertPlaceholder.lastChild;
-                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
-                        }
-                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
-                })
-                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
-            });
-        }
-    });
-});
-</script>
 {% endblock %}
 """
 ARTICLE_HTML_TEMPLATE = """
@@ -2426,28 +2451,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const mainCommentForm = document.getElementById('comment-form');
             if(mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
             commentSection.addEventListener('submit', function(e) { if(e.target.matches('.reply-form')) { e.preventDefault(); handleCommentSubmit(e.target); } });
-        }
-
-        const bookmarkBtn = document.getElementById('bookmarkBtn');
-        if (bookmarkBtn && isUserLoggedIn) {
-            bookmarkBtn.addEventListener('click', function() {
-                const articleHashId = this.dataset.articleHashId; 
-                const isCommunity = this.dataset.isCommunity; 
-                const title = this.dataset.title; 
-                const sourceName = this.dataset.sourceName; 
-                const imageUrl = this.dataset.imageUrl; 
-                const description = this.dataset.description; 
-                const publishedAt = this.dataset.publishedAt;
-                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt }) })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        this.classList.toggle('active', data.status === 'added'); 
-                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
-                })
-                .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
-            });
         }
         {% endif %}
     } catch (e) {
