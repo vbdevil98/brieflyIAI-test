@@ -1451,6 +1451,122 @@ BASE_HTML_TEMPLATE = """
             .category-nav { top: 128px; }
             .page-header-static h1 { font-size: 2rem; }
         }
+
+        /* In BASE_HTML_TEMPLATE, add this entire block to the end of your <style> section */
+
+/* === UPGRADED AUTHENTICATION PAGES UI === */
+.body-auth {
+    background-color: var(--light-bg);
+    background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+body.dark-mode .body-auth {
+    background-image: radial-gradient(#2c3341 1px, transparent 1px);
+}
+.auth-card {
+    max-width: 450px;
+    margin: 2rem auto;
+    background: var(--card-bg);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    border: 1px solid var(--card-border-color);
+    overflow: hidden;
+}
+.auth-header {
+    padding: 2rem;
+    background-color: var(--primary-color);
+    text-align: center;
+    border-bottom: 5px solid var(--secondary-color);
+}
+.auth-header .brand-icon {
+    font-size: 2.5rem;
+    color: var(--secondary-light);
+}
+.auth-header h2 {
+    color: white;
+    font-weight: 600;
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+    font-size: 1.5rem;
+}
+.auth-body {
+    padding: 2.5rem;
+}
+.input-group-icon {
+    position: relative;
+}
+/* This vertically centers the icon relative to the input box height */
+.input-group-icon .input-icon {
+    position: absolute;
+    left: 1rem;
+    top: 0;
+    bottom: 0;
+    margin: auto 0;
+    height: 1em; /* Intrinsic height of the icon */
+    color: var(--text-muted-color);
+    pointer-events: none; /* Make icon non-clickable */
+}
+.input-group-icon .form-control {
+    padding-left: 2.8rem; /* Make room for the icon */
+    height: 50px;
+}
+.auth-body .btn-primary {
+    padding: 0.8rem;
+    font-weight: 600;
+    font-size: 1rem;
+    border-radius: var(--border-radius-md);
+}
+.auth-footer {
+    padding: 1.5rem;
+    background-color: var(--light-bg);
+    text-align: center;
+    border-top: 1px solid var(--card-border-color);
+}
+body.dark-mode .auth-footer {
+    background-color: var(--footer-bg);
+}
+.social-login-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: var(--text-muted-color);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    margin: 1.5rem 0;
+}
+.social-login-divider::before,
+.social-login-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--card-border-color);
+}
+.social-login-divider:not(:empty)::before {
+    margin-right: .5em;
+}
+.social-login-divider:not(:empty)::after {
+    margin-left: .5em;
+}
+.social-login-buttons .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+    padding: 0.6rem;
+    border-color: var(--card-border-color);
+    color: var(--text-color);
+}
+body.dark-mode .social-login-buttons .btn {
+    color: var(--text-color);
+}
+.social-login-buttons .btn:hover {
+    background-color: var(--light-bg);
+}
+.social-login-buttons .btn i {
+    font-size: 1.2rem;
+}
+.fa-google { color: #DB4437; }
+.fa-facebook { color: #4267B2; }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1462,7 +1578,7 @@ BASE_HTML_TEMPLATE = """
         gtag('config', 'G-CV5LWJ7NQ7');
     </script>
 </head>
-<body class="{{ request.cookies.get('darkMode', 'disabled') }}">
+<body class="{{ request.cookies.get('darkMode', 'disabled') }}{% block body_class %}{% endblock %}">
     <div id="alert-placeholder">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -2263,67 +2379,94 @@ _COMMENT_TEMPLATE = """
 </div>
 """
 
+# In Rev14.py, replace the LOGIN_HTML_TEMPLATE variable with this:
 LOGIN_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}Login - BrieflyAI{% endblock %}
+{% block body_class %}body-auth{% endblock %}
+
 {% block content %}
 <div class="auth-card animate-fade-in">
     <div class="auth-header">
-        <div class="icon"><i class="fas fa-sign-in-alt"></i></div>
-        <h2>Member Login</h2>
+        <div class="brand-icon"><i class="fas fa-bolt-lightning"></i></div>
+        <h2>Welcome Back to Briefly</h2>
     </div>
     <div class="auth-body">
         <form method="POST" action="{{ url_for('login', next=request.args.get('next')) }}">
-            <div class="mb-3 input-group-icon">
-                <label for="username" class="form-label">Username</label>
-                <i class="fas fa-user input-icon"></i>
-                <input type="text" class="form-control" id="username" name="username" required placeholder="Enter your username">
+            <div class="mb-3">
+                <label for="username" class="form-label fw-medium">Username</label>
+                <div class="input-group-icon">
+                    <i class="fas fa-user input-icon"></i>
+                    <input type="text" class="form-control" id="username" name="username" required placeholder="e.g. user123">
+                </div>
             </div>
-            <div class="mb-4 input-group-icon">
-                <label for="password" class="form-label">Password</label>
-                <i class="fas fa-lock input-icon"></i>
-                <input type="password" class="form-control" id="password" name="password" required placeholder="Enter your password">
+            <div class="mb-4">
+                <label for="password" class="form-label fw-medium">Password</label>
+                <div class="input-group-icon">
+                    <i class="fas fa-lock input-icon"></i>
+                    <input type="password" class="form-control" id="password" name="password" required placeholder="••••••••">
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary w-100">Login</button>
+            <button type="submit" class="btn btn-primary w-100">Sign In</button>
         </form>
-        <p class="mt-4 text-center small text-muted">
-            Don't have an account? <a href="{{ url_for('register', next=request.args.get('next')) }}" class="fw-medium">Register here</a>
+        
+        <div class="social-login-divider">Or</div>
+
+        <div class="social-login-buttons d-flex gap-3">
+            <a href="#" class="btn w-100"><i class="fab fa-google"></i> Google</a>
+            <a href="#" class="btn w-100"><i class="fab fa-facebook"></i> Facebook</a>
+        </div>
+    </div>
+    <div class="auth-footer">
+        <p class="mb-0 small">
+            Don't have an account? <a href="{{ url_for('register', next=request.args.get('next')) }}" class="fw-bold text-decoration-none">Sign up now</a>
         </p>
     </div>
 </div>
 {% endblock %}
 """
 
+# In Rev14.py, replace the REGISTER_HTML_TEMPLATE variable with this:
 REGISTER_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}Register - BrieflyAI{% endblock %}
+{% block body_class %}body-auth{% endblock %}
+
 {% block content %}
 <div class="auth-card animate-fade-in">
      <div class="auth-header">
-        <div class="icon"><i class="fas fa-user-plus"></i></div>
+        <div class="brand-icon"><i class="fas fa-user-plus"></i></div>
         <h2>Create Your Account</h2>
     </div>
     <div class="auth-body">
         <form method="POST" action="{{ url_for('register') }}">
-             <div class="mb-3 input-group-icon">
-                <label for="name" class="form-label">Full Name</label>
-                <i class="fas fa-id-card input-icon"></i>
-                <input type="text" class="form-control" id="name" name="name" required placeholder="Enter your full name">
+             <div class="mb-3">
+                <label for="name" class="form-label fw-medium">Full Name</label>
+                <div class="input-group-icon">
+                    <i class="fas fa-id-card input-icon"></i>
+                    <input type="text" class="form-control" id="name" name="name" required placeholder="e.g. John Doe">
+                </div>
             </div>
-            <div class="mb-3 input-group-icon">
-                <label for="username" class="form-label">Username</label>
-                <i class="fas fa-user input-icon"></i>
-                <input type="text" class="form-control" id="username" name="username" required placeholder="Choose a username (min 3 chars)">
+            <div class="mb-3">
+                <label for="username" class="form-label fw-medium">Username</label>
+                <div class="input-group-icon">
+                    <i class="fas fa-user input-icon"></i>
+                    <input type="text" class="form-control" id="username" name="username" required placeholder="e.g. johndoe (min 3 chars)">
+                </div>
             </div>
-            <div class="mb-4 input-group-icon">
-                <label for="password" class="form-label">Password</label>
-                <i class="fas fa-lock input-icon"></i>
-                <input type="password" class="form-control" id="password" name="password" required placeholder="Create a password (min 6 chars)">
+            <div class="mb-4">
+                <label for="password" class="form-label fw-medium">Password</label>
+                <div class="input-group-icon">
+                    <i class="fas fa-lock input-icon"></i>
+                    <input type="password" class="form-control" id="password" name="password" required placeholder="min 6 chars">
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary w-100">Register</button>
+            <button type="submit" class="btn btn-primary w-100">Create Account</button>
         </form>
-        <p class="mt-4 text-center small text-muted">
-            Already have an account? <a href="{{ url_for('login') }}" class="fw-medium">Login here</a>
+    </div>
+    <div class="auth-footer">
+        <p class="mb-0 small">
+            Already have an account? <a href="{{ url_for('login') }}" class="fw-bold text-decoration-none">Sign In</a>
         </p>
     </div>
 </div>
