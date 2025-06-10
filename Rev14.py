@@ -2241,6 +2241,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
+"""
 
 _COMMENT_TEMPLATE = """
 <div class="comment-thread" id="comment-{{ comment.id }}">
