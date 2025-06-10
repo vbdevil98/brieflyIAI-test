@@ -1400,6 +1400,7 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
+# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this final, correct, and complete version.
 
 BASE_HTML_TEMPLATE = """
 <!doctype html>
@@ -1444,11 +1445,7 @@ BASE_HTML_TEMPLATE = """
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
         .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-
-.bookmark-btn:focus, .bookmark-btn:active {
-    outline: none !important;
-    box-shadow: none !important;
-}
+        
         .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: none; z-index: 1040; }
         .category-nav { background: var(--card-bg); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); box-shadow: none; }
         .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
@@ -1518,7 +1515,6 @@ BASE_HTML_TEMPLATE = """
         .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
         .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
         
-        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
         .add-article-btn { width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
         .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(var(--primary-color-rgb), 0.4); }
         .page-header-static { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2rem; text-align: center; border-left: 5px solid var(--primary-color); }
@@ -1573,7 +1569,7 @@ BASE_HTML_TEMPLATE = """
         .profile-tabs .nav-link { padding: 0.75rem 1rem; }
         .empty-state-card { background-color: var(--card-bg); border-radius: var(--border-radius-lg); text-align: center; padding: 3rem; border: 2px dashed var(--card-border-color); }
         .empty-state-card .icon { font-size: 3.5rem; color: var(--text-muted-color); opacity: 0.5; margin-bottom: 1rem; }
-        .bookmark-btn:focus { outline: none; box-shadow: none; }
+        .bookmark-btn:focus, .bookmark-btn:active { outline: none !important; box-shadow: none !important; }
         
         .comment-section h3 { padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border-color); }
         .comment-thread { position: relative; }
@@ -1603,89 +1599,19 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
         
-        /* In BASE_HTML_TEMPLATE, find and REPLACE the existing CSS block for the synthesis card */
+        .ai-synthesis-card { border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; border: 1px solid var(--card-border-color); background-color: #f7f7fe; background-image: linear-gradient(135deg, #f5f6ff 0%, #f0f2ff 100%); }
+        body.dark-mode .ai-synthesis-card { background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.15), rgba(var(--primary-color-rgb), 0.03)); border-color: rgba(var(--primary-color-rgb), 0.2); }
+        .synthesis-header { text-align: center; margin-bottom: 1.5rem; position: relative; }
+        .synthesis-header i { font-size: 2rem; color: var(--primary-color); }
+        .synthesis-header h2 { font-size: 1.5rem; margin-top: 0.5rem; color: var(--text-color); }
+        body.dark-mode .synthesis-header h2 { color: var(--text-color); }
+        .synthesis-text { font-size: 1.15rem; line-height: 1.7; text-align: center; color: var(--text-muted-color); position: relative; font-family: 'Inter', serif; font-weight: 500; }
+        .synthesis-keywords { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border-color); text-align: center; position: relative; }
+        .synthesis-keywords .keyword-tag { display: inline-block; background-color: var(--card-bg); border: 1px solid var(--card-border-color); color: var(--text-muted-color); padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out; }
+        .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-color); color: white; border-color: var(--primary-color); transform: translateY(-2px); }
+        body.dark-mode .synthesis-keywords .keyword-tag { background-color: rgba(var(--primary-color-rgb), 0.1); border-color: rgba(var(--primary-color-rgb), 0.3); color: var(--text-muted-color); }
+        body.dark-mode .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-light); color: var(--footer-bg); border-color: var(--primary-light); }
 
-/* === AI DAILY SYNTHESIS COMPONENT (REDESIGNED) === */
-.ai-synthesis-card {
-    border-radius: var(--border-radius-lg);
-    padding: 2.5rem;
-    margin-bottom: 2.5rem;
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
-    border: 1px solid var(--card-border-color);
-    /* New soft gradient background */
-    background-color: #f7f7fe;
-    background-image: linear-gradient(135deg, #f5f6ff 0%, #f0f2ff 100%);
-}
-body.dark-mode .ai-synthesis-card {
-    /* Subtle tinted background for dark mode */
-    background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.15), rgba(var(--primary-color-rgb), 0.03));
-    border-color: rgba(var(--primary-color-rgb), 0.2);
-}
-.synthesis-header {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    position: relative;
-}
-.synthesis-header i {
-    font-size: 2rem;
-    color: var(--primary-color);
-}
-.synthesis-header h2 {
-    font-size: 1.5rem;
-    margin-top: 0.5rem;
-    color: var(--text-color);
-}
-body.dark-mode .synthesis-header h2 {
-    color: var(--text-color);
-}
-.synthesis-text {
-    font-size: 1.15rem;
-    line-height: 1.7;
-    text-align: center;
-    color: var(--text-muted-color);
-    position: relative;
-    font-family: 'Inter', serif;
-    font-weight: 500;
-}
-.synthesis-keywords {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--card-border-color);
-    text-align: center;
-    position: relative;
-}
-.synthesis-keywords .keyword-tag {
-    display: inline-block;
-    background-color: var(--card-bg);
-    border: 1px solid var(--card-border-color);
-    color: var(--text-muted-color);
-    padding: 0.4rem 1rem;
-    border-radius: 50px;
-    margin: 0.25rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: all 0.2s ease-in-out;
-}
-.synthesis-keywords .keyword-tag:hover {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
-}
-body.dark-mode .synthesis-keywords .keyword-tag {
-    background-color: rgba(var(--primary-color-rgb), 0.1);
-    border-color: rgba(var(--primary-color-rgb), 0.3);
-    color: var(--text-muted-color);
-}
-body.dark-mode .synthesis-keywords .keyword-tag:hover {
-    background-color: var(--primary-light);
-    color: var(--footer-bg);
-    border-color: var(--primary-light);
-}
-        /* === RESPONSIVE OVERHAUL === */
         @media (max-width: 991.98px) {
             body { padding-top: 155px; }
             .navbar-content-wrapper { flex-wrap: wrap; }
@@ -1956,73 +1882,6 @@ body.dark-mode .synthesis-keywords .keyword-tag:hover {
     });
     </script>
     {% block scripts_extra %}{% endblock %}
-    {% block scripts_extra %}
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    try {
-        // This is the global bookmarking script.
-        const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
-        
-        document.body.addEventListener('click', function(event) {
-            const bookmarkButton = event.target.closest('.bookmark-btn');
-
-            if (bookmarkButton && isUserLoggedIn) {
-                event.preventDefault();
-                event.stopPropagation();
-                
-                // Disable button to prevent double-clicks
-                bookmarkButton.disabled = true;
-
-                // Gather all the data from the button's data attributes
-                const articleHashId = bookmarkButton.dataset.articleHashId;
-                const isCommunity = bookmarkButton.dataset.isCommunity;
-                const title = bookmarkButton.dataset.title;
-                const sourceName = bookmarkButton.dataset.sourceName;
-                const imageUrl = bookmarkButton.dataset.imageUrl;
-                const description = bookmarkButton.dataset.description;
-                const publishedAt = bookmarkButton.dataset.publishedAt;
-                
-                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({
-                        is_community_article: isCommunity,
-                        title: title,
-                        source_name: sourceName,
-                        image_url: imageUrl,
-                        description: description,
-                        published_at: publishedAt
-                    })
-                })
-                .then(res => {
-                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || 'Server error'); }); }
-                    return res.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        // This logic now reliably updates the button that was clicked
-                        bookmarkButton.classList.toggle('active', data.status === 'added');
-                        bookmarkButton.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                    } else {
-                        alert('Error: ' + (data.error || 'Could not update bookmark.'));
-                    }
-                })
-                .catch(err => {
-                    console.error("Bookmark error:", err);
-                    alert("Could not update bookmark: " + err.message);
-                })
-                .finally(() => {
-                    // Re-enable the button after the action is complete
-                    bookmarkButton.disabled = false;
-                });
-            }
-        });
-    } catch (e) {
-        console.error("A critical error occurred in global scripts:", e);
-    }
-});
-</script>
-{% endblock %}
 </body>
 </html>
 """
