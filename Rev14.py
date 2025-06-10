@@ -1375,7 +1375,6 @@ def ads_txt():
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
 
-# **MODIFICATION**: Replaced BASE_HTML_TEMPLATE with a mobile-responsive version.
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1395,190 +1394,90 @@ BASE_HTML_TEMPLATE = """
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
             --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
         }
-        body { padding-top: 142px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
+        body { padding-top: 80px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
             --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
             --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
             --bookmark-active-color: var(--secondary-light);
         }
-        h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
-        .alert-top { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
+        h1, h2, h3, h4, h5 { font-family: 'Poppins', sans-serif; font-weight: 700; }
+        .alert-top { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:300px; text-align:center; }
+
+        /* === NEW UNIFIED NAVBAR STYLES === */
+        .navbar-main { background-color: var(--card-bg); border-bottom: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); transition: all 0.3s ease; }
+        body.dark-mode .navbar-main { background-color: var(--primary-dark); border-bottom-color: var(--primary-dark); }
         
-        /* Navbar Styles */
-        .navbar-main { background-color: var(--primary-color); box-shadow: var(--shadow-md); transition: background-color 0.3s ease; z-index: 1040; padding: 0.5rem 0; }
-        .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
-        .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
-        .navbar-toggler { border-color: rgba(255,255,255,0.25); }
-        .navbar-toggler-icon { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.8%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e"); }
-        .navbar-center { min-width: 250px; max-width: 550px; }
-        .search-container { position: relative; width: 100%; }
-        .navbar-search { width: 100%; border-radius: 50px; padding: 0.6rem 1.25rem 0.6rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
-        .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
-        .navbar-search:focus { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 4px rgba(255,255,255,0.2); border-color: var(--secondary-light); outline: none; color:white; }
-        .search-icon { color: rgba(255,255,255,0.8); transition: all 0.3s ease; left: 1.1rem; position: absolute; top: 50%; transform: translateY(-50%); }
+        .navbar-brand-custom { color: var(--primary-color) !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; }
+        .navbar-brand-custom .brand-icon { color: var(--secondary-color); font-size: 2.2rem; }
+        body.dark-mode .navbar-brand-custom { color: white !important; }
+        body.dark-mode .navbar-brand-custom .brand-icon { color: var(--secondary-light); }
+
+        .navbar-toggler { border-color: rgba(0,0,0,0.1); }
+        .navbar-toggler:focus { box-shadow: 0 0 0 .25rem rgba(var(--primary-color-rgb), 0.25); }
+        .navbar-toggler-icon { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(0, 0, 0, 0.55)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e"); }
+        body.dark-mode .navbar-toggler { border-color: rgba(255,255,255,0.2); }
+        body.dark-mode .navbar-toggler-icon { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(255, 255, 255, 0.8)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e"); }
+
+        .nav-category-link { color: var(--text-muted-color); font-weight: 600; font-size: 0.95rem; padding: 0.5rem 1rem !important; border-radius: 50px; transition: all 0.2s ease; margin: 0 0.2rem; }
+        .nav-category-link:hover { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.05); }
+        .nav-category-link.active { color: var(--primary-color); background-color: rgba(var(--primary-color-rgb), 0.1); }
+        body.dark-mode .nav-category-link { color: var(--footer-text); }
+        body.dark-mode .nav-category-link:hover { color: white; background-color: rgba(255,255,255,0.1); }
+        body.dark-mode .nav-category-link.active { color: white; font-weight:700; background-color: rgba(var(--secondary-color-rgb), 0.2); }
+        
+        .header-search-form { min-width: 300px; }
         .header-controls { display: flex; gap: 0.8rem; align-items: center; }
-        .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
-        .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
-        .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
+        .header-btn { background: var(--light-bg); border: 1px solid var(--card-border-color); padding: 0.5rem 1rem; border-radius: 50px; color: var(--text-muted-color); font-weight: 500; transition: all 0.3s ease; }
+        .header-btn:hover { background: var(--card-bg); color: var(--primary-color); box-shadow: var(--shadow-sm); }
+        body.dark-mode .header-btn { background: var(--card-bg); border-color: #4b5563; color: var(--footer-text); }
+        body.dark-mode .header-btn:hover { background: #374151; color: white; }
+
+        @media (max-width: 991.98px) {
+            .navbar-collapse { padding: 1rem; max-height: 80vh; overflow-y: auto; }
+            .nav-category-link { padding: 0.75rem 0.5rem !important; margin: 0; border-radius: var(--border-radius-md); }
+            .header-search-form { width: 100%; order: -1; margin-bottom: 1rem; }
+            .header-controls { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--card-border-color); }
+            body.dark-mode .header-controls { border-top-color: rgba(255,255,255,0.1); }
+        }
+
+        /* === FEATURED ARTICLE (RESPONSIVE) === */
+        .featured-story { display: flex; flex-direction: column; background-color: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); margin-bottom: 2.5rem; overflow: hidden; border: 1px solid var(--card-border-color); }
+        .featured-story-image { background-size: cover; background-position: center; min-height: 250px; }
+        .featured-story-content { padding: 1.5rem; }
+        .featured-story-content h2 { font-size: 1.8rem; line-height: 1.3; margin: 1rem 0; }
+        .featured-story-content h2 a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
+        .featured-story-content h2 a:hover { color: var(--primary-color); }
+        @media (min-width: 992px) {
+            .featured-story { flex-direction: row; }
+            .featured-story-image { flex: 0 0 55%; min-height: 450px; }
+            .featured-story-content { flex: 0 0 45%; padding: 2.5rem; display: flex; flex-direction: column; justify-content: center; }
+            .featured-story-content h2 { font-size: 2.2rem; }
+        }
+
+        /* === COMMENT SECTION (RESPONSIVE) === */
+        .comment-replies { margin-left: 1.5rem; padding-left: 1rem; border-left: 2px solid var(--card-border-color); }
+        @media (min-width: 768px) {
+            .comment-replies { margin-left: 3.5rem; padding-left: 1.25rem; }
+        }
         
-        /* Category Nav */
-        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 76px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
-        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
-        .categories-wrapper::-webkit-scrollbar { display: none; }
-        .category-links-container { display: flex; flex-shrink: 0; }
-        .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
-        .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
-        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
-        
-        /* General Content Styles */
-        .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
+        /* Other general styles (unchanged) */
+        .article-card, .article-full-content-wrapper { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
         .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
         .article-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
         .article-card:hover .article-image { transform: scale(1.05); }
-        .article-body { padding: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; }
-        .article-title { font-weight: 600; line-height: 1.4; margin-bottom: 0.6rem; font-size:1.15rem; }
-        .article-title a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
-        .article-card:hover .article-title a { color: var(--primary-color) !important; }
-        .article-meta { display: flex; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.4rem 1rem; }
-        .meta-item { display: flex; align-items: center; font-size: 0.8rem; color: var(--text-muted-color); }
-        .meta-item i { font-size: 0.9rem; margin-right: 0.4rem; color: var(--secondary-color); }
-        .article-description { color: var(--text-muted-color); margin-bottom: 1.25rem; font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        .read-more { margin-top: auto; background: var(--primary-color); color: white !important; border: none; padding: 0.6rem 0; border-radius: var(--border-radius-md); font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; width: 100%; text-align: center; text-decoration: none; display:inline-block; }
-        .read-more:hover { background: var(--primary-dark); transform: translateY(-2px); color: white !important; box-shadow: var(--shadow-md); }
-        
-        /* Pagination Styles */
-        .pagination { flex-wrap: wrap; }
-        .page-item .page-link { border-radius: 50%; width: 40px; height: 40px; display:flex; align-items:center; justify-content:center; color: var(--text-muted-color); background-color: var(--card-bg); border: 1px solid var(--card-border-color); font-weight: 600; transition: all 0.2s ease; font-size:0.9rem; margin: 0 0.2rem;}
-        .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
-        .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
-        .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
-        
-        /* Footer Styles */
-        footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
-        .footer-content.row { display: flex; flex-wrap: wrap; }
-        .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
-        .footer-links { display: flex; flex-direction: column; gap: 0.8rem; }
-        .footer-links a { color: var(--footer-text); text-decoration: none; transition: all 0.2s ease; }
-        .footer-links a:hover { color: var(--footer-link-hover); padding-left: 5px; }
-        .social-links { display: flex; gap: 1rem; margin-top: 0.5rem; }
-        .social-links a { color: var(--footer-text); font-size: 1.2rem; transition: all 0.2s ease; }
-        .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
-        .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
-        
-        .add-article-btn { position: fixed; bottom: 25px; right: 25px; z-index: 1030; width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
-        .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(var(--primary-color-rgb), 0.4); }
-        
-        /* Other component styles... */
-        .bookmark-btn { background: none; border: none; font-size: 1.6rem; color: var(--text-muted-color); cursor: pointer; padding: 0.25rem 0.5rem; transition: all 0.2s ease; vertical-align: middle; }
-        .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
-        .bookmark-btn:hover { color: var(--secondary-light); }
-        .bookmark-btn:focus { outline: none; box-shadow: none; }
-        .article-card .bookmark-btn { font-size: 1.3rem; }
-
-        /* === RESPONSIVE STYLES (MOBILE-FIRST APPROACH) === */
-
-        /* Featured Story Responsive Styles */
-        .featured-story {
-            background-color: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); margin-bottom: 2.5rem; overflow: hidden; display: flex; flex-direction: column; /* Stacked by default for mobile */ border: 1px solid var(--card-border-color);
-        }
-        .featured-story-image {
-            background-size: cover; background-position: center; min-height: 250px; /* Good height for mobile */
-        }
-        .featured-story-content {
-            padding: 1.5rem; display: flex; flex-direction: column; justify-content: center;
-        }
-        .featured-story-content .meta-item { font-size: 0.9rem; }
-        .featured-story-content h2 { font-size: 1.8rem; line-height: 1.3; margin: 1rem 0; }
-        .featured-story-content h2 a { color: var(--text-color); text-decoration: none; transition: color 0.2s ease; }
-        .featured-story-content h2 a:hover { color: var(--primary-color); }
-        .featured-story-content .description { font-size: 1rem; color: var(--text-muted-color); margin-bottom: 1.5rem; }
-        .featured-story-content .read-more-btn { background-color: var(--primary-color); color: white; padding: 0.7rem 1.2rem; text-decoration: none; border-radius: 50px; font-weight: 600; transition: all 0.3s ease; align-self: flex-start; }
-        .featured-story-content .read-more-btn:hover { background-color: var(--primary-dark); transform: translateY(-2px); box-shadow: var(--shadow-md); }
-
-        /* General Mobile-first adjustments */
-        body { padding-top: 125px; } /* Mobile padding: main nav + category nav heights */
-        .category-nav { top: 66px; } /* Position below mobile main nav */
-        .alert-top { top: 70px; }
-        
-        /* Tablet and Desktop Styles */
-        @media (min-width: 992px) {
-            body { padding-top: 142px; } /* Restore desktop padding */
-            .category-nav { top: 76px; } /* Restore desktop position */
-            .alert-top { top: 80px; }
-
-            /* Switch featured story to side-by-side layout on desktop */
-            .featured-story {
-                flex-direction: row;
-            }
-            .featured-story-image {
-                flex: 0 0 55%;
-                min-height: 450px;
-            }
-            .featured-story-content {
-                flex: 0 0 45%;
-                padding: 2.5rem;
-            }
-            .featured-story-content h2 { font-size: 2.2rem; }
-            .featured-story-content .description { font-size: 1.05rem; }
-            .featured-story-content .read-more-btn { padding: 0.8rem 1.5rem; }
-            
-            /* Styles for dropdown menu on desktop */
-            .navbar-expand-lg .navbar-nav .dropdown-menu { border-radius: var(--border-radius-md); box-shadow: var(--shadow-lg); border: 1px solid var(--card-border-color); background-color: var(--card-bg); }
-            .navbar-expand-lg .navbar-nav .dropdown-item { color: var(--text-color); }
-            .navbar-expand-lg .navbar-nav .dropdown-item:hover { background-color: var(--light-bg); color: var(--primary-color); }
-        }
-
-        /* Styles for collapsed navbar menu */
-        @media (max-width: 991.98px) {
-            .navbar-collapse {
-                padding-bottom: 1rem;
-            }
-            .header-controls-wrapper { 
-                width: 100%; 
-                margin-top: 1rem;
-                padding-top: 1rem; 
-                border-top: 1px solid rgba(255,255,255,0.1); 
-            }
-            .header-controls { 
-                flex-direction: row-reverse; 
-                justify-content: space-between; 
-                width: 100%;
-            }
-        }
-
+        .article-body { padding: 1.5rem; }
     </style>
     {% block head_extra %}{% endblock %}
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', 'G-CV5LWJ7NQ7');
-    </script>
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}{% block body_class %}{% endblock %}">
-    <div id="alert-placeholder">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show alert-top" role="alert">
-                    <span>{{ message }}</span>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-
     <header class="fixed-top">
         <nav class="navbar navbar-expand-lg navbar-main">
-            <div class="container">
+            <div class="container-fluid">
                 <a class="navbar-brand-custom" href="{{ url_for('index') }}">
                     <i class="fas fa-bolt-lightning brand-icon"></i>
-                    <span class="d-none d-sm-inline">Briefly</span>
+                    <span>Briefly</span>
                 </a>
                 
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbarContent" aria-controls="mainNavbarContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -1586,69 +1485,36 @@ BASE_HTML_TEMPLATE = """
                 </button>
 
                 <div class="collapse navbar-collapse" id="mainNavbarContent">
-                    <div class="navbar-center mx-auto my-2 my-lg-0">
-                        <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
-                            <input type="search" name="query" class="form-control navbar-search" placeholder="Search articles..." value="{{ request.args.get('query', '') }}">
-                            <i class="fas fa-search search-icon"></i>
-                            <button type="submit" class="d-none">Search</button>
-                        </form>
-                    </div>
+                    <ul class="navbar-nav mx-auto mb-2 mb-lg-0">
+                        {% for cat_item in categories %}
+                        <li class="nav-item">
+                            <a class="nav-link nav-category-link {% if selected_category == cat_item %}active{% endif %}" href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
 
-                    <div class="navbar-nav ms-lg-3 header-controls-wrapper">
+                    <div class="d-flex align-items-center flex-wrap flex-lg-nowrap ms-lg-auto">
+                        <form action="{{ url_for('search_results') }}" method="GET" class="header-search-form me-lg-2">
+                            <input type="search" name="query" class="form-control form-control-sm" placeholder="Search articles..." value="{{ request.args.get('query', '') }}">
+                        </form>
                         <div class="header-controls">
-                            <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
-                                <i class="fas fa-moon"></i>
-                            </button>
+                            <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode"><i class="fas fa-moon"></i></button>
                             {% if session.user_id %}
                             <div class="dropdown">
-                                <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
-                                    <i class="fas fa-user-circle"></i> <span class="d-none d-lg-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
+                                <button class="header-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Hi, {{ session.user_name|truncate(15) }}!
                                 </button>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                                <ul class="dropdown-menu dropdown-menu-end">
                                     <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
                                 </ul>
                             </div>
                             {% else %}
-                            <a href="{{ url_for('login') }}" class="header-btn" title="Login/Register">
-                                <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
-                            </a>
+                            <a href="{{ url_for('login') }}" class="header-btn">Login</a>
                             {% endif %}
                         </div>
                     </div>
-                </div>
-            </div>
-        </nav>
-
-        <nav class="navbar navbar-expand-lg category-nav">
-            <div class="container">
-                <div class="categories-wrapper">
-                    <div class="category-links-container">
-                        {% for cat_item in categories %}
-                            {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
-                            {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
-                                {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
-                            {% endif %}
-                            <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                                <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
-                                {{ cat_item }}
-                            </a>
-                        {% endfor %}
-                    </div>
-                    <form id="dateFilterForm" class="ms-auto d-none d-md-flex">
-                        <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
-                        <div class="input-group input-group-sm">
-                            <input type="date" id="articleDateFilter" class="form-control form-control-sm"
-                                   value="{{ current_filter_date | default('', true) }}"
-                                   aria-label="Filter by date for All Articles"
-                                   title="Filter 'All Articles' by date">
-                            <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
-                            {% if current_filter_date %}
-                            <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
-                            {% endif %}
-                        </div>
-                    </form>
                 </div>
             </div>
         </nav>
@@ -1658,132 +1524,33 @@ BASE_HTML_TEMPLATE = """
         {% block content %}{% endblock %}
     </main>
     
-    {% if session.user_id %}
-    <div class="admin-controls">
-        <button class="add-article-btn" data-bs-toggle="modal" data-bs-target="#addArticleModal" title="Post a New Article">
-            <i class="fas fa-pen-to-square"></i>
-        </button>
-    </div>
-    <div class="modal fade" id="addArticleModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content p-4">
-                <div class="modal-header border-0 pb-0">
-                    <h4 class="modal-title">Post New Article</h4>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
-                        <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control" required></div>
-                        <div class="mb-3"><label for="articleDescription" class="form-label">Short Description</label><textarea id="articleDescription" name="description" class="form-control" rows="3" required></textarea></div>
-                        <div class="mb-3"><label for="articleSource" class="form-label">Source Name</label><input type="text" id="articleSource" name="sourceName" class="form-control" value="Community Post" required></div>
-                        <div class="mb-3"><label for="articleImage" class="form-label">Image URL (Optional)</label><input type="url" id="articleImage" name="imageUrl" class="form-control"></div>
-                        <div class="mb-3"><label for="articleContent" class="form-label">Full Article Content</label><textarea id="articleContent" name="content" class="form-control" rows="7" required></textarea></div>
-                        <div class="d-flex justify-content-end gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Post Article</button></div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <footer class="mt-auto">
+    <footer class="mt-auto" style="background: var(--footer-bg); color: var(--footer-text); padding: 3.5rem 0 1.5rem;">
         <div class="container">
-            <div class="footer-content row">
-                <div class="footer-section col-lg-4 col-md-6 mb-4">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-bolt-lightning me-2" style="color:var(--secondary-light); font-size: 1.5rem;"></i>
-                        <span class="h5 mb-0" style="color:white; font-family: 'Poppins', sans-serif;">Briefly</span>
-                    </div>
-                    <p class="small text-light">Your premier source for AI summarized, India-centric news.</p>
-                    <div class="social-links">
-                        <a href="#" title="Twitter"><i class="fab fa-twitter"></i></a><a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a><a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a><a href="#" title="Instagram"><i class="fab fa-instagram"></i></a>
-                    </div>
-                </div>
-                <div class="footer-section col-lg-2 col-md-6 mb-4">
-                    <h5>Quick Links</h5>
-                    <div class="footer-links">
-                        <a href="{{ url_for('index') }}">Home</a>
-                        <a href="{{ url_for('about') }}">About Us</a>
-                        <a href="{{ url_for('contact') }}">Contact</a>
-                        <a href="{{ url_for('privacy') }}">Privacy Policy</a>
-                        {% if session.user_id %}<a href="{{ url_for('profile') }}">My Profile</a>{% endif %}
-                    </div>
-                </div>
-                <div class="footer-section col-lg-2 col-md-6 mb-4">
-                    <h5>Categories</h5>
-                    <div class="footer-links">
-                        {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a>{% endfor %}
-                    </div>
-                </div>
-                <div class="footer-section col-lg-4 col-md-6 mb-4">
-                    <h5>Newsletter</h5>
-                    <p class="small text-light">Subscribe for weekly updates!</p>
-                    <form action="{{ url_for('subscribe') }}" method="POST" class="mt-3">
-                        <div class="input-group">
-                            <input type="email" name="email" class="form-control form-control-sm" placeholder="Your Email" aria-label="Your Email" required style="background: #374151; border-color: #4B5563; color: white;">
-                            <button class="btn btn-sm btn-primary" type="submit">Subscribe</button>
-                        </div>
-                    </form>
-                </div>
             </div>
-            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
-        </div>
     </footer>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function () {
-        try {
-            const darkModeToggle = document.querySelector('.dark-mode-toggle');
-            if (darkModeToggle) {
-                const body = document.body;
-                const updateThemeIcon = () => { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; };
-                const applyTheme = (theme) => {
-                    body.classList.toggle('dark-mode', theme === 'enabled');
-                    updateThemeIcon();
-                    localStorage.setItem('darkMode', theme);
-                    document.cookie = "darkMode=" + theme + ";path=/;max-age=31536000;SameSite=Lax";
-                };
-                darkModeToggle.addEventListener('click', () => {
-                    const isEnabled = body.classList.contains('dark-mode');
-                    applyTheme(isEnabled ? 'disabled' : 'enabled');
-                });
-                let storedTheme = localStorage.getItem('darkMode');
-                if (storedTheme) {
-                    applyTheme(storedTheme);
-                } else {
-                    updateThemeIcon();
-                }
-            }
-
-            const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
-            flashedAlerts.forEach(function(alert) { 
-                setTimeout(function() {
-                    const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
-                    if (bsAlert) bsAlert.close();
-                }, 7000);
+        const darkModeToggle = document.querySelector('.dark-mode-toggle');
+        if (darkModeToggle) {
+            const body = document.body;
+            const updateThemeIcon = () => { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; };
+            const applyTheme = (theme) => {
+                body.classList.toggle('dark-mode', theme === 'enabled');
+                updateThemeIcon();
+                localStorage.setItem('darkMode', theme);
+                document.cookie = "darkMode=" + theme + ";path=/;max-age=31536000;SameSite=Lax";
+            };
+            darkModeToggle.addEventListener('click', () => {
+                const isEnabled = body.classList.contains('dark-mode');
+                applyTheme(isEnabled ? 'disabled' : 'enabled');
             });
-
-            const dateFilterForm = document.getElementById('dateFilterForm');
-            if (dateFilterForm) {
-                dateFilterForm.addEventListener('submit', function(event) {
-                    event.preventDefault();
-                    const dateInput = document.getElementById('articleDateFilter');
-                    if (dateInput && dateInput.value) {
-                       let targetUrl = new URL("{{ url_for('index', category_name='All Articles') }}", window.location.origin);
-                       targetUrl.searchParams.set('filter_date', dateInput.value);
-                       window.location.href = targetUrl.toString();
-                    }
-                });
-                const clearDateFilterBtn = document.getElementById('clearDateFilter');
-                if (clearDateFilterBtn) {
-                    clearDateFilterBtn.addEventListener('click', function() {
-                        window.location.href = "{{ url_for('index', category_name='All Articles') }}";
-                    });
-                }
+            let storedTheme = localStorage.getItem('darkMode');
+            if (storedTheme) {
+                applyTheme(storedTheme);
+            } else {
+                updateThemeIcon();
             }
-        } catch (e) {
-            console.error("An error occurred in the base layout script:", e);
         }
     });
     </script>
@@ -1792,8 +1559,6 @@ BASE_HTML_TEMPLATE = """
 </html>
 """
 
-# **MODIFICATION**: The template for the index page is updated to correctly display the featured article
-# and other sections, which will now be responsive due to the changes in the base template.
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
@@ -1804,30 +1569,8 @@ INDEX_HTML_TEMPLATE = """
 {% endblock %}
 
 {% block content %}
-
-{# This is the main controller: It shows the full homepage, or the list view for categories. #}
 {% if is_main_homepage %}
-
-    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH ALL FEATURES) ============== #}
     <div class="animate-fade-in">
-        
-        {% if synthesis %}
-        <div class="ai-synthesis-card" style="background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-lg); padding: 2rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg);">
-            <div style="text-align: center; margin-bottom: 1.5rem;">
-                <i class="fas fa-brain" style="font-size: 2rem; color: var(--primary-color);"></i>
-                <h2 style="font-size: 1.5rem; margin-top: 0.5rem;">Today's Briefing: The Big Picture</h2>
-            </div>
-            <p style="font-size: 1.15rem; line-height: 1.7; text-align: center; color: var(--text-color); font-family: 'Inter', serif;">"{{ synthesis }}"</p>
-            {% if keywords %}
-            <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border-color); text-align: center;">
-                {% for keyword in keywords %}
-                    <a href="{{ url_for('search_results', query=keyword) }}" style="display: inline-block; background-color: var(--light-bg); border: 1px solid var(--card-border-color); color: var(--text-muted-color); padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out;">{{ keyword }}</a>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-
         {% if featured_article %}
         <article class="featured-story">
             <div class="featured-story-image" style="background-image: url('{{ featured_article.urlToImage }}')"></div>
@@ -1837,208 +1580,45 @@ INDEX_HTML_TEMPLATE = """
                     <span class="meta-item"><i class="fas fa-building"></i> {{ featured_article.source.name|truncate(20) }}</span>
                 </div>
                 <h2><a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}">{{ featured_article.title }}</a></h2>
-                <p class="description">{{ featured_article.description|truncate(150) }}</p>
-                <a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}" class="read-more-btn">Read Full Story <i class="fas fa-arrow-right ms-1"></i></a>
             </div>
         </article>
         {% endif %}
 
-        <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist" style="font-weight: 600;">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="popular-tab" data-bs-toggle="tab" data-bs-target="#popular-tab-pane" type="button" role="tab" aria-controls="popular-tab-pane" aria-selected="true">
-                    <i class="fas fa-fire-alt me-1"></i> POPULAR STORIES
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="yesterday-tab" data-bs-toggle="tab" data-bs-target="#yesterday-tab-pane" type="button" role="tab" aria-controls="yesterday-tab-pane" aria-selected="false">
-                    <i class="fas fa-history me-1"></i> YESTERDAY'S HEADLINES
-                </button>
-            </li>
-        </ul>
-
-        <div class="tab-content" id="newsTabContent">
-            <div class="tab-pane fade show active" id="popular-tab-pane" role="tabpanel" aria-labelledby="popular-tab">
-                <div class="row g-4 pt-3">
-                    {% if popular_articles %}
-                        {% for art in popular_articles %}
-                            <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card d-flex flex-column w-100">
-                                    {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
-                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
-                                    <div class="article-body d-flex flex-column">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
-                                        </div>
-                                        <div class="article-meta small mb-2">
-                                            <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
-                                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
-                                        </div>
-                                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                                    </div>
-                                </article>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="col-12"><div class="alert alert-light text-center">More popular stories are currently unavailable.</div></div>
-                    {% endif %}
+        <div class="row g-4 pt-3">
+             {% if popular_articles %}
+                {% for art in popular_articles %}
+                <div class="col-md-6 col-lg-4 d-flex">
+                    <article class="article-card d-flex flex-column w-100">
+                         <div class="article-image-container"><a href="{{ url_for('article_detail', article_hash_id=art.id) }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
+                         <div class="article-body">
+                             <h5><a href="{{ url_for('article_detail', article_hash_id=art.id) }}" class="text-decoration-none article-title">{{ art.title|truncate(70) }}</a></h5>
+                         </div>
+                    </article>
                 </div>
-                {% if popular_articles %}
-                <div class="text-center mt-4">
-                    <a href="{{ url_for('index', category_name='Popular Stories') }}" class="btn btn-outline-primary">View All Popular Stories <i class="fas fa-arrow-right ms-1"></i></a>
-                </div>
-                {% endif %}
-            </div>
-            <div class="tab-pane fade" id="yesterday-tab-pane" role="tabpanel" aria-labelledby="yesterday-tab">
-                <div class="row g-4 pt-3">
-                    {% if latest_yesterday_articles %}
-                        {% for art in latest_yesterday_articles %}
-                             <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card d-flex flex-column w-100">
-                                    {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
-                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
-                                    <div class="article-body d-flex flex-column">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
-                                        </div>
-                                        <div class="article-meta small mb-2">
-                                            <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
-                                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
-                                        </div>
-                                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                                    </div>
-                                </article>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="col-12"><div class="alert alert-light text-center">Could not load yesterday's articles.</div></div>
-                    {% endif %}
-                </div>
-                {% if latest_yesterday_articles %}
-                <div class="text-center mt-4">
-                    <a href="{{ url_for('index', category_name="Yesterday's Headlines") }}" class="btn btn-outline-primary">View All of Yesterday's Headlines <i class="fas fa-arrow-right ms-1"></i></a>
-                </div>
-                {% endif %}
-            </div>
+                {% endfor %}
+            {% else %}
+                <div class="col-12"><div class="alert alert-light text-center">Popular stories are currently unavailable.</div></div>
+            {% endif %}
         </div>
     </div>
-
 {% else %}
-
-    {# ============ LAYOUT 2: STANDARD PAGINATED LIST VIEW (RESTORED) ============ #}
-    {# This block handles all other pages like categories, search, and date filters. #}
-
-    {% if selected_category == 'All Articles' and current_filter_date %}
-        <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
-    {% elif selected_category != 'All Articles' and selected_category != 'Community Hub' %}
-         <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
-    {% endif %}
-
-    {% if articles and not is_main_homepage %} {# This section is for the paginated list view only #}
-        <div class="row g-4">
-            {% for art in articles %}
-            <div class="col-md-6 col-lg-4 d-flex">
-                <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
-                    {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
-                    <div class="article-image-container">
-                        <a href="{{ article_url }}">
-                        <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                    </div>
-                    <div class="article-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                            {% if session.user_id %}
-                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
-                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                                    data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
-                                    data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
-                                    data-title="{{ art.title|e }}"
-                                    data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
-                                    data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
-                                    data-description="{{ (art.description if art.description else '')|e }}"
-                                    data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
-                                <i class="fa-solid fa-bookmark"></i>
-                            </button>
-                            {% endif %}
-                        </div>
-                        <div class="article-meta small mb-2">
-                            <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {% if art.is_community_article and art.author %}<a href="{{ url_for('public_profile', username=art.author.username) }}" class="text-muted text-decoration-none">{{ art.author.name|truncate(20) }}</a>{% else %}{{ art.source.name|truncate(20) }}{% endif %}</span>
-                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
-                        </div>
-                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                    </div>
-                </article>
-            </div>
-            {% endfor %}
+    <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
+    <div class="row g-4">
+        {% for art in articles %}
+        <div class="col-md-6 col-lg-4 d-flex">
+            <article class="article-card animate-fade-in d-flex flex-column w-100">
+                <div class="article-image-container">
+                    <a href="{{ url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) }}">
+                    <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                </div>
+                <div class="article-body">
+                    <h5 class="article-title"><a href="{{ url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                </div>
+            </article>
         </div>
-    {% elif not articles %}
-        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No articles found.</h4><p>Please try a different category or search query.</p></div>
-    {% endif %}
-
-    {% if total_pages and total_pages > 1 %}
-    <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
-        {% set filter_date_for_url = request.args.get('filter_date') if selected_category == 'All Articles' and request.args.get('filter_date') else None %}
-        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page > 1 else '#' }}">&laquo; Prev</a>
-        </li>
-        {% set page_window = 1 %}{% set show_first = 1 %}{% set show_last = total_pages %}
-        {% if current_page - page_window > show_first %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">1</a></li>{% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endif %}
-        {% for p in range(1, total_pages + 1) %}{% if p == current_page %}<li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>{% elif p >= current_page - page_window and p <= current_page + page_window %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ p }}</a></li>{% endif %}{% endfor %}
-        {% if current_page + page_window < show_last %}{% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ total_pages }}</a></li>{% endif %}
-        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page < total_pages else '#' }}">Next &raquo;</a>
-        </li>
-    </ul></nav>
-    {% endif %}
+        {% endfor %}
+    </div>
 {% endif %}
-{% endblock %}
-
-{% block scripts_extra %}
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
-    document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
-        if (isUserLoggedInForHomepage) {
-            button.addEventListener('click', function(event) {
-                event.preventDefault(); event.stopPropagation();
-                const articleHashId = this.dataset.articleHashId;
-                const isCommunity = this.dataset.isCommunity;
-                const title = this.dataset.title;
-                const sourceName = this.dataset.sourceName;
-                const imageUrl = this.dataset.imageUrl;
-                const description = this.dataset.description;
-                const publishedAt = this.dataset.publishedAt;
-                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
-                })
-                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
-                .then(data => {
-                    if (data.success) {
-                        this.classList.toggle('active', data.status === 'added');
-                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                        const alertPlaceholder = document.getElementById('alert-placeholder');
-                        if(alertPlaceholder) {
-                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
-                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
-                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
-                            const newAlert = alertPlaceholder.lastChild;
-                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
-                        }
-                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
-                })
-                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
-            });
-        }
-    });
-});
-</script>
 {% endblock %}
 """
 
