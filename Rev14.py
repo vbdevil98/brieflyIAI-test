@@ -1400,7 +1400,7 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
-# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this final, correct, and complete version.
+# In Rev14.py, replace the entire BASE_HTML_TEMPLATE variable with this.
 
 BASE_HTML_TEMPLATE = """
 <!doctype html>
@@ -1424,29 +1424,17 @@ BASE_HTML_TEMPLATE = """
             --bg-end: #F0F2F5;
         }
         body { 
-            padding-top: 165px;
-            font-family: 'Inter', sans-serif; 
-            line-height: 1.65; 
-            color: var(--text-color); 
-            display: flex; 
-            flex-direction: column; 
-            min-height: 100vh;
-            background-color: var(--bg-end);
-            background-image: linear-gradient(to bottom, var(--bg-start), var(--bg-end) 400px);
-            transition: background-color 0.3s ease, color 0.3s ease;
+            padding-top: 165px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); display: flex; flex-direction: column; min-height: 100vh;
+            background-color: var(--bg-end); background-image: linear-gradient(to bottom, var(--bg-start), var(--bg-end) 400px); transition: background-color 0.3s ease, color 0.3s ease;
         }
         .main-content { flex-grow: 1; }
         body.dark-mode {
             --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #111827; --footer-text: #9CA3AF;
             --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
-            --bookmark-active-color: var(--secondary-light);
-            --bg-start: #111827;
-            --bg-end: #0d121c;
+            --bookmark-active-color: var(--secondary-light); --bg-start: #111827; --bg-end: #0d121c;
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
         .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        
-        /* === HEADER & NAVIGATION === */
         .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: none; z-index: 1040; }
         .category-nav { background: var(--card-bg); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); box-shadow: none; }
         .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
@@ -1472,8 +1460,6 @@ BASE_HTML_TEMPLATE = """
         .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
         .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
         .category-link:hover:not(.active) { background: var(--bg-end) !important; color: var(--primary-color) !important; }
-
-        /* === CARDS & CONTENT === */
         .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
         .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
@@ -1494,8 +1480,6 @@ BASE_HTML_TEMPLATE = """
         .page-item.active .page-link { background-color: var(--primary-color); border-color: var(--primary-color); color: white; box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.4); }
         .page-item.disabled .page-link { color: var(--text-muted-color); pointer-events: none; background-color: var(--light-bg); }
         .page-link-prev-next .page-link { width: auto; padding-left:1.2rem; padding-right:1.2rem; border-radius:50px; }
-        
-        /* === FEATURED STORY & AI SYNTHESIS === */
         .featured-story { background-color: var(--card-bg); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); margin-bottom: 2.5rem; overflow: hidden; display: flex; border: 1px solid var(--card-border-color); }
         .featured-story-image { flex: 0 0 55%; background-size: cover; background-position: center; min-height: 450px; }
         .featured-story-content { flex: 0 0 45%; padding: 2.5rem; display: flex; flex-direction: column; justify-content: center; }
@@ -1506,20 +1490,6 @@ BASE_HTML_TEMPLATE = """
         .featured-story-content .description { font-size: 1.05rem; color: var(--text-muted-color); margin-bottom: 2rem; }
         .featured-story-content .read-more-btn { background-color: var(--primary-color); color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 50px; font-weight: 600; transition: all 0.3s ease; align-self: flex-start; }
         .featured-story-content .read-more-btn:hover { background-color: var(--primary-dark); transform: translateY(-2px); box-shadow: var(--shadow-md); }
-        .ai-synthesis-card { border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; border: 1px solid var(--card-border-color); background-color: #f7f7fe; background-image: linear-gradient(135deg, #f5f6ff 0%, #f0f2ff 100%); }
-        body.dark-mode .ai-synthesis-card { background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.15), rgba(var(--primary-color-rgb), 0.03)); border-color: rgba(var(--primary-color-rgb), 0.2); }
-        .synthesis-header { text-align: center; margin-bottom: 1.5rem; position: relative; }
-        .synthesis-header i { font-size: 2rem; color: var(--primary-color); }
-        .synthesis-header h2 { font-size: 1.5rem; margin-top: 0.5rem; color: var(--text-color); }
-        body.dark-mode .synthesis-header h2 { color: var(--text-color); }
-        .synthesis-text { font-size: 1.15rem; line-height: 1.7; text-align: center; color: var(--text-muted-color); position: relative; font-family: 'Inter', serif; font-weight: 500; }
-        .synthesis-keywords { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border-color); text-align: center; position: relative; }
-        .synthesis-keywords .keyword-tag { display: inline-block; background-color: var(--card-bg); border: 1px solid var(--card-border-color); color: var(--text-muted-color); padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out; }
-        .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-color); color: white; border-color: var(--primary-color); transform: translateY(-2px); }
-        body.dark-mode .synthesis-keywords .keyword-tag { background-color: rgba(var(--primary-color-rgb), 0.1); border-color: rgba(var(--primary-color-rgb), 0.3); color: var(--text-muted-color); }
-        body.dark-mode .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-light); color: var(--footer-bg); border-color: var(--primary-light); }
-        
-        /* === FOOTER === */
         footer { background: var(--footer-bg); color: var(--footer-text); margin-top: auto; padding: 3.5rem 0 1.5rem; font-size:0.9rem; }
         .footer-content.row { display: flex; flex-wrap: wrap; }
         .footer-section h5 { color: white; margin-bottom: 1.2rem; font-weight: 600; letter-spacing: 0.3px; font-size: 1.1rem; }
@@ -1530,9 +1500,6 @@ BASE_HTML_TEMPLATE = """
         .social-links a { color: var(--footer-text); font-size: 1.2rem; transition: all 0.2s ease; }
         .social-links a:hover { color: var(--secondary-light); transform: translateY(-2px); }
         .copyright { text-align: center; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid #374151; font-size: 0.85rem; color: var(--text-muted-color); width: 100%; }
-        
-        /* === POLISHED UI COMPONENTS (MODALS, BUTTONS, STATIC PAGES) === */
-        .admin-controls { position: fixed; bottom: 25px; right: 25px; z-index: 1030; }
         .add-article-btn { width: 60px; height: 60px; border-radius: 50%; color: white; border: none; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; background-image: linear-gradient(to right, var(--primary-color) 0%, var(--primary-light) 100%); box-shadow: 0 4px 15px rgba(var(--primary-color-rgb), 0.35); transition: all 0.3s ease-out; }
         .add-article-btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(var(--primary-color-rgb), 0.4); }
         .page-header-static { background-color: var(--card-bg); border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2rem; text-align: center; border-left: 5px solid var(--primary-color); }
@@ -1615,6 +1582,18 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
+        .ai-synthesis-card { border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; border: 1px solid var(--card-border-color); background-color: #f7f7fe; background-image: linear-gradient(135deg, #f5f6ff 0%, #f0f2ff 100%); }
+        body.dark-mode .ai-synthesis-card { background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.15), rgba(var(--primary-color-rgb), 0.03)); border-color: rgba(var(--primary-color-rgb), 0.2); }
+        .synthesis-header { text-align: center; margin-bottom: 1.5rem; position: relative; }
+        .synthesis-header i { font-size: 2rem; color: var(--primary-color); }
+        .synthesis-header h2 { font-size: 1.5rem; margin-top: 0.5rem; color: var(--text-color); }
+        body.dark-mode .synthesis-header h2 { color: var(--text-color); }
+        .synthesis-text { font-size: 1.15rem; line-height: 1.7; text-align: center; color: var(--text-muted-color); position: relative; font-family: 'Inter', serif; font-weight: 500; }
+        .synthesis-keywords { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border-color); text-align: center; position: relative; }
+        .synthesis-keywords .keyword-tag { display: inline-block; background-color: var(--card-bg); border: 1px solid var(--card-border-color); color: var(--text-muted-color); padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out; }
+        .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-color); color: white; border-color: var(--primary-color); transform: translateY(-2px); }
+        body.dark-mode .synthesis-keywords .keyword-tag { background-color: rgba(var(--primary-color-rgb), 0.1); border-color: rgba(var(--primary-color-rgb), 0.3); color: var(--text-muted-color); }
+        body.dark-mode .synthesis-keywords .keyword-tag:hover { background-color: var(--primary-light); color: var(--footer-bg); border-color: var(--primary-light); }
         
         /* === RESPONSIVE OVERHAUL (MOBILE-FIRST POLISH) === */
         @media (max-width: 991.98px) {
@@ -1832,9 +1811,11 @@ BASE_HTML_TEMPLATE = """
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
     document.addEventListener('DOMContentLoaded', function () {
         try {
+            // Dark Mode Toggle
             const darkModeToggle = document.querySelector('.dark-mode-toggle');
             if (darkModeToggle) {
                 const body = document.body;
@@ -1850,12 +1831,9 @@ BASE_HTML_TEMPLATE = """
                     applyTheme(isEnabled ? 'disabled' : 'enabled');
                 });
                 let storedTheme = localStorage.getItem('darkMode');
-                if (storedTheme) {
-                    applyTheme(storedTheme);
-                } else {
-                    updateThemeIcon();
-                }
+                if (storedTheme) { applyTheme(storedTheme); } else { updateThemeIcon(); }
             }
+            // Flashed Messages Hiding
             const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
             flashedAlerts.forEach(function(alert) { 
                 setTimeout(function() {
@@ -1863,6 +1841,7 @@ BASE_HTML_TEMPLATE = """
                     if (bsAlert) bsAlert.close();
                 }, 7000);
             });
+            // Date Filter Form
             const dateFilterForm = document.getElementById('dateFilterForm');
             if (dateFilterForm) {
                 dateFilterForm.addEventListener('submit', function(event) {
@@ -1881,7 +1860,7 @@ BASE_HTML_TEMPLATE = """
                     });
                 }
             }
-            // Global bookmarking script
+            // Global Bookmark Button Handler
             const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
             document.body.addEventListener('click', function(event) {
                 const bookmarkButton = event.target.closest('.bookmark-btn');
@@ -1889,17 +1868,18 @@ BASE_HTML_TEMPLATE = """
                     event.preventDefault();
                     event.stopPropagation();
                     bookmarkButton.disabled = true;
-                    const articleHashId = bookmarkButton.dataset.articleHashId;
-                    const isCommunity = bookmarkButton.dataset.isCommunity;
-                    const title = bookmarkButton.dataset.title;
-                    const sourceName = bookmarkButton.dataset.sourceName;
-                    const imageUrl = bookmarkButton.dataset.imageUrl;
-                    const description = bookmarkButton.dataset.description;
-                    const publishedAt = bookmarkButton.dataset.publishedAt;
-                    fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+                    const data = bookmarkButton.dataset;
+                    fetch(`{{ url_for('toggle_bookmark', article_hash_id='_') }}`.replace('_', data.articleHashId), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt })
+                        body: JSON.stringify({
+                            is_community_article: data.isCommunity,
+                            title: data.title,
+                            source_name: data.sourceName,
+                            image_url: data.imageUrl,
+                            description: data.description,
+                            published_at: data.publishedAt
+                        })
                     })
                     .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || 'Server error'); }); } return res.json(); })
                     .then(data => {
@@ -1917,6 +1897,7 @@ BASE_HTML_TEMPLATE = """
         }
     });
     </script>
+    {# This empty block allows child templates to add their own page-specific scripts #}
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
