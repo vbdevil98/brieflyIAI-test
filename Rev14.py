@@ -1952,6 +1952,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 {% endblock %}
 """
+
 # In Rev14.py, replace your entire ARTICLE_HTML_TEMPLATE variable with this:
 
 ARTICLE_HTML_TEMPLATE = """
@@ -2030,7 +2031,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
         const isCommunityArticle = {{ is_community_article | tojson }};
 
-        // --- 1. Article Content/Analysis Fetcher ---
         if (!isCommunityArticle) {
             const contentLoader = document.getElementById('contentLoader');
             const apiArticleContent = document.getElementById('apiArticleContent');
@@ -2068,7 +2068,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
         }
 
-        // --- 2. Commenting & Reaction System ---
         const commentSection = document.getElementById('comment-section');
         if (commentSection && isUserLoggedIn) {
             
@@ -2076,24 +2075,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 const content = formElement.querySelector('textarea[name="content"]').value;
                 const parentId = formElement.querySelector('input[name="parent_id"]')?.value || null;
                 if (!content.trim()) return;
-
                 const submitButton = formElement.querySelector('button[type="submit"]');
                 const originalButtonText = submitButton.innerHTML;
                 submitButton.disabled = true;
                 submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
-
                 fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ content, parent_id: parentId })
                 })
                 .then(res => {
-                    // Check for 401 Unauthorized specifically
                     if (res.status === 401) {
                         throw new Error("Your session has expired. Please refresh the page and log in again.");
                     }
                     if (!res.ok) {
-                        throw new Error("An unknown server error occurred.");
+                        throw new Error("An unknown server error occurred while posting.");
                     }
                     return res.json();
                 })
@@ -2124,16 +2120,42 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             };
 
-            // Event listeners remain the same and are correct.
-            commentSection.addEventListener('click', function(e) { /* ... */ });
             const mainCommentForm = document.getElementById('comment-form');
-            if(mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
-            commentSection.addEventListener('submit', function(e) { if(e.target.matches('.reply-form')) { e.preventDefault(); handleCommentSubmit(e.target); } });
+            if(mainCommentForm) {
+                mainCommentForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    handleCommentSubmit(this);
+                });
+            }
+            commentSection.addEventListener('submit', function(e) {
+                if(e.target.matches('.reply-form')) {
+                    e.preventDefault();
+                    handleCommentSubmit(e.target);
+                }
+            });
         }
         
-        // Other listeners for bookmarks etc. remain the same.
-        /* ... */
-
+        const bookmarkBtn = document.getElementById('bookmarkBtn');
+        if (bookmarkBtn && isUserLoggedIn) {
+            bookmarkBtn.addEventListener('click', function() {
+                const articleHashId = this.dataset.articleHashId; 
+                const isCommunity = this.dataset.isCommunity; 
+                const title = this.dataset.title; 
+                const sourceName = this.dataset.sourceName; 
+                const imageUrl = this.dataset.imageUrl; 
+                const description = this.dataset.description; 
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt }) })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added'); 
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
+            });
+        }
         {% endif %}
     } catch (e) {
         console.error("A critical error occurred on the article page:", e);
