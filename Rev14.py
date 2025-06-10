@@ -371,6 +371,56 @@ def get_article_analysis_with_groq(article_text, article_title=""):
         app.logger.error(f"Unexpected error during Groq analysis for '{article_title[:50]}': {e}", exc_info=True)
         return {"error": "An unexpected error occurred during AI analysis."}
 
+# In Rev14.py, add this new function
+
+@simple_cache(expiry_seconds_default=14400) # Cache the synthesis for 4 hours
+def get_daily_synthesis():
+    """
+    Fetches top stories and uses an LLM to create a high-level synthesis
+    of the day's main themes and extract keywords.
+    """
+    app.logger.info("Generating AI Daily Synthesis...")
+    if not groq_client:
+        return {"synthesis_text": None, "keywords": []}
+
+    # Get the articles to be synthesized
+    articles_to_synthesize = fetch_popular_news()
+    if not articles_to_synthesize:
+        return {"synthesis_text": None, "keywords": []}
+
+    # Prepare the content for the AI
+    # We'll combine titles and descriptions for a rich context
+    content_for_ai = ""
+    for art in articles_to_synthesize[:15]: # Use up to 15 articles for the context
+        content_for_ai += f"Title: {art.get('title', '')}\\nDescription: {art.get('description', '')}\\n\\n"
+
+    system_prompt = (
+        "You are a top-tier news editor for an Indian audience. Your task is to provide a 'big picture' summary of the day's news based on a collection of article titles and descriptions. "
+        "Analyze the provided text and generate a JSON object with two keys: 'synthesis_text' and 'keywords'. "
+        "1. For 'synthesis_text': Write a single, insightful, and cohesive paragraph (3-4 sentences) that synthesizes the most important themes, trends, or events of the day. Do not just list the news. Connect the ideas. "
+        "2. For 'keywords': Extract the 4-5 most significant and distinct keywords or key phrases from the articles. These should represent the main topics of the day."
+    )
+    
+    human_prompt = f"Here is the collection of today's news articles:\n\n{content_for_ai}"
+
+    try:
+        json_model = groq_client.bind(response_format={"type": "json_object"})
+        ai_response = json_model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+        analysis = json.loads(ai_response.content)
+        
+        # Validate the response from the AI
+        synthesis = analysis.get("synthesis_text")
+        keywords = analysis.get("keywords")
+        if not isinstance(synthesis, str) or not isinstance(keywords, list):
+            raise ValueError("AI response did not have the correct format.")
+
+        app.logger.info(f"Successfully generated AI Daily Synthesis. Keywords: {keywords}")
+        return {"synthesis_text": synthesis, "keywords": keywords}
+
+    except Exception as e:
+        app.logger.error(f"Error during AI Daily Synthesis generation: {e}", exc_info=True)
+        return {"synthesis_text": "The AI summary for the day could not be generated at this time.", "keywords": []}
+
 # ==============================================================================
 # --- NEWS FETCHING ---
 # ==============================================================================
@@ -803,6 +853,8 @@ def get_sort_key(article):
     elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
 
+# In Rev14.py, find your existing index function and REPLACE IT with this entire block.
+
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/category/<category_name>')
@@ -813,14 +865,16 @@ def index(page=1, category_name='All Articles'):
     query_str = request.args.get('query')
     filter_date_str = request.args.get('filter_date')
 
-    # This is the new logic for the main homepage view
+    # This block handles the main homepage view
     if page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str:
-        app.logger.info("Rendering main homepage with Featured, Popular and Yesterday's Latest sections.")
+        app.logger.info("Rendering main homepage with AI Synthesis and other sections.")
         
-        # --- LOGIC UPDATE HERE ---
+        # --- NEW: Call the synthesis function ---
+        synthesis_data = get_daily_synthesis()
+        
+        # Fetch articles for the other sections
         all_popular_articles = fetch_popular_news()
         featured_article = all_popular_articles[0] if all_popular_articles else None
-        # The rest of the popular articles for the grid
         popular_articles = all_popular_articles[1:] if all_popular_articles else [] 
         
         latest_yesterday_articles = fetch_yesterdays_latest_news()
@@ -833,12 +887,15 @@ def index(page=1, category_name='All Articles'):
             bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
             user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
-        # Add bookmark status to all articles that will be displayed
         for art in ([featured_article] + popular_articles + latest_yesterday_articles):
             if art:
                 art['is_bookmarked'] = art.get('id') in user_bookmarks_hashes
 
         return render_template("INDEX_HTML_TEMPLATE",
+                               # --- NEW: Pass synthesis data to the template ---
+                               synthesis=synthesis_data.get('synthesis_text'),
+                               keywords=synthesis_data.get('keywords', []),
+                               # --- Existing variables ---
                                featured_article=featured_article,
                                popular_articles=popular_articles[:POPULAR_NEWS_COUNT],
                                latest_yesterday_articles=latest_yesterday_articles[:LATEST_NEWS_COUNT],
@@ -846,7 +903,7 @@ def index(page=1, category_name='All Articles'):
                                is_main_homepage=True,
                                current_page=1, total_pages=1, query=None, current_filter_date=None)
 
-    # This 'else' block for paginated views remains unchanged
+    # This 'else' block handles all other paginated views and remains unchanged
     else:
         app.logger.info(f"Rendering standard list view for: category='{category_name}', page='{page}'")
         all_display_articles_raw = []
@@ -865,6 +922,7 @@ def index(page=1, category_name='All Articles'):
                 except ValueError: flash("Invalid date format.", "warning"); filter_date_str = None
             api_articles = fetch_news_from_api(target_date_str=filter_date_str)
             all_display_articles_raw.extend(api_articles)
+            
         all_display_articles_raw.sort(key=get_sort_key, reverse=True)
         paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
         paginated_display_articles_with_bookmark_status = []
@@ -887,7 +945,6 @@ def index(page=1, category_name='All Articles'):
                                current_page=page, total_pages=total_pages,
                                featured_article_on_this_page=False,
                                current_filter_date=filter_date_str, query=query_str)
-
 
 @app.route('/user/<username>')
 def public_profile(username):
@@ -1674,6 +1731,79 @@ body.dark-mode .social-login-buttons .btn {
 }
 .fa-google { color: #DB4437; }
 .fa-facebook { color: #4267B2; }
+
+/* In BASE_HTML_TEMPLATE, add this block to your <style> section */
+
+/* === AI DAILY SYNTHESIS COMPONENT === */
+.ai-synthesis-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border-color);
+    border-radius: var(--border-radius-lg);
+    padding: 2rem;
+    margin-bottom: 2.5rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+}
+.ai-synthesis-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
+                      linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
+    background-size: 20px 20px;
+    opacity: 0.5;
+}
+.synthesis-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+.synthesis-header i {
+    font-size: 2rem;
+    color: var(--primary-color);
+}
+.synthesis-header h2 {
+    font-size: 1.5rem;
+    margin-top: 0.5rem;
+}
+.synthesis-text {
+    font-size: 1.15rem;
+    line-height: 1.7;
+    text-align: center;
+    color: var(--text-color);
+    position: relative;
+    font-family: 'Inter', serif;
+}
+.synthesis-keywords {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--card-border-color);
+    text-align: center;
+    position: relative;
+}
+.synthesis-keywords .keyword-tag {
+    display: inline-block;
+    background-color: var(--light-bg);
+    border: 1px solid var(--card-border-color);
+    color: var(--text-muted-color);
+    padding: 0.4rem 1rem;
+    border-radius: 50px;
+    margin: 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s ease-in-out;
+}
+.synthesis-keywords .keyword-tag:hover {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1915,6 +2045,8 @@ body.dark-mode .social-login-buttons .btn {
 </html>
 """
 
+# In Rev14.py, replace your entire INDEX_HTML_TEMPLATE variable with this final, correct version.
+
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
@@ -1926,10 +2058,29 @@ INDEX_HTML_TEMPLATE = """
 
 {% block content %}
 
+{# This is the main controller: It shows the full homepage, or the list view for categories. #}
 {% if is_main_homepage %}
-    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH FEATURED STORY) ============== #}
+
+    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH ALL FEATURES) ============== #}
     <div class="animate-fade-in">
         
+        {% if synthesis %}
+        <div class="ai-synthesis-card">
+            <div class="synthesis-header">
+                <i class="fas fa-brain"></i>
+                <h2>Today's Briefing: The Big Picture</h2>
+            </div>
+            <p class="synthesis-text">"{{ synthesis }}"</p>
+            {% if keywords %}
+            <div class="synthesis-keywords">
+                {% for keyword in keywords %}
+                    <a href="{{ url_for('search_results', query=keyword) }}" class="keyword-tag">{{ keyword }}</a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% if featured_article %}
         <article class="featured-story">
             <div class="featured-story-image" style="background-image: url('{{ featured_article.urlToImage }}')"></div>
@@ -2027,108 +2178,59 @@ INDEX_HTML_TEMPLATE = """
             </div>
         </div>
     </div>
+
 {% else %}
 
-    {# ============ LAYOUT 2: YOUR ORIGINAL PAGINATED LIST VIEW ============ #}
-    {# This section is preserved to ensure all category pages look exactly as they did before. #}
+    {# ============ LAYOUT 2: STANDARD PAGINATED LIST VIEW (RESTORED) ============ #}
+    {# This block handles all other pages like categories, search, and date filters. #}
 
     {% if selected_category == 'All Articles' and current_filter_date %}
         <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
-    {% endif %}
-    
-    {# Added a title for the paginated category pages #}
-    {% if selected_category != 'All Articles' and selected_category != 'Community Hub' %}
+    {% elif selected_category != 'All Articles' and selected_category != 'Community Hub' %}
          <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
     {% endif %}
 
-    {% if articles and articles[0] and featured_article_on_this_page %}
-    <article class="featured-article p-md-4 p-3 mb-4 animate-fade-in">
-        <div class="row g-0 g-md-4">
-            {% set art0 = articles[0] %}
-            {% set article_url = url_for('article_detail', article_hash_id=(art0.article_hash_id if art0.is_community_article else art0.id)) %}
-            <div class="col-lg-6">
-                <div class="featured-image rounded overflow-hidden shadow-sm" style="height:320px;">
-                    <a href="{{ article_url }}">
-                    <img src="{{ art0.image_url if art0.is_community_article else art0.urlToImage }}" class="img-fluid w-100 h-100" style="object-fit:cover;" alt="Featured: {{ art0.title|truncate(50) }}">
-                    </a>
-                </div>
-            </div>
-            <div class="col-lg-6 d-flex flex-column ps-lg-3 pt-3 pt-lg-0">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div> {# Container for meta items except bookmark #}
-                        <div class="article-meta mb-2">
-                            <span class="badge bg-primary me-2" style="font-size:0.75rem;">{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|truncate(25) }}</span>
-                            <span class="meta-item"><i class="far fa-calendar-alt"></i> {{ (art0.published_at | to_ist if art0.is_community_article else (art0.publishedAt | to_ist if art0.publishedAt else 'N/A')) }}</span>
-                        </div>
+    {% if articles and not is_main_homepage %} {# This section is for the paginated list view only #}
+        <div class="row g-4">
+            {% for art in articles %}
+            <div class="col-md-6 col-lg-4 d-flex">
+                <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
+                    {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
+                    <div class="article-image-container">
+                        <a href="{{ article_url }}">
+                        <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
                     </div>
-                    {% if session.user_id %}
-                    <button class="bookmark-btn homepage-bookmark-btn {% if art0.is_bookmarked %}active{% endif %}"
-                            title="{% if art0.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                            data-article-hash-id="{{ art0.article_hash_id if art0.is_community_article else art0.id }}"
-                            data-is-community="{{ 'true' if art0.is_community_article else 'false' }}"
-                            data-title="{{ art0.title|e }}"
-                            data-source-name="{{ (art0.author.name if art0.is_community_article and art0.author else art0.source.name)|e }}"
-                            data-image-url="{{ (art0.image_url if art0.is_community_article else art0.urlToImage)|e }}"
-                            data-description="{{ (art0.description if art0.description else '')|e }}"
-                            data-published-at="{{ (art0.published_at.isoformat() if art0.is_community_article and art0.published_at else (art0.publishedAt if not art0.is_community_article and art0.publishedAt else ''))|e }}">
-                        <i class="fa-solid fa-bookmark"></i>
-                    </button>
-                    {% endif %}
-                </div>
-                <h2 class="mb-2 h4"><a href="{{ article_url }}" class="text-decoration-none article-title">{{ art0.title }}</a></h2>
-                <p class="article-description flex-grow-1 small">{{ art0.description|truncate(220) }}</p>
-                <a href="{{ article_url }}" class="read-more mt-auto align-self-start py-2 px-3" style="width:auto;">Read Full Article <i class="fas fa-arrow-right ms-1 small"></i></a>
+                    <div class="article-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                            {% if session.user_id %}
+                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
+                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
+                                    data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
+                                    data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
+                                    data-title="{{ art.title|e }}"
+                                    data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
+                                    data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
+                                    data-description="{{ (art.description if art.description else '')|e }}"
+                                    data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
+                                <i class="fa-solid fa-bookmark"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                        <div class="article-meta small mb-2">
+                            <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {% if art.is_community_article and art.author %}<a href="{{ url_for('public_profile', username=art.author.username) }}" class="text-muted text-decoration-none">{{ art.author.name|truncate(20) }}</a>{% else %}{{ art.source.name|truncate(20) }}{% endif %}</span>
+                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
+                        </div>
+                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                    </div>
+                </article>
             </div>
+            {% endfor %}
         </div>
-    </article>
-    {% elif not articles and selected_category == 'All Articles' and current_filter_date %}
-        <div class="alert alert-info text-center my-4 p-3 small">No articles found for <strong>{{ current_filter_date }}</strong>. Please try a different date or clear the date filter.</div>
-    {% elif not articles and selected_category != 'Community Hub' and not query %}
-        <div class="alert alert-warning text-center my-4 p-3 small">No recent Indian news found. Please check back later.</div>
-    {% elif not articles and selected_category == 'Community Hub' %}
-        <div class="alert alert-info text-center my-4 p-3"><h4><i class="fas fa-feather-alt me-2"></i>No Articles Penned Yet</h4><p>No articles in the Community Hub. {% if session.user_id %}Click the '+' button to share your insights!{% else %}Login to add articles.{% endif %}</p></div>
-    {% elif not articles and query %}
-        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No results for "{{ query }}"</h4><p>Try different keywords or browse categories.</p></div>
+    {% elif not articles %}
+        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No articles found.</h4><p>Please try a different category or search query.</p></div>
     {% endif %}
-
-    <div class="row g-4">
-        {% set articles_to_display = (articles[1:] if featured_article_on_this_page and articles else articles) %}
-        {% for art in articles_to_display %}
-        <div class="col-md-6 col-lg-4 d-flex">
-        <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
-            {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
-            <div class="article-image-container">
-                <a href="{{ article_url }}">
-                <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-            </div>
-            <div class="article-body d-flex flex-column">
-                <div class="d-flex justify-content-between align-items-start">
-                    <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                    {% if session.user_id %}
-                    <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
-                            title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                            data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
-                            data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
-                            data-title="{{ art.title|e }}"
-                            data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
-                            data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
-                            data-description="{{ (art.description if art.description else '')|e }}"
-                            data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
-                        <i class="fa-solid fa-bookmark"></i>
-                    </button>
-                    {% endif %}
-                </div>
-                <div class="article-meta small mb-2">
-                    <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {{ (art.author.name if art.is_community_article and art.author else art.source.name)|truncate(20) }}</span>
-                    <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
-                </div>
-                <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-            </div>
-        </article>
-        </div>
-        {% endfor %}
-    </div>
 
     {% if total_pages and total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
@@ -2147,7 +2249,6 @@ INDEX_HTML_TEMPLATE = """
     {% endif %}
 {% endif %}
 {% endblock %}
-
 
 {% block scripts_extra %}
 <script>
@@ -2193,7 +2294,6 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 {% endblock %}
 """
-# In Rev14.py, replace your entire ARTICLE_HTML_TEMPLATE variable with this:
 
 ARTICLE_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
