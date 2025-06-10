@@ -1961,7 +1961,6 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 {% endblock %}
 """
-
 # In Rev14.py, replace your entire ARTICLE_HTML_TEMPLATE variable with this:
 
 ARTICLE_HTML_TEMPLATE = """
@@ -2045,10 +2044,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const apiArticleContent = document.getElementById('apiArticleContent');
             
             fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
-                .then(response => {
-                    if (!response.ok) { throw new Error(`Network error, status: ${response.status}`); }
-                    return response.json();
-                })
+                .then(response => { if (!response.ok) { throw new Error(`Network error, status: ${response.status}`); } return response.json(); })
                 .then(data => {
                     if (data.error) { throw new Error(data.error); }
                     let html = '';
@@ -2056,9 +2052,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
                     const analysis = data.groq_analysis;
                     if (analysis) {
-                        if (analysis.error) {
-                            html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`;
-                        } else {
+                        if (analysis.error) { html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`; }
+                        else {
                             if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
                             if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
                         }
@@ -2066,15 +2061,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
                     apiArticleContent.innerHTML = html;
                 })
-                .catch(error => {
-                    console.error("Failed to load article content:", error);
-                    if (apiArticleContent) {
-                        apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`;
-                    }
-                })
-                .finally(() => {
-                    if (contentLoader) contentLoader.style.display = 'none';
-                });
+                .catch(error => { console.error("Failed to load article content:", error); if (apiArticleContent) { apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; } })
+                .finally(() => { if (contentLoader) contentLoader.style.display = 'none'; });
         }
 
         const commentSection = document.getElementById('comment-section');
@@ -2089,17 +2077,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 submitButton.disabled = true;
                 submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
                 fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({ content, parent_id: parentId })
                 })
                 .then(res => {
-                    if (res.status === 401) {
-                        throw new Error("Your session has expired. Please refresh the page and log in again.");
-                    }
-                    if (!res.ok) {
-                        throw new Error("An unknown server error occurred while posting.");
-                    }
+                    if (res.status === 401) { throw new Error("Your session has expired. Please refresh the page and log in again."); }
+                    if (!res.ok) { throw new Error("An unknown server error occurred while posting."); }
                     return res.json();
                 })
                 .then(data => {
@@ -2115,35 +2098,94 @@ document.addEventListener('DOMContentLoaded', function () {
                         const countEl = document.getElementById('comment-count');
                         countEl.textContent = parseInt(countEl.textContent) + 1;
                         formElement.reset();
-                    } else { 
-                        throw new Error(data.error || 'Could not post comment.'); 
-                    }
+                    } else { throw new Error(data.error || 'Could not post comment.'); }
                 })
-                .catch(err => {
-                    console.error("Comment submission error:", err);
-                    alert("Error: " + err.message);
-                })
-                .finally(() => {
-                    submitButton.disabled = false;
-                    submitButton.innerHTML = originalButtonText;
-                });
+                .catch(err => { console.error("Comment submission error:", err); alert("Error: " + err.message); })
+                .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
             };
 
-            const mainCommentForm = document.getElementById('comment-form');
-            if(mainCommentForm) {
-                mainCommentForm.addEventListener('submit', function(e) {
+            const updateReactionUI = (commentId, reactions, userReaction) => {
+                const summaryContainer = document.getElementById(`reaction-summary-${commentId}`);
+                if (!summaryContainer) return;
+                let summaryHTML = '';
+                if (reactions) {
+                    for (const [emoji, count] of Object.entries(reactions)) {
+                        if (count > 0) {
+                            const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
+                            summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
+                        }
+                    }
+                }
+                summaryContainer.innerHTML = summaryHTML;
+            };
+
+            // Main event listener for all actions in the comment section
+            commentSection.addEventListener('click', function(e) {
+                const target = e.target;
+                const replyBtn = target.closest('.reply-btn');
+                const cancelBtn = target.closest('.cancel-reply-btn');
+                const reactBtn = target.closest('.react-btn');
+                const reactionEmoji = target.closest('.reaction-emoji');
+
+                if (replyBtn) {
                     e.preventDefault();
-                    handleCommentSubmit(this);
-                });
-            }
-            commentSection.addEventListener('submit', function(e) {
-                if(e.target.matches('.reply-form')) {
+                    const commentId = replyBtn.dataset.commentId;
+                    const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                    if (formContainer) {
+                        const isDisplayed = formContainer.style.display === 'block';
+                        document.querySelectorAll('.reply-form-container').forEach(fc => fc.style.display = 'none');
+                        formContainer.style.display = isDisplayed ? 'none' : 'block';
+                        if (!isDisplayed) formContainer.querySelector('textarea').focus();
+                    }
+                    return;
+                }
+
+                if (cancelBtn) {
                     e.preventDefault();
-                    handleCommentSubmit(e.target);
+                    cancelBtn.closest('.reply-form-container').style.display = 'none';
+                    return;
+                }
+                
+                if (reactBtn) {
+                    e.preventDefault();
+                    const commentId = reactBtn.dataset.commentId;
+                    const reactionBox = document.getElementById(`reaction-box-${commentId}`);
+                    if (reactionBox) {
+                        const isShown = reactionBox.classList.contains('show');
+                        document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
+                        if (!isShown) reactionBox.classList.add('show');
+                    }
+                    return;
+                }
+                
+                if (reactionEmoji) {
+                    e.preventDefault();
+                    const commentId = reactionEmoji.dataset.commentId;
+                    const emoji = reactionEmoji.dataset.emoji;
+                    reactionEmoji.closest('.reaction-box').classList.remove('show');
+                    fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ emoji: emoji })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); }
+                        else { throw new Error(data.error || "Failed to vote."); }
+                    })
+                    .catch(err => { console.error("Reaction error:", err); alert("Error: " + err.message); });
+                    return;
+                }
+
+                if (!target.closest('.reaction-box') && !target.closest('.react-btn')) {
+                    document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
                 }
             });
+
+            const mainCommentForm = document.getElementById('comment-form');
+            if(mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
+            commentSection.addEventListener('submit', function(e) { if(e.target.matches('.reply-form')) { e.preventDefault(); handleCommentSubmit(e.target); } });
         }
-        
+
         const bookmarkBtn = document.getElementById('bookmarkBtn');
         if (bookmarkBtn && isUserLoggedIn) {
             bookmarkBtn.addEventListener('click', function() {
