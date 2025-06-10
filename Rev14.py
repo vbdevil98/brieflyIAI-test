@@ -1578,16 +1578,88 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
         
-        .ai-synthesis-card { border-radius: var(--border-radius-lg); padding: 2.5rem; margin-bottom: 2.5rem; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; color: white; border: none; background-image: linear-gradient(135deg, var(--primary-dark) 0%, #3a32c3 100%); }
-        body.dark-mode .ai-synthesis-card { background-image: linear-gradient(135deg, #1e293b 0%, var(--primary-dark) 100%); }
-        .synthesis-header { text-align: center; margin-bottom: 1.5rem; position: relative; }
-        .synthesis-header i { font-size: 2rem; color: var(--secondary-light); }
-        .synthesis-header h2 { font-size: 1.5rem; margin-top: 0.5rem; color: white; }
-        .synthesis-text { font-size: 1.15rem; line-height: 1.7; text-align: center; color: rgba(255, 255, 255, 0.9); position: relative; font-family: 'Inter', serif; font-weight: 500; }
-        .synthesis-keywords { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255, 255, 255, 0.2); text-align: center; position: relative; }
-        .synthesis-keywords .keyword-tag { display: inline-block; background-color: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 0.4rem 1rem; border-radius: 50px; margin: 0.25rem; font-size: 0.9rem; font-weight: 500; text-decoration: none; transition: all 0.2s ease-in-out; }
-        .synthesis-keywords .keyword-tag:hover { background-color: white; color: var(--primary-dark); transform: translateY(-2px); }
+        /* In BASE_HTML_TEMPLATE, find and REPLACE the existing CSS block for the synthesis card */
 
+/* === AI DAILY SYNTHESIS COMPONENT (REDESIGNED) === */
+.ai-synthesis-card {
+    border-radius: var(--border-radius-lg);
+    padding: 2.5rem;
+    margin-bottom: 2.5rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--card-border-color);
+    /* New soft gradient background */
+    background-color: #f7f7fe;
+    background-image: linear-gradient(135deg, #f5f6ff 0%, #f0f2ff 100%);
+}
+body.dark-mode .ai-synthesis-card {
+    /* Subtle tinted background for dark mode */
+    background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.15), rgba(var(--primary-color-rgb), 0.03));
+    border-color: rgba(var(--primary-color-rgb), 0.2);
+}
+.synthesis-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+.synthesis-header i {
+    font-size: 2rem;
+    color: var(--primary-color);
+}
+.synthesis-header h2 {
+    font-size: 1.5rem;
+    margin-top: 0.5rem;
+    color: var(--text-color);
+}
+body.dark-mode .synthesis-header h2 {
+    color: var(--text-color);
+}
+.synthesis-text {
+    font-size: 1.15rem;
+    line-height: 1.7;
+    text-align: center;
+    color: var(--text-muted-color);
+    position: relative;
+    font-family: 'Inter', serif;
+    font-weight: 500;
+}
+.synthesis-keywords {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--card-border-color);
+    text-align: center;
+    position: relative;
+}
+.synthesis-keywords .keyword-tag {
+    display: inline-block;
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border-color);
+    color: var(--text-muted-color);
+    padding: 0.4rem 1rem;
+    border-radius: 50px;
+    margin: 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s ease-in-out;
+}
+.synthesis-keywords .keyword-tag:hover {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+body.dark-mode .synthesis-keywords .keyword-tag {
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    border-color: rgba(var(--primary-color-rgb), 0.3);
+    color: var(--text-muted-color);
+}
+body.dark-mode .synthesis-keywords .keyword-tag:hover {
+    background-color: var(--primary-light);
+    color: var(--footer-bg);
+    border-color: var(--primary-light);
+}
         /* === RESPONSIVE OVERHAUL === */
         @media (max-width: 991.98px) {
             body { padding-top: 155px; }
