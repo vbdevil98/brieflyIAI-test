@@ -807,6 +807,8 @@ def get_sort_key(article):
     return datetime.min.replace(tzinfo=timezone.utc)
 
 
+# In Rev14.py, replace the entire index function with this:
+
 @app.route('/')
 @app.route('/page/<int:page>')
 @app.route('/category/<category_name>')
@@ -817,37 +819,43 @@ def index(page=1, category_name='All Articles'):
     query_str = request.args.get('query')
     filter_date_str = request.args.get('filter_date')
 
-    # Condition for the special tabbed homepage
+    # This is the new logic for the main homepage view
     if page == 1 and category_name == 'All Articles' and not query_str and not filter_date_str:
-        app.logger.info("Rendering main homepage with Popular and Yesterday's Latest sections.")
-        popular_articles = fetch_popular_news()
+        app.logger.info("Rendering main homepage with Featured, Popular and Yesterday's Latest sections.")
+        
+        # --- LOGIC UPDATE HERE ---
+        all_popular_articles = fetch_popular_news()
+        featured_article = all_popular_articles[0] if all_popular_articles else None
+        # The rest of the popular articles for the grid
+        popular_articles = all_popular_articles[1:] if all_popular_articles else [] 
+        
         latest_yesterday_articles = fetch_yesterdays_latest_news()
 
-        # Show only a few on the homepage
         POPULAR_NEWS_COUNT = 6
-        LATEST_NEWS_COUNT = 6 
+        LATEST_NEWS_COUNT = 6
         
         user_bookmarks_hashes = set()
         if 'user_id' in session:
             bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
             user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
 
-        for art_list in [popular_articles, latest_yesterday_articles]:
-            for art in art_list:
+        # Add bookmark status to all articles that will be displayed
+        for art in ([featured_article] + popular_articles + latest_yesterday_articles):
+            if art:
                 art['is_bookmarked'] = art.get('id') in user_bookmarks_hashes
 
         return render_template("INDEX_HTML_TEMPLATE",
+                               featured_article=featured_article,
                                popular_articles=popular_articles[:POPULAR_NEWS_COUNT],
                                latest_yesterday_articles=latest_yesterday_articles[:LATEST_NEWS_COUNT],
                                selected_category=category_name,
                                is_main_homepage=True,
                                current_page=1, total_pages=1, query=None, current_filter_date=None)
 
-    # This 'else' block now handles ALL paginated views, including the new categories
+    # This 'else' block for paginated views remains unchanged
     else:
         app.logger.info(f"Rendering standard list view for: category='{category_name}', page='{page}'")
         all_display_articles_raw = []
-
         if category_name == 'Popular Stories':
             all_display_articles_raw = fetch_popular_news()
         elif category_name == "Yesterday's Headlines":
@@ -857,24 +865,19 @@ def index(page=1, category_name='All Articles'):
             for art in db_articles:
                 art.is_community_article = True
             all_display_articles_raw.extend(db_articles)
-        else: # Default 'All Articles' with potential date filter
+        else:
             if filter_date_str:
                 try: datetime.strptime(filter_date_str, '%Y-%m-%d')
                 except ValueError: flash("Invalid date format.", "warning"); filter_date_str = None
-            
             api_articles = fetch_news_from_api(target_date_str=filter_date_str)
             all_display_articles_raw.extend(api_articles)
-
-        # --- Common processing for all paginated views ---
         all_display_articles_raw.sort(key=get_sort_key, reverse=True)
         paginated_display_articles_raw, total_pages = get_paginated_articles(all_display_articles_raw, page, per_page)
-        
         paginated_display_articles_with_bookmark_status = []
         user_bookmarks_hashes = set()
         if 'user_id' in session:
             bookmarks = BookmarkedArticle.query.filter_by(user_id=session['user_id']).all()
             user_bookmarks_hashes = {b.article_hash_id for b in bookmarks}
-
         for art_item in paginated_display_articles_raw:
             if hasattr(art_item, 'is_community_article') and art_item.is_community_article:
                 art_item.is_bookmarked = art_item.article_hash_id in user_bookmarks_hashes
@@ -883,16 +886,13 @@ def index(page=1, category_name='All Articles'):
                 art_item_copy = art_item.copy()
                 art_item_copy['is_bookmarked'] = art_item_copy.get('id') in user_bookmarks_hashes
                 paginated_display_articles_with_bookmark_status.append(art_item_copy)
-        
         return render_template("INDEX_HTML_TEMPLATE",
                                articles=paginated_display_articles_with_bookmark_status,
                                selected_category=category_name,
                                is_main_homepage=False,
-                               current_page=page,
-                               total_pages=total_pages,
-                               featured_article_on_this_page=False, # No featured article on these pages
-                               current_filter_date=filter_date_str,
-                               query=query_str)
+                               current_page=page, total_pages=total_pages,
+                               featured_article_on_this_page=False,
+                               current_filter_date=filter_date_str, query=query_str)
 
 # search_results route remains largely the same, ensuring current_filter_date=None is passed
 @app.route('/search')
@@ -1442,6 +1442,68 @@ BASE_HTML_TEMPLATE = """
         .dropdown-menu { z-index: 1041; }
         .bookmark-btn:focus { outline: none; box-shadow: none; }
 
+        /* In BASE_HTML_TEMPLATE, add this block to your <style> section */
+
+/* === FEATURED STORY SECTION === */
+.featured-story {
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    margin-bottom: 2.5rem;
+    overflow: hidden;
+    display: flex;
+    border: 1px solid var(--card-border-color);
+}
+.featured-story-image {
+    flex: 0 0 55%;
+    background-size: cover;
+    background-position: center;
+    min-height: 450px;
+}
+.featured-story-content {
+    flex: 0 0 45%;
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.featured-story-content .meta-item {
+    font-size: 0.9rem;
+}
+.featured-story-content h2 {
+    font-size: 2.2rem;
+    line-height: 1.3;
+    margin: 1rem 0;
+}
+.featured-story-content h2 a {
+    color: var(--text-color);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+.featured-story-content h2 a:hover {
+    color: var(--primary-color);
+}
+.featured-story-content .description {
+    font-size: 1.05rem;
+    color: var(--text-muted-color);
+    margin-bottom: 2rem;
+}
+.featured-story-content .read-more-btn {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 0.8rem 1.5rem;
+    text-decoration: none;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    align-self: flex-start; /* Button does not stretch */
+}
+.featured-story-content .read-more-btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
         @media (max-width: 767.98px) {
             body { padding-top: 145px; }
             .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
@@ -1819,11 +1881,25 @@ INDEX_HTML_TEMPLATE = """
 
 {% block content %}
 
-{# This is the main controller: It shows the tabbed view on the homepage, or the list view everywhere else. #}
 {% if is_main_homepage %}
-
-    {# ============== LAYOUT 1: MAIN HOMEPAGE (NEW TABBED VIEW) ============== #}
+    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH FEATURED STORY) ============== #}
     <div class="animate-fade-in">
+        
+        {% if featured_article %}
+        <article class="featured-story">
+            <div class="featured-story-image" style="background-image: url('{{ featured_article.urlToImage }}')"></div>
+            <div class="featured-story-content">
+                <div class="article-meta">
+                    <span class="meta-item"><i class="fas fa-fire-alt text-danger"></i> Top Story</span>
+                    <span class="meta-item"><i class="fas fa-building"></i> {{ featured_article.source.name|truncate(20) }}</span>
+                </div>
+                <h2><a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}">{{ featured_article.title }}</a></h2>
+                <p class="description">{{ featured_article.description|truncate(150) }}</p>
+                <a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}" class="read-more-btn">Read Full Story <i class="fas fa-arrow-right ms-1"></i></a>
+            </div>
+        </article>
+        {% endif %}
+
         <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist" style="font-weight: 600;">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="popular-tab" data-bs-toggle="tab" data-bs-target="#popular-tab-pane" type="button" role="tab" aria-controls="popular-tab-pane" aria-selected="true">
@@ -1845,13 +1921,11 @@ INDEX_HTML_TEMPLATE = """
                             <div class="col-md-6 col-lg-4 d-flex">
                                 <article class="article-card d-flex flex-column w-100">
                                     {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
-                                    <div class="article-image-container">
-                                        <a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                                    </div>
+                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
                                     <div class="article-body d-flex flex-column">
                                         <div class="d-flex justify-content-between align-items-start">
                                             <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
+                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
                                         </div>
                                         <div class="article-meta small mb-2">
                                             <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
@@ -1864,7 +1938,7 @@ INDEX_HTML_TEMPLATE = """
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="col-12"><div class="alert alert-light text-center">Popular stories are currently unavailable.</div></div>
+                        <div class="col-12"><div class="alert alert-light text-center">More popular stories are currently unavailable.</div></div>
                     {% endif %}
                 </div>
                 {% if popular_articles %}
@@ -1880,13 +1954,11 @@ INDEX_HTML_TEMPLATE = """
                              <div class="col-md-6 col-lg-4 d-flex">
                                 <article class="article-card d-flex flex-column w-100">
                                     {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
-                                    <div class="article-image-container">
-                                        <a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                                    </div>
+                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
                                     <div class="article-body d-flex flex-column">
                                         <div class="d-flex justify-content-between align-items-start">
                                             <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
+                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
                                         </div>
                                         <div class="article-meta small mb-2">
                                             <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
@@ -1902,7 +1974,7 @@ INDEX_HTML_TEMPLATE = """
                         <div class="col-12"><div class="alert alert-light text-center">Could not load yesterday's articles.</div></div>
                     {% endif %}
                 </div>
-                 {% if latest_yesterday_articles %}
+                {% if latest_yesterday_articles %}
                 <div class="text-center mt-4">
                     <a href="{{ url_for('index', category_name="Yesterday's Headlines") }}" class="btn btn-outline-primary">View All of Yesterday's Headlines <i class="fas fa-arrow-right ms-1"></i></a>
                 </div>
@@ -1910,7 +1982,6 @@ INDEX_HTML_TEMPLATE = """
             </div>
         </div>
     </div>
-
 {% else %}
 
     {# ============ LAYOUT 2: YOUR ORIGINAL PAGINATED LIST VIEW ============ #}
