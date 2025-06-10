@@ -292,9 +292,9 @@ def to_ist_filter(utc_dt):
     if isinstance(utc_dt, str):
         try:
             if utc_dt.endswith('Z'):
-                 utc_dt = datetime.fromisoformat(utc_dt[:-1] + '+00:00')
+                    utc_dt = datetime.fromisoformat(utc_dt[:-1] + '+00:00')
             else:
-                 utc_dt = datetime.fromisoformat(utc_dt)
+                    utc_dt = datetime.fromisoformat(utc_dt)
         except ValueError: return "Invalid date string"
     
     if not isinstance(utc_dt, datetime): return "Invalid date object"
@@ -463,9 +463,9 @@ def fetch_news_from_api(target_date_str=None):
                 app.logger.info(f"Fallback: Fetching news specifically for UTC date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
                 is_specific_date_fetch = True
             except ValueError: # If target_date_str is malformed even for simple parsing
-                 app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
-                 target_date_str = None # This will ensure it uses the default N-day range logic in the next block
-                 is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
+                app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
+                target_date_str = None # This will ensure it uses the default N-day range logic in the next block
+                is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
 
     if not is_specific_date_fetch: 
         # Default fetch logic (no specific date selected, or date was invalid)
@@ -537,7 +537,7 @@ def fetch_news_from_api(target_date_str=None):
     if not all_raw_articles or is_specific_date_fetch:
         log_prefix_attempt3 = "Fallback/Augment"
         if not all_raw_articles and not is_specific_date_fetch:
-             app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
+                app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
         elif not all_raw_articles and is_specific_date_fetch:
             app.logger.warning(f"No articles from query for specific date '{target_date_str}'. Trying with domains.")
         elif all_raw_articles and is_specific_date_fetch:
@@ -783,8 +783,8 @@ def fetch_and_parse_article_content(article_hash_id, url):
         # This is a redundancy check; the route get_article_content_json already does this.
         # However, keeping it ensures consistency if this function were called from elsewhere.
         if article_hash_id in MASTER_ARTICLE_STORE and \
-           MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
-           MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
+            MASTER_ARTICLE_STORE[article_hash_id].get('groq_summary') is not None and \
+            MASTER_ARTICLE_STORE[article_hash_id].get('groq_takeaways') is not None:
             app.logger.info(f"Re-confirming pre-cached Groq analysis from MASTER_ARTICLE_STORE for {article_hash_id} within fetch_and_parse.")
             groq_analysis_result = {
                 "groq_summary": MASTER_ARTICLE_STORE[article_hash_id]['groq_summary'],
@@ -800,7 +800,7 @@ def fetch_and_parse_article_content(article_hash_id, url):
                 MASTER_ARTICLE_STORE[article_hash_id]['groq_takeaways'] = groq_analysis_result.get("groq_takeaways")
                 app.logger.info(f"Groq analysis generated and cached in MASTER_ARTICLE_STORE for API article ID: {article_hash_id}")
             elif groq_analysis_result and groq_analysis_result.get("error"):
-                 app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
+                app.logger.warning(f"Groq analysis for {article_hash_id} resulted in error: {groq_analysis_result.get('error')}")
 
 
         return {
@@ -890,16 +890,16 @@ def index(page=1, category_name='All Articles'):
                 art['is_bookmarked'] = art.get('id') in user_bookmarks_hashes
 
         return render_template("INDEX_HTML_TEMPLATE",
-                               # --- NEW: Pass synthesis data to the template ---
-                               synthesis=synthesis_data.get('synthesis_text'),
-                               keywords=synthesis_data.get('keywords', []),
-                               # --- Existing variables ---
-                               featured_article=featured_article,
-                               popular_articles=popular_articles[:POPULAR_NEWS_COUNT],
-                               latest_yesterday_articles=latest_yesterday_articles[:LATEST_NEWS_COUNT],
-                               selected_category=category_name,
-                               is_main_homepage=True,
-                               current_page=1, total_pages=1, query=None, current_filter_date=None)
+                                # --- NEW: Pass synthesis data to the template ---
+                                synthesis=synthesis_data.get('synthesis_text'),
+                                keywords=synthesis_data.get('keywords', []),
+                                # --- Existing variables ---
+                                featured_article=featured_article,
+                                popular_articles=popular_articles[:POPULAR_NEWS_COUNT],
+                                latest_yesterday_articles=latest_yesterday_articles[:LATEST_NEWS_COUNT],
+                                selected_category=category_name,
+                                is_main_homepage=True,
+                                current_page=1, total_pages=1, query=None, current_filter_date=None)
 
     # This 'else' block handles all other paginated views and remains unchanged
     else:
@@ -937,12 +937,12 @@ def index(page=1, category_name='All Articles'):
                 art_item_copy['is_bookmarked'] = art_item_copy.get('id') in user_bookmarks_hashes
                 paginated_display_articles_with_bookmark_status.append(art_item_copy)
         return render_template("INDEX_HTML_TEMPLATE",
-                               articles=paginated_display_articles_with_bookmark_status,
-                               selected_category=category_name,
-                               is_main_homepage=False,
-                               current_page=page, total_pages=total_pages,
-                               featured_article_on_this_page=False,
-                               current_filter_date=filter_date_str, query=query_str)
+                                articles=paginated_display_articles_with_bookmark_status,
+                                selected_category=category_name,
+                                is_main_homepage=False,
+                                current_page=page, total_pages=total_pages,
+                                featured_article_on_this_page=False,
+                                current_filter_date=filter_date_str, query=query_str)
 
 @app.route('/user/<username>')
 def public_profile(username):
@@ -1051,14 +1051,14 @@ def search_results(page=1):
             paginated_search_articles_with_bookmark_status.append(art_item_copy)
             
     return render_template("INDEX_HTML_TEMPLATE",
-                           articles=paginated_search_articles_with_bookmark_status,
-                           selected_category=f"Search: {query_str}",
-                           current_page=page,
-                           total_pages=total_pages,
-                           is_main_homepage=False,
-                           featured_article_on_this_page=False,
-                           query=query_str,
-                           current_filter_date=None)
+                            articles=paginated_search_articles_with_bookmark_status,
+                            selected_category=f"Search: {query_str}",
+                            current_page=page,
+                            total_pages=total_pages,
+                            is_main_homepage=False,
+                            featured_article_on_this_page=False,
+                            query=query_str,
+                            current_filter_date=None)
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
@@ -1120,13 +1120,13 @@ def article_detail(article_hash_id):
     elif article_data: article_data.is_community_article = True
             
     return render_template("ARTICLE_HTML_TEMPLATE", 
-                           article=article_data, 
-                           is_community_article=is_community_article, 
-                           comments=comments_for_template, 
-                           comment_data=comment_data,
-                           total_comment_count=total_comment_count,
-                           previous_list_page=previous_list_page, 
-                           is_bookmarked=is_bookmarked)
+                            article=article_data, 
+                            is_community_article=is_community_article, 
+                            comments=comments_for_template, 
+                            comment_data=comment_data,
+                            total_comment_count=total_comment_count,
+                            previous_list_page=previous_list_page, 
+                            is_bookmarked=is_bookmarked)
 
 @app.route('/get_article_content/<article_hash_id>')
 def get_article_content_json(article_hash_id):
@@ -1310,58 +1310,77 @@ def subscribe():
 @app.route('/toggle_bookmark/<article_hash_id>', methods=['POST'])
 @login_required
 def toggle_bookmark(article_hash_id):
+    """
+    Handles adding or removing a bookmark for the logged-in user.
+    This function is designed to be robust and stateless by relying on data
+    passed from the client, not on the server's temporary cache.
+    """
     user_id = session['user_id']
     
-    # Check if a bookmark for this article already exists for the user
-    existing_bookmark = BookmarkedArticle.query.filter_by(user_id=user_id, article_hash_id=article_hash_id).first()
+    # Check if a bookmark for this article already exists for the user.
+    existing_bookmark = BookmarkedArticle.query.filter_by(
+        user_id=user_id, 
+        article_hash_id=article_hash_id
+    ).first()
     
     if existing_bookmark:
-        # If it exists, we are un-bookmarking it.
-        db.session.delete(existing_bookmark)
-        db.session.commit()
-        return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
+        # --- REMOVE BOOKMARK ---
+        # If it exists, the user is un-bookmarking it.
+        try:
+            db.session.delete(existing_bookmark)
+            db.session.commit()
+            return jsonify({"success": True, "status": "removed", "message": "Bookmark removed."})
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error removing bookmark for user {user_id}: {e}")
+            return jsonify({"success": False, "error": "Database error on removal."}), 500
     else:
-        # If it doesn't exist, we are adding a new bookmark.
-        # We will trust the data sent from the client and create the bookmark directly
-        # without checking the volatile MASTER_ARTICLE_STORE.
-        
-        is_community_str = request.json.get('is_community_article', 'false').lower()
-        is_community = True if is_community_str == 'true' else False
-        
-        # Get all the cached details from the client request
-        article_title_cache = request.json.get('title', 'Bookmarked Article')
-        article_source_cache = request.json.get('source_name', 'Unknown Source')
-        article_image_cache = request.json.get('image_url', None)
-        article_desc_cache = request.json.get('description', None)
-        article_published_at_cache_str = request.json.get('published_at', None)
-        
-        article_published_at_dt = None
-        if article_published_at_cache_str:
-            try:
-                if article_published_at_cache_str.endswith('Z'):
-                    article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str[:-1] + '+00:00')
-                else:
-                    article_published_at_dt = datetime.fromisoformat(article_published_at_cache_str)
-                if article_published_at_dt.tzinfo is None:
-                    article_published_at_dt = pytz.utc.localize(article_published_at_dt)
-            except (ValueError, TypeError):
-                app.logger.warning(f"Could not parse published_at_cache_str for bookmark: {article_published_at_cache_str}")
-                article_published_at_dt = None
-        
-        new_bookmark = BookmarkedArticle(
-            user_id=user_id,
-            article_hash_id=article_hash_id,
-            is_community_article=is_community,
-            title_cache=article_title_cache,
-            source_name_cache=article_source_cache,
-            image_url_cache=article_image_cache,
-            description_cache=article_desc_cache,
-            published_at_cache=article_published_at_dt
-        )
-        
-        db.session.add(new_bookmark)
-        db.session.commit()
-        return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
+        # --- ADD BOOKMARK ---
+        # If it doesn't exist, create a new bookmark.
+        # All necessary article data is retrieved from the client request.
+        # This ensures we can cache the article's state at the moment of bookmarking.
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"success": False, "error": "Invalid request data."}), 400
+
+            is_community_str = str(data.get('is_community_article', 'false')).lower()
+            
+            # Safely parse the published_at date string into a datetime object.
+            published_at_str = data.get('published_at')
+            published_at_dt = None
+            if published_at_str:
+                try:
+                    # Handle ISO 8601 format with or without 'Z'
+                    if published_at_str.endswith('Z'):
+                        published_at_dt = datetime.fromisoformat(published_at_str[:-1] + '+00:00')
+                    else:
+                        published_at_dt = datetime.fromisoformat(published_at_str)
+                    # Ensure timezone awareness for database consistency
+                    if published_at_dt.tzinfo is None:
+                       published_at_dt = pytz.utc.localize(published_at_dt)
+                except (ValueError, TypeError):
+                    app.logger.warning(f"Could not parse 'published_at' string for bookmark: {published_at_str}")
+                    # Keep published_at_dt as None if parsing fails.
+
+            new_bookmark = BookmarkedArticle(
+                user_id=user_id,
+                article_hash_id=article_hash_id,
+                is_community_article=(is_community_str == 'true'),
+                title_cache=data.get('title', 'Bookmarked Article'),
+                source_name_cache=data.get('source_name', 'Unknown Source'),
+                image_url_cache=data.get('image_url'),
+                description_cache=data.get('description'),
+                published_at_cache=published_at_dt
+            )
+            
+            db.session.add(new_bookmark)
+            db.session.commit()
+            return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error adding bookmark for user {user_id}: {e}", exc_info=True)
+            return jsonify({"success": False, "error": "Could not save bookmark due to a server error."}), 500
 
 @app.route('/profile')
 @login_required
@@ -1369,21 +1388,75 @@ def profile():
     user = User.query.get_or_404(session['user_id'])
     page = request.args.get('page', 1, type=int)
     per_page = app.config['PER_PAGE']
+
+    # Fetch user's own posted articles (this part is separate from bookmarks)
     user_posted_articles = CommunityArticle.query.filter_by(user_id=user.id).order_by(CommunityArticle.published_at.desc()).all()
+
+    # --- REWRITTEN BOOKMARK DISPLAY LOGIC ---
+    # Fetch the user's bookmarks with pagination.
     bookmarks_query = BookmarkedArticle.query.filter_by(user_id=user.id).order_by(BookmarkedArticle.bookmarked_at.desc())
-    user_bookmarks_paginated_query = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
+    bookmarks_pagination = bookmarks_query.paginate(page=page, per_page=per_page, error_out=False)
+
     user_bookmarked_articles_data = []
-    for bookmark in user_bookmarks_paginated_query.items:
-        article_detail_data = None
+    for bookmark in bookmarks_pagination.items:
+        article_data = None
+        # The goal is to create a consistent dictionary for the template,
+        # regardless of the article type, making the source of data reliable.
+
         if bookmark.is_community_article:
-            comm_art = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
-            if comm_art: article_detail_data = {'id': comm_art.article_hash_id, 'title': comm_art.title, 'description': comm_art.description, 'urlToImage': comm_art.image_url, 'publishedAt': comm_art.published_at.isoformat() if comm_art.published_at else None, 'source': {'name': comm_art.author.name if comm_art.author else comm_art.source_name}, 'is_community_article': True, 'article_url': url_for('article_detail', article_hash_id=comm_art.article_hash_id)}
+            # For community articles, the DB is the source of truth.
+            # We try to fetch the live article.
+            live_article = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=bookmark.article_hash_id).first()
+            if live_article:
+                # The article exists, use its current data.
+                article_data = {
+                    'id': live_article.article_hash_id,
+                    'title': live_article.title,
+                    'description': live_article.description,
+                    'urlToImage': live_article.image_url,
+                    'publishedAt': live_article.published_at.isoformat() if live_article.published_at else None,
+                    'source': {'name': live_article.author.name if live_article.author else live_article.source_name},
+                    'is_community_article': True,
+                    'article_url': url_for('article_detail', article_hash_id=live_article.article_hash_id)
+                }
+            else:
+                # The article has been deleted. Use the cached data as a fallback.
+                article_data = {
+                    'id': bookmark.article_hash_id,
+                    'title': bookmark.title_cache or "Deleted Community Article",
+                    'description': bookmark.description_cache or "This article was posted by a user but has since been deleted.",
+                    'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Deleted',
+                    'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None,
+                    'source': {'name': bookmark.source_name_cache or "Unknown"},
+                    'is_community_article': True,
+                    'article_url': '#' # No longer a valid link
+                }
         else:
-            api_art = MASTER_ARTICLE_STORE.get(bookmark.article_hash_id)
-            if api_art: article_detail_data = {'id': api_art['id'], 'title': api_art['title'], 'description': api_art['description'], 'urlToImage': api_art['urlToImage'], 'publishedAt': api_art['publishedAt'], 'source': {'name': api_art['source']['name']}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=api_art['id'])}
-            else: article_detail_data = {'id': bookmark.article_hash_id, 'title': bookmark.title_cache or "Bookmarked Article (Details N/A)", 'description': bookmark.description_cache or "Description not available.", 'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A', 'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None, 'source': {'name': bookmark.source_name_cache or "Unknown Source"}, 'is_community_article': False, 'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id), 'is_stale_bookmark': True}
-        if article_detail_data: user_bookmarked_articles_data.append(article_detail_data)
-    return render_template("PROFILE_HTML_TEMPLATE", user=user, posted_articles=user_posted_articles, bookmarked_articles=user_bookmarked_articles_data, bookmarks_pagination=user_bookmarks_paginated_query, current_page=page)
+            # For API articles, the bookmark's cache is ALWAYS the source of truth.
+            # This makes the feature robust and independent of the volatile MASTER_ARTICLE_STORE.
+            article_data = {
+                'id': bookmark.article_hash_id,
+                'title': bookmark.title_cache or "Bookmarked Article",
+                'description': bookmark.description_cache or "Description not available in cache.",
+                'urlToImage': bookmark.image_url_cache or f'https://via.placeholder.com/400x220/CCCCCC/000000?text=Preview+N/A',
+                'publishedAt': bookmark.published_at_cache.isoformat() if bookmark.published_at_cache else None,
+                'source': {'name': bookmark.source_name_cache or "Unknown Source"},
+                'is_community_article': False,
+                'article_url': url_for('article_detail', article_hash_id=bookmark.article_hash_id)
+            }
+        
+        if article_data:
+            user_bookmarked_articles_data.append(article_data)
+
+    return render_template(
+        "PROFILE_HTML_TEMPLATE",
+        user=user,
+        posted_articles=user_posted_articles,
+        bookmarked_articles=user_bookmarked_articles_data,
+        bookmarks_pagination=bookmarks_pagination,
+        current_page=page
+    )
+
 
 @app.errorhandler(404)
 def page_not_found(e): return render_template("404_TEMPLATE"), 404
@@ -1397,6 +1470,7 @@ def ads_txt():
     # If you have other ad partners, add their lines here, each on a new line.
     # e.g., ads_content += "\notheradsystem.com, theirPubId, DIRECT, theirTagId"
     return Response(ads_content, mimetype='text/plain')
+
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
@@ -2459,7 +2533,6 @@ PROFILE_HTML_TEMPLATE = """
                     <article class="article-card d-flex flex-column w-100">
                         <div class="article-image-container">
                             <a href="{{ art.article_url }}"><img src="{{ art.urlToImage if art.urlToImage else 'https://via.placeholder.com/400x220/EEEEEE/AAAAAA?text=No+Image' }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                            {% if art.is_stale_bookmark %}<span class="badge bg-secondary position-absolute top-0 end-0 m-2">Cached Bookmark</span>{% endif %}
                         </div>
                         <div class="article-body d-flex flex-column">
                             <h5 class="article-title mb-2"><a href="{{ art.article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
