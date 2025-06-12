@@ -1,3 +1,5 @@
+Report, comment edit and delete
+
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -874,39 +876,9 @@ def get_sort_key(article):
     elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
 
-# In Rev14.py, add this temporary function.
-# IMPORTANT: REMOVE THIS ENTIRE FUNCTION AFTER YOU HAVE CREATED YOUR ADMIN.
+# In Rev14.py, find your existing index function and REPLACE IT with this entire block.
 
-# In Rev14.py, add this temporary function.
-# This code makes your URL work.
-
-@app.route('/make-admin/<username>/<secret_key>')
-def make_admin(username, secret_key):
-    # Step 1: It reads the secret value you set in the Render Environment Variables.
-    expected_secret = os.environ.get('ADMIN_CREATION_SECRET')
-
-    # Step 2: It checks if the secret in your URL matches the one in Render.
-    if not expected_secret or secret_key != expected_secret:
-        app.logger.warning(f"Failed admin creation attempt with wrong secret key.")
-        return "ERROR: Invalid secret key.", 403
-
-    # Step 3: It finds the user with the username from the URL (e.g., 'VBDEVIL').
-    user_to_promote = User.query.filter_by(username=username).first()
-
-    if not user_to_promote:
-        return f"ERROR: User '{username}' not found.", 404
-
-    try:
-        # Step 4: It changes the user's role to 'admin' and saves it to the database.
-        user_to_promote.role = 'admin'
-        db.session.commit()
-        flash(f"Success! User '{username}' has been promoted to an admin.", "success")
-        app.logger.info(f"User '{username}' was promoted to admin via secret URL.")
-        return redirect(url_for('index'))
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Failed to promote user '{username}': {e}", exc_info=True)
-        return "An error occurred during admin promotion.", 500
+# In Rev14.py, add this new route
 
 @app.route('/report_article/<article_hash_id>', methods=['POST'])
 @login_required
@@ -1552,7 +1524,6 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
-
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1596,7 +1567,7 @@ BASE_HTML_TEMPLATE = """
         .header-controls { display: flex; gap: 0.8rem; align-items: center; }
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
-        
+       
         /* === UNIFIED OFFCANVAS SIDEBAR === */
         .offcanvas { background-color: #111827; color: var(--footer-text); z-index: 1045; }
         body.dark-mode .offcanvas { background-color: var(--footer-bg); }
@@ -2033,7 +2004,7 @@ BASE_HTML_TEMPLATE = """
 
             <div class="sidebar-section">
                  <button class="sidebar-btn dark-mode-toggle w-100">
-                     <i class="fas fa-moon fa-fw me-2"></i> <span class="theme-text">Dark Mode</span>
+                    <i class="fas fa-moon fa-fw me-2"></i> <span class="theme-text">Dark Mode</span>
                  </button>
             </div>
             
@@ -2054,15 +2025,6 @@ BASE_HTML_TEMPLATE = """
                             </a>
                         </li>
                     {% endfor %}
-
-                    {# NEW: Admin Dashboard Link - Visible only to admins #}
-                    {% if session.get('user_role') == 'admin' %}
-                    <li class="nav-item mt-3 border-top pt-3">
-                        <a href="{{ url_for('admin_review') }}" class="nav-link text-warning">
-                            <i class="fas fa-user-shield me-2"></i> Admin Dashboard
-                        </a>
-                    </li>
-                    {% endif %}
                 </ul>
             </div>
             
