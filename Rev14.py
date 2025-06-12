@@ -1380,8 +1380,6 @@ def ads_txt():
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
 
-# In Rev14.py, replace your entire BASE_HTML_TEMPLATE variable with this:
-
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1544,266 +1542,404 @@ BASE_HTML_TEMPLATE = """
         .dropdown-menu { z-index: 1041; }
         .bookmark-btn:focus { outline: none; box-shadow: none; }
 
-        /* In BASE_HTML_TEMPLATE, add this block to your <style> section */
-
-/* === FEATURED STORY SECTION === */
-.featured-story {
-    background-color: var(--card-bg);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-lg);
-    margin-bottom: 2.5rem;
-    overflow: hidden;
-    display: flex;
-    border: 1px solid var(--card-border-color);
-}
-.featured-story-image {
-    flex: 0 0 55%;
-    background-size: cover;
-    background-position: center;
-    min-height: 450px;
-}
-.featured-story-content {
-    flex: 0 0 45%;
-    padding: 2.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-.featured-story-content .meta-item {
-    font-size: 0.9rem;
-}
-.featured-story-content h2 {
-    font-size: 2.2rem;
-    line-height: 1.3;
-    margin: 1rem 0;
-}
-.featured-story-content h2 a {
-    color: var(--text-color);
-    text-decoration: none;
-    transition: color 0.2s ease;
-}
-.featured-story-content h2 a:hover {
-    color: var(--primary-color);
-}
-.featured-story-content .description {
-    font-size: 1.05rem;
-    color: var(--text-muted-color);
-    margin-bottom: 2rem;
-}
-.featured-story-content .read-more-btn {
-    background-color: var(--primary-color);
-    color: white;
-    padding: 0.8rem 1.5rem;
-    text-decoration: none;
-    border-radius: 50px;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    align-self: flex-start; /* Button does not stretch */
-}
-.featured-story-content .read-more-btn:hover {
-    background-color: var(--primary-dark);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-}
-
-        @media (max-width: 767.98px) {
-            body { padding-top: 145px; }
-            .navbar-content-wrapper { flex-wrap: wrap; justify-content: center; }
-            .navbar-left { width: 100%; text-align: center; margin-bottom: 0.5rem; }
-            .navbar-right { position: absolute; top: 1.2rem; right: 1rem; }
-            .navbar-center { order: 3; width: 100%; }
-            .category-nav { top: 128px; }
-            .page-header-static h1 { font-size: 2rem; }
+        /* === FEATURED STORY SECTION === */
+        .featured-story {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-lg);
+            margin-bottom: 2.5rem;
+            overflow: hidden;
+            display: flex;
+            border: 1px solid var(--card-border-color);
+        }
+        .featured-story-image {
+            flex: 0 0 55%;
+            background-size: cover;
+            background-position: center;
+            min-height: 450px;
+        }
+        .featured-story-content {
+            flex: 0 0 45%;
+            padding: 2.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .featured-story-content .meta-item {
+            font-size: 0.9rem;
+        }
+        .featured-story-content h2 {
+            font-size: 2.2rem;
+            line-height: 1.3;
+            margin: 1rem 0;
+        }
+        .featured-story-content h2 a {
+            color: var(--text-color);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        .featured-story-content h2 a:hover {
+            color: var(--primary-color);
+        }
+        .featured-story-content .description {
+            font-size: 1.05rem;
+            color: var(--text-muted-color);
+            margin-bottom: 2rem;
+        }
+        .featured-story-content .read-more-btn {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            align-self: flex-start; /* Button does not stretch */
+        }
+        .featured-story-content .read-more-btn:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
         }
 
-        /* In BASE_HTML_TEMPLATE, add this entire block to the end of your <style> section */
+        /* === UPGRADED AUTHENTICATION PAGES UI === */
+        .body-auth {
+            background-color: var(--light-bg);
+            background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        body.dark-mode .body-auth {
+            background-image: radial-gradient(#2c3341 1px, transparent 1px);
+        }
+        .auth-card {
+            max-width: 450px;
+            margin: 2rem auto;
+            background: var(--card-bg);
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            border: 1px solid var(--card-border-color);
+            overflow: hidden;
+        }
+        .auth-header {
+            padding: 2rem;
+            background-color: var(--primary-color);
+            text-align: center;
+            border-bottom: 5px solid var(--secondary-color);
+        }
+        .auth-header .brand-icon {
+            font-size: 2.5rem;
+            color: var(--secondary-light);
+        }
+        .auth-header h2 {
+            color: white;
+            font-weight: 600;
+            margin-top: 0.5rem;
+            margin-bottom: 0;
+            font-size: 1.5rem;
+        }
+        .auth-body {
+            padding: 2.5rem;
+        }
+        /* This vertically centers the icon relative to the input box height */
+        .input-group-icon .input-icon {
+            position: absolute;
+            left: 1rem;
+            top: 0;
+            bottom: 0;
+            margin: auto 0;
+            height: 1em; /* Intrinsic height of the icon */
+            color: var(--text-muted-color);
+            pointer-events: none; /* Make icon non-clickable */
+        }
+        .input-group-icon .form-control {
+            padding-left: 2.8rem; /* Make room for the icon */
+            height: 50px;
+        }
+        .auth-body .btn-primary {
+            padding: 0.8rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border-radius: var(--border-radius-md);
+        }
+        .auth-footer {
+            padding: 1.5rem;
+            background-color: var(--light-bg);
+            text-align: center;
+            border-top: 1px solid var(--card-border-color);
+        }
+        body.dark-mode .auth-footer {
+            background-color: var(--footer-bg);
+        }
+        .social-login-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            color: var(--text-muted-color);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            margin: 1.5rem 0;
+        }
+        .social-login-divider::before,
+        .social-login-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--card-border-color);
+        }
+        .social-login-divider:not(:empty)::before {
+            margin-right: .5em;
+        }
+        .social-login-divider:not(:empty)::after {
+            margin-left: .5em;
+        }
+        .social-login-buttons .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            padding: 0.6rem;
+            border-color: var(--card-border-color);
+            color: var(--text-color);
+        }
+        body.dark-mode .social-login-buttons .btn {
+            color: var(--text-color);
+        }
+        .social-login-buttons .btn:hover {
+            background-color: var(--light-bg);
+        }
+        .social-login-buttons .btn i {
+            font-size: 1.2rem;
+        }
+        .fa-google { color: #DB4437; }
+        .fa-facebook { color: #4267B2; }
 
-/* === UPGRADED AUTHENTICATION PAGES UI === */
-.body-auth {
-    background-color: var(--light-bg);
-    background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px);
-    background-size: 20px 20px;
-}
-body.dark-mode .body-auth {
-    background-image: radial-gradient(#2c3341 1px, transparent 1px);
-}
-.auth-card {
-    max-width: 450px;
-    margin: 2rem auto;
-    background: var(--card-bg);
-    border-radius: var(--border-radius-lg);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-    border: 1px solid var(--card-border-color);
-    overflow: hidden;
-}
-.auth-header {
-    padding: 2rem;
-    background-color: var(--primary-color);
-    text-align: center;
-    border-bottom: 5px solid var(--secondary-color);
-}
-.auth-header .brand-icon {
-    font-size: 2.5rem;
-    color: var(--secondary-light);
-}
-.auth-header h2 {
-    color: white;
-    font-weight: 600;
-    margin-top: 0.5rem;
-    margin-bottom: 0;
-    font-size: 1.5rem;
-}
-.auth-body {
-    padding: 2.5rem;
-}
-.input-group-icon {
-    position: relative;
-}
-/* This vertically centers the icon relative to the input box height */
-.input-group-icon .input-icon {
-    position: absolute;
-    left: 1rem;
-    top: 0;
-    bottom: 0;
-    margin: auto 0;
-    height: 1em; /* Intrinsic height of the icon */
-    color: var(--text-muted-color);
-    pointer-events: none; /* Make icon non-clickable */
-}
-.input-group-icon .form-control {
-    padding-left: 2.8rem; /* Make room for the icon */
-    height: 50px;
-}
-.auth-body .btn-primary {
-    padding: 0.8rem;
-    font-weight: 600;
-    font-size: 1rem;
-    border-radius: var(--border-radius-md);
-}
-.auth-footer {
-    padding: 1.5rem;
-    background-color: var(--light-bg);
-    text-align: center;
-    border-top: 1px solid var(--card-border-color);
-}
-body.dark-mode .auth-footer {
-    background-color: var(--footer-bg);
-}
-.social-login-divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    color: var(--text-muted-color);
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    margin: 1.5rem 0;
-}
-.social-login-divider::before,
-.social-login-divider::after {
-    content: '';
-    flex: 1;
-    border-bottom: 1px solid var(--card-border-color);
-}
-.social-login-divider:not(:empty)::before {
-    margin-right: .5em;
-}
-.social-login-divider:not(:empty)::after {
-    margin-left: .5em;
-}
-.social-login-buttons .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    font-size: 0.9rem;
-    padding: 0.6rem;
-    border-color: var(--card-border-color);
-    color: var(--text-color);
-}
-body.dark-mode .social-login-buttons .btn {
-    color: var(--text-color);
-}
-.social-login-buttons .btn:hover {
-    background-color: var(--light-bg);
-}
-.social-login-buttons .btn i {
-    font-size: 1.2rem;
-}
-.fa-google { color: #DB4437; }
-.fa-facebook { color: #4267B2; }
+        /* === AI DAILY SYNTHESIS COMPONENT === */
+        .ai-synthesis-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 2rem;
+            margin-bottom: 2.5rem;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+        }
+        .ai-synthesis-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
+                              linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
+            background-size: 20px 20px;
+            opacity: 0.5;
+        }
+        .synthesis-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        .synthesis-header i {
+            font-size: 2rem;
+            color: var(--primary-color);
+        }
+        .synthesis-header h2 {
+            font-size: 1.5rem;
+            margin-top: 0.5rem;
+        }
+        .synthesis-text {
+            font-size: 1.15rem;
+            line-height: 1.7;
+            text-align: center;
+            color: var(--text-color);
+            position: relative;
+            font-family: 'Inter', serif;
+        }
+        .synthesis-keywords {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--card-border-color);
+            text-align: center;
+            position: relative;
+        }
+        .synthesis-keywords .keyword-tag {
+            display: inline-block;
+            background-color: var(--light-bg);
+            border: 1px solid var(--card-border-color);
+            color: var(--text-muted-color);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            margin: 0.25rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease-in-out;
+        }
+        .synthesis-keywords .keyword-tag:hover {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+        }
 
-/* In BASE_HTML_TEMPLATE, add this block to your <style> section */
 
-/* === AI DAILY SYNTHESIS COMPONENT === */
-.ai-synthesis-card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border-color);
-    border-radius: var(--border-radius-lg);
-    padding: 2rem;
-    margin-bottom: 2.5rem;
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
-}
-.ai-synthesis-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
-                      linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
-    background-size: 20px 20px;
-    opacity: 0.5;
-}
-.synthesis-header {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    position: relative;
-}
-.synthesis-header i {
-    font-size: 2rem;
-    color: var(--primary-color);
-}
-.synthesis-header h2 {
-    font-size: 1.5rem;
-    margin-top: 0.5rem;
-}
-.synthesis-text {
-    font-size: 1.15rem;
-    line-height: 1.7;
-    text-align: center;
-    color: var(--text-color);
-    position: relative;
-    font-family: 'Inter', serif;
-}
-.synthesis-keywords {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--card-border-color);
-    text-align: center;
-    position: relative;
-}
-.synthesis-keywords .keyword-tag {
-    display: inline-block;
-    background-color: var(--light-bg);
-    border: 1px solid var(--card-border-color);
-    color: var(--text-muted-color);
-    padding: 0.4rem 1rem;
-    border-radius: 50px;
-    margin: 0.25rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: all 0.2s ease-in-out;
-}
-.synthesis-keywords .keyword-tag:hover {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
-}
+        /*
+        ==========================================================================
+        === MOBILE RESPONSIVE STYLES (NEW & IMPROVED) ===
+        ==========================================================================
+        */
+
+        /* For tablets and larger phones (e.g., landscape) */
+        @media (max-width: 991.98px) {
+            .featured-story {
+                flex-direction: column;
+            }
+            .featured-story-image {
+                flex-basis: auto; /* Reset flex-basis for stacking */
+                width: 100%;
+                min-height: 300px;
+            }
+            .featured-story-content {
+                flex-basis: auto; /* Reset flex-basis for stacking */
+                padding: 2rem; /* Adjust padding for tablet */
+            }
+            .featured-story-content h2 {
+                font-size: 2rem;
+            }
+        }
+
+        /* For standard mobile phones */
+        @media (max-width: 767.98px) {
+            body {
+                padding-top: 165px; /* NEW: Adjusted for new 2-row navbar + category nav height */
+            }
+
+            .alert-top {
+                top: 120px; /* Position below main nav */
+                width: 90%;
+                max-width: 500px;
+            }
+
+            .navbar-main .container {
+                max-width: 100%; /* Use full width for more space */
+            }
+
+            .navbar-content-wrapper {
+                flex-wrap: wrap;
+                row-gap: 0.75rem; /* Add vertical space between navbar rows */
+            }
+
+            .navbar-left {
+                flex-grow: 1; /* Allow brand to take space, pushing user menu to the right */
+                text-align: left;
+            }
+
+            .navbar-center {
+                order: 3; /* Move search bar to the second row */
+                width: 100%;
+                min-width: 0;
+            }
+
+            .navbar-right {
+                position: static; /* Remove absolute positioning for robust layout */
+            }
+
+            .category-nav {
+                top: 112px; /* Position below the new 2-row main navbar */
+            }
+
+            .page-header-static h1 {
+                font-size: 2.2rem;
+            }
+            
+            .featured-story-image {
+                min-height: 220px; /* Further adjust height for phone screens */
+            }
+            .featured-story-content {
+                padding: 1.5rem;
+            }
+            .featured-story-content h2 {
+                font-size: 1.6rem;
+            }
+
+            .footer-section {
+                text-align: center; /* Center footer content on mobile */
+            }
+            .footer-links {
+                align-items: center;
+            }
+            .social-links {
+                justify-content: center;
+            }
+            .footer-links a:hover {
+                padding-left: 0; /* Disable hover effect when centered */
+            }
+        }
+
+        /* For smaller mobile phones */
+        @media (max-width: 575.98px) {
+            body {
+                font-size: 0.95rem; /* Adjust base font size for better readability */
+            }
+
+            .navbar-brand-custom {
+                font-size: 1.5rem; /* Make brand slightly smaller */
+            }
+            .navbar-brand-custom .brand-icon {
+                font-size: 1.6rem;
+            }
+
+            .comment-replies {
+                margin-left: 1.25rem; /* Reduce comment indentation */
+                padding-left: 1rem;
+            }
+            .comment-container {
+                gap: 0.75rem;
+            }
+            .comment-avatar {
+                width: 40px;
+                height: 40px;
+            }
+            .comment-replies .comment-avatar {
+                width: 35px;
+                height: 35px;
+            }
+
+            .profile-avatar {
+                width: 100px;
+                height: 100px;
+                font-size: 3rem;
+            }
+            .profile-header-card h2 {
+                font-size: 1.5rem;
+            }
+            .profile-stats {
+                gap: 1rem;
+                flex-wrap: wrap; /* Allow stats to wrap if needed */
+            }
+            
+            .auth-card {
+                margin: 1rem auto; /* Reduce vertical margin */
+                border: none; /* Remove border/shadow for a more 'app-like' feel */
+                box-shadow: none;
+            }
+
+            /* Reduce padding on major components for more content space */
+            .ai-synthesis-card, .auth-body, .static-content-container,
+            .profile-header-card, .article-body, .article-full-content-wrapper {
+                padding: 1.5rem;
+            }
+            
+            .article-full-content-wrapper {
+                padding: 1.5rem 1rem;
+            }
+
+            .synthesis-text {
+                font-size: 1.05rem;
+            }
+        }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -2044,8 +2180,6 @@ body.dark-mode .social-login-buttons .btn {
 </body>
 </html>
 """
-
-# In Rev14.py, replace your entire INDEX_HTML_TEMPLATE variable with this final, correct version.
 
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
