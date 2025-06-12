@@ -1386,7 +1386,7 @@ BASE_HTML_TEMPLATE = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Briefly{% endblock %}</title>
+    <title>{% block title %}BrieflyAI{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1809,7 +1809,7 @@ BASE_HTML_TEMPLATE = """
                     <div class="navbar-left">
                         <a class="navbar-brand-custom" href="{{ url_for('index') }}">
                             <i class="fas fa-bolt-lightning brand-icon"></i>
-                            <span>Briefly</span>
+                            <span>BrieflyAI</span>
                         </a>
                     </div>
                     <div class="navbar-center">
@@ -1833,7 +1833,7 @@ BASE_HTML_TEMPLATE = """
 
     <div class="offcanvas offcanvas-end" tabindex="-1" id="mainOffcanvas" aria-labelledby="mainOffcanvasLabel">
         <div class="offcanvas-header">
-            <h5 class="offcanvas-title" id="mainOffcanvasLabel">Briefly Menu</h5>
+            <h5 class="offcanvas-title" id="mainOffcanvasLabel">BrieflyAI Menu</h5>
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body d-flex flex-column">
@@ -1953,7 +1953,7 @@ BASE_HTML_TEMPLATE = """
                 <div class="footer-section col-lg-4 col-md-6 mb-4">
                     <div class="d-flex align-items-center mb-2">
                         <i class="fas fa-bolt-lightning me-2" style="color:var(--secondary-light); font-size: 1.5rem;"></i>
-                        <span class="h5 mb-0" style="color:white; font-family: 'Poppins', sans-serif;">Briefly</span>
+                        <span class="h5 mb-0" style="color:white; font-family: 'Poppins', sans-serif;">BrieflyAI</span>
                     </div>
                     <p class="small text-light">Your premier source for AI summarized, India-centric news.</p>
                     <div class="social-links">
@@ -1987,7 +1987,7 @@ BASE_HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
-            <div class="copyright">&copy; 2025 Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
+            <div class="copyright">&copy; 2025 BrieflyAI. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
         </div>
     </footer>
 
@@ -2614,7 +2614,7 @@ LOGIN_HTML_TEMPLATE = """
 <div class="auth-card animate-fade-in">
     <div class="auth-header">
         <div class="brand-icon"><i class="fas fa-bolt-lightning"></i></div>
-        <h2>Welcome Back to Briefly</h2>
+        <h2>Welcome Back to BrieflyAI</h2>
     </div>
     <div class="auth-body">
         <form method="POST" action="{{ url_for('login', next=request.args.get('next')) }}">
