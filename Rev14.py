@@ -1272,6 +1272,54 @@ def vote_comment(comment_id):
         "user_reaction": user_reaction_after_vote
     }), 200
 
+# In Rev14.py, add these two new functions
+
+@app.route('/delete_comment/<int:comment_id>', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+
+    # Security Check: Ensure the logged-in user is the owner of the comment.
+    if comment.user_id != session['user_id']:
+        return jsonify({"success": False, "error": "You are not authorized to delete this comment."}), 403
+
+    try:
+        # Thanks to `cascade="all, delete-orphan"` in our Comment model's 'replies' relationship,
+        # deleting the parent comment will automatically delete all its replies from the database.
+        db.session.delete(comment)
+        db.session.commit()
+        app.logger.info(f"User {session['user_id']} deleted comment {comment_id} and its replies.")
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting comment {comment_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "A database error occurred."}), 500
+
+
+@app.route('/edit_comment/<int:comment_id>', methods=['POST'])
+@login_required
+def edit_comment(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    
+    # Security Check: Ensure the logged-in user is the owner of the comment.
+    if comment.user_id != session['user_id']:
+        return jsonify({"success": False, "error": "You are not authorized to edit this comment."}), 403
+
+    new_content = request.json.get('content', '').strip()
+    if not new_content:
+        return jsonify({"success": False, "error": "Comment content cannot be empty."}), 400
+
+    try:
+        comment.content = new_content
+        db.session.commit()
+        app.logger.info(f"User {session['user_id']} edited comment {comment_id}.")
+        # Return the new content so the frontend can display it instantly.
+        return jsonify({"success": True, "new_content": comment.content})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error editing comment {comment_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "A database error occurred."}), 500
+
 @app.route('/post_article', methods=['POST'])
 @login_required
 def post_article():
@@ -2353,6 +2401,7 @@ ARTICLE_HTML_TEMPLATE = """
     .loader { border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
     .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .edit-form-container { display: none; } /* Hide edit form by default */
 </style>
 {% endblock %}
 {% block content %}
@@ -2458,7 +2507,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 })
                 .then(res => {
                     if (res.status === 401) { throw new Error("Your session has expired. Please refresh the page and log in again."); }
-                    if (!res.ok) { throw new Error("An unknown server error occurred while posting."); }
+                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || "An unknown server error occurred."); }); }
                     return res.json();
                 })
                 .then(data => {
@@ -2495,14 +2544,66 @@ document.addEventListener('DOMContentLoaded', function () {
                 summaryContainer.innerHTML = summaryHTML;
             };
 
-            // Main event listener for all actions in the comment section
             commentSection.addEventListener('click', function(e) {
                 const target = e.target;
-                const replyBtn = target.closest('.reply-btn');
-                const cancelBtn = target.closest('.cancel-reply-btn');
-                const reactBtn = target.closest('.react-btn');
-                const reactionEmoji = target.closest('.reaction-emoji');
+                
+                const deleteBtn = target.closest('.delete-btn');
+                if (deleteBtn) {
+                    e.preventDefault();
+                    const commentId = deleteBtn.dataset.commentId;
+                    if (confirm('Are you sure you want to delete this comment? All replies will also be removed.')) {
+                        fetch(`/delete_comment/${commentId}`, { method: 'POST' })
+                            .then(res => {
+                                if (!res.ok) { return res.json().then(err => { throw new Error(err.error) }); }
+                                return res.json();
+                            })
+                            .then(data => {
+                                if (data.success) {
+                                    const commentElement = document.getElementById(`comment-${commentId}`);
+                                    const repliesCount = commentElement.querySelectorAll('.comment-thread').length;
+                                    const totalCommentsToRemove = 1 + repliesCount;
+                                    
+                                    const countEl = document.getElementById('comment-count');
+                                    countEl.textContent = Math.max(0, parseInt(countEl.textContent) - totalCommentsToRemove);
+                                    
+                                    commentElement.style.transition = 'opacity 0.5s ease';
+                                    commentElement.style.opacity = '0';
+                                    setTimeout(() => commentElement.remove(), 500);
+                                } else {
+                                    alert('Error: ' + data.error);
+                                }
+                            })
+                            .catch(err => {
+                                console.error("Delete error:", err);
+                                alert("Could not delete comment: " + err.message);
+                            });
+                    }
+                    return;
+                }
 
+                const editBtn = target.closest('.edit-btn');
+                if (editBtn) {
+                    e.preventDefault();
+                    const commentId = editBtn.dataset.commentId;
+                    const commentThread = document.getElementById(`comment-${commentId}`);
+                    const commentBody = commentThread.querySelector('.comment-body');
+                    commentBody.querySelector('.comment-content').style.display = 'none';
+                    commentBody.querySelector('.comment-actions').style.display = 'none';
+                    commentBody.querySelector('.edit-form-container').style.display = 'block';
+                    return;
+                }
+
+                const cancelEditBtn = target.closest('.cancel-edit-btn');
+                if (cancelEditBtn) {
+                    e.preventDefault();
+                    const commentBody = cancelEditBtn.closest('.comment-body');
+                    commentBody.querySelector('.comment-content').style.display = 'block';
+                    commentBody.querySelector('.comment-actions').style.display = 'flex';
+                    commentBody.querySelector('.edit-form-container').style.display = 'none';
+                    return;
+                }
+
+                const replyBtn = target.closest('.reply-btn');
                 if (replyBtn) {
                     e.preventDefault();
                     const commentId = replyBtn.dataset.commentId;
@@ -2515,13 +2616,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     return;
                 }
-
-                if (cancelBtn) {
-                    e.preventDefault();
-                    cancelBtn.closest('.reply-form-container').style.display = 'none';
-                    return;
-                }
                 
+                const reactBtn = target.closest('.react-btn');
                 if (reactBtn) {
                     e.preventDefault();
                     const commentId = reactBtn.dataset.commentId;
@@ -2533,50 +2629,89 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     return;
                 }
-                
+
+                const reactionEmoji = target.closest('.reaction-emoji');
                 if (reactionEmoji) {
                     e.preventDefault();
                     const commentId = reactionEmoji.dataset.commentId;
                     const emoji = reactionEmoji.dataset.emoji;
                     reactionEmoji.closest('.reaction-box').classList.remove('show');
-                    fetch(`{{ url_for('vote_comment', comment_id=0) }}`.replace('0', commentId), {
+                    fetch(`/vote_comment/${commentId}`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ emoji: emoji })
                     })
                     .then(res => res.json())
                     .then(data => {
-                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); }
+                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); } 
                         else { throw new Error(data.error || "Failed to vote."); }
                     })
                     .catch(err => { console.error("Reaction error:", err); alert("Error: " + err.message); });
                     return;
                 }
-
+                
                 if (!target.closest('.reaction-box') && !target.closest('.react-btn')) {
                     document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
                 }
             });
 
-            const mainCommentForm = document.getElementById('comment-form');
-            if(mainCommentForm) { mainCommentForm.addEventListener('submit', function(e) { e.preventDefault(); handleCommentSubmit(this); }); }
-            commentSection.addEventListener('submit', function(e) { if(e.target.matches('.reply-form')) { e.preventDefault(); handleCommentSubmit(e.target); } });
+            commentSection.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                if (e.target.matches('.edit-comment-form')) {
+                    const form = e.target;
+                    const commentId = form.closest('.comment-thread').id.replace('comment-', '');
+                    const newContent = form.querySelector('textarea[name="content"]').value.trim();
+                    if (!newContent) return;
+
+                    fetch(`/edit_comment/${commentId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: newContent })
+                    })
+                    .then(res => {
+                        if (!res.ok) { return res.json().then(err => { throw new Error(err.error) }); }
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            const commentBody = form.closest('.comment-body');
+                            const contentP = commentBody.querySelector('.comment-content');
+                            contentP.textContent = data.new_content;
+                            contentP.style.display = 'block';
+                            commentBody.querySelector('.comment-actions').style.display = 'flex';
+                            form.closest('.edit-form-container').style.display = 'none';
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Edit error:", err);
+                        alert("Could not save changes: " + err.message);
+                    });
+                    return;
+                }
+                
+                if (e.target.id === 'comment-form' || e.target.matches('.reply-form')) {
+                    handleCommentSubmit(e.target);
+                }
+            });
         }
 
         const bookmarkBtn = document.getElementById('bookmarkBtn');
         if (bookmarkBtn && isUserLoggedIn) {
             bookmarkBtn.addEventListener('click', function() {
-                const articleHashId = this.dataset.articleHashId; 
-                const isCommunity = this.dataset.isCommunity; 
-                const title = this.dataset.title; 
-                const sourceName = this.dataset.sourceName; 
-                const imageUrl = this.dataset.imageUrl; 
-                const description = this.dataset.description; 
+                const articleHashId = this.dataset.articleHashId;
+                const isCommunity = this.dataset.isCommunity;
+                const title = this.dataset.title;
+                const sourceName = this.dataset.sourceName;
+                const imageUrl = this.dataset.imageUrl;
+                const description = this.dataset.description;
                 const publishedAt = this.dataset.publishedAt;
                 fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt }) })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
-                        this.classList.toggle('active', data.status === 'added'); 
+                        this.classList.toggle('active', data.status === 'added');
                         this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
                     } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
                 })
@@ -2598,11 +2733,23 @@ _COMMENT_TEMPLATE = """
         <div class="comment-avatar" title="{{ comment.author.name if comment.author else 'Unknown' }}">{{ (comment.author.name[0]|upper if comment.author and comment.author.name else 'U') }}</div>
         <div class="comment-body">
             <div class="comment-header">
-                {# THE CHANGE IS HERE: The span is now an <a> tag #}
                 <a href="{{ url_for('public_profile', username=comment.author.username) }}" class="comment-author text-decoration-none">{{ comment.author.name if comment.author else 'Anonymous' }}</a>
                 <span class="comment-date">{{ comment.timestamp | to_ist }}</span>
             </div>
+
+            {# This is the main content paragraph #}
             <p class="comment-content mb-2">{{ comment.content }}</p>
+
+            {# NEW: This is the hidden form for editing the comment #}
+            <div class="edit-form-container" style="display:none;">
+                <form class="edit-comment-form">
+                    <textarea class="form-control form-control-sm mb-2" name="content" rows="3" required>{{ comment.content }}</textarea>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary cancel-edit-btn">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
             
             {% if session.user_id %}
             <div class="comment-actions">
@@ -2613,6 +2760,12 @@ _COMMENT_TEMPLATE = """
                 </div>
                 <button class="react-btn" data-comment-id="{{ comment.id }}" title="React"><i class="far fa-smile"></i> React</button>
                 <button class="reply-btn" data-comment-id="{{ comment.id }}" title="Reply"><i class="fas fa-reply"></i> Reply</button>
+                
+                {# NEW: Edit and Delete buttons, only visible to the comment owner #}
+                {% if session.user_id == comment.user_id %}
+                    <button class="edit-btn" data-comment-id="{{ comment.id }}" title="Edit"><i class="fas fa-pencil-alt"></i> Edit</button>
+                    <button class="delete-btn" data-comment-id="{{ comment.id }}" title="Delete"><i class="fas fa-trash-alt"></i> Delete</button>
+                {% endif %}
             </div>
             <div class="reply-form-container" id="reply-form-container-{{ comment.id }}" style="display:none;">
                 <form class="reply-form">
@@ -2627,6 +2780,7 @@ _COMMENT_TEMPLATE = """
             {% endif %}
 
             <div class="reaction-summary" id="reaction-summary-{{ comment.id }}">
+                {# Reaction pills will be dynamically inserted here by JS #}
             </div>
         </div>
     </div>
