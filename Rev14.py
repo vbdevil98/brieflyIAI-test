@@ -1379,7 +1379,6 @@ def ads_txt():
 # ==============================================================================
 # --- 7. HTML Templates (Stored in memory) ---
 # ==============================================================================
-
 BASE_HTML_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -1394,16 +1393,16 @@ BASE_HTML_TEMPLATE = """
     <style>
         :root {
             --primary-color: #4F46E5; --primary-light: #6366F1; --primary-dark: #4338CA; --secondary-color: #14B8A6; --secondary-light: #2DD4BF; --accent-color: #F97316; --text-color: #1F2937; --text-muted-color: #6B7280; --light-bg: #F9FAFB; --card-bg: #FFFFFF; --card-border-color: #E5E7EB; --footer-bg: #111827; --footer-text: #D1D5DB; --footer-link-hover: var(--primary-light);
-            --primary-color-rgb: 79, 70, 229; --secondary-color-rgb: 20, 184, 166;
+            --primary-color-rgb: 79, 70, 229; --secondary-color-rgb: 20, 184, 166; --text-muted-color-rgb: 107, 114, 128;
             --bookmark-active-color: var(--secondary-color);
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
             --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
         }
-        body { padding-top: 155px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
+        body { padding-top: 145px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
             --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
-            --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191;
+            --primary-color-rgb: 99, 102, 241; --secondary-color-rgb: 45, 212, 191; --text-muted-color-rgb: 156, 163, 175;
             --bookmark-active-color: var(--secondary-light);
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
@@ -1425,61 +1424,103 @@ BASE_HTML_TEMPLATE = """
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
         .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
 
-        /* === RESPONSIVE CATEGORY NAVIGATION (SLIDING ON MOBILE) === */
+        /* === RESPONSIVE CATEGORY NAVIGATION (OFFCANVAS SIDEBAR) === */
         .category-nav {
-            background: var(--card-bg);
+            background: var(--card-bg) !important;
             box-shadow: var(--shadow-sm);
             position: fixed;
-            top: 82px; /* Default desktop position */
+            top: 82px; /* Desktop position */
             width: 100%;
             z-index: 1020;
             border-bottom: 1px solid var(--card-border-color);
-            transition: background-color 0.3s ease, border-bottom-color 0.3s ease;
+            padding-top: 0.4rem;
+            padding-bottom: 0.4rem;
         }
         .category-nav .container {
-            position: relative; /* Context for the date form on desktop */
+            position: relative;
         }
-        .categories-wrapper {
+        .category-nav .navbar-toggler {
+            border-color: rgba(var(--text-muted-color-rgb, 107 114 128), 0.4);
+            color: var(--text-muted-color);
+            font-size: 0.9rem;
+            font-weight: 500;
+            padding: .35rem .75rem;
+        }
+        .category-nav .navbar-toggler:focus {
+            box-shadow: 0 0 0 0.2rem rgba(var(--primary-color-rgb), 0.3);
+        }
+        .category-nav .offcanvas-lg {
+            background-color: var(--card-bg);
+            transition: transform .3s ease-in-out;
+        }
+        .category-nav .offcanvas-header {
+            border-bottom: 1px solid var(--card-border-color);
+        }
+        .category-nav .categories-wrapper {
+            width: 100%;
             display: flex;
-            align-items: center;
-            overflow-x: auto; /* This creates the sliding bar on mobile */
-            padding: 0.4rem 0;
-            scrollbar-width: none; /* Hide scrollbar for Firefox */
-            -ms-overflow-style: none; /* Hide scrollbar for IE/Edge */
+            flex-direction: column;
+            align-items: flex-start;
         }
-        .categories-wrapper::-webkit-scrollbar {
-            display: none; /* Hide scrollbar for Chrome, Safari, Opera */
-        }
-        .category-links-container {
-            display: flex; /* Kept for containing links */
-            flex-shrink: 0; /* Prevents links from shrinking/wrapping */
-        }
-        #dateFilterForm {
-            flex-shrink: 0; /* Prevents form from shrinking */
-            margin-left: 1rem; /* Space between links and form in the scroll flow */
+        .category-nav .category-links-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
         }
         .category-link {
-            color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent;
+            color: var(--text-muted-color) !important;
+            font-weight: 600;
+            padding: 0.75rem 1rem !important;
+            border-radius: var(--border-radius-md);
+            transition: all 0.25s ease;
+            white-space: nowrap;
+            text-decoration: none;
+            margin: 0.2rem 0;
+            font-size: 1rem;
+            border: 1px solid transparent;
         }
         .category-link.active {
-            background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm);
+            background: var(--primary-color) !important;
+            color: white !important;
+            box-shadow: var(--shadow-sm);
         }
         .category-link:hover:not(.active) {
-            background: var(--light-bg) !important; color: var(--primary-color) !important;
+            background: var(--light-bg) !important;
+            color: var(--primary-color) !important;
+        }
+        #dateFilterForm {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--card-border-color);
+            width: 100%;
         }
 
-        /* DESKTOP OVERRIDES FOR CATEGORY NAV */
+        /* === DESKTOP OVERRIDES for Category Nav (when offcanvas is not active) === */
         @media (min-width: 992px) {
-            .categories-wrapper {
-                overflow-x: hidden; /* No scrolling on desktop */
-                justify-content: center; /* Center the links container */
+            .category-nav .categories-wrapper {
+                flex-direction: row;
+                align-items: center;
+                justify-content: center;
+            }
+            .category-nav .category-links-container {
+                flex-direction: row;
+                width: auto;
+            }
+            .category-link {
+                padding: 0.6rem 1.3rem !important;
+                border-radius: 50px;
+                margin: 0 0.3rem;
+                font-size: 0.9rem;
             }
             #dateFilterForm {
+                margin-top: 0;
+                padding-top: 0;
+                border-top: none;
+                width: auto;
                 position: absolute;
-                right: 0; /* Align to the right edge of the .container */
+                right: 0;
                 top: 50%;
                 transform: translateY(-50%);
-                margin-left: 0; /* Reset mobile margin */
             }
         }
         
@@ -1865,7 +1906,7 @@ BASE_HTML_TEMPLATE = """
         /* For standard mobile phones */
         @media (max-width: 767.98px) {
             body {
-                padding-top: 165px; /* NEW: Adjusted for new 2-row navbar + category nav height */
+                padding-top: 155px; /* Adjusted for new 2-row navbar + category nav height */
             }
 
             .alert-top {
@@ -2061,35 +2102,48 @@ BASE_HTML_TEMPLATE = """
             </div>
         </nav>
 
-        <nav class="category-nav">
+        <nav class="category-nav navbar navbar-expand-lg">
             <div class="container">
-                <div class="categories-wrapper">
-                    <div class="category-links-container">
-                        {% for cat_item in categories %}
-                            {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
-                            {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
-                                {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
-                            {% endif %}
-                            <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                                <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-1 d-none d-sm-inline"></i>
-                                {{ cat_item }}
-                            </a>
-                        {% endfor %}
+                <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#categoryOffcanvas" aria-controls="categoryOffcanvas" aria-expanded="false" aria-label="Toggle category navigation">
+                    <i class="fas fa-bars"></i>
+                    <span class="ms-2">Categories</span>
+                </button>
+        
+                <div class="offcanvas-lg offcanvas-start" tabindex="-1" id="categoryOffcanvas" aria-labelledby="categoryOffcanvasLabel">
+                    <div class="offcanvas-header">
+                        <h5 class="offcanvas-title" id="categoryOffcanvasLabel"><i class="fas fa-compass me-2"></i> Browse Categories</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#categoryOffcanvas" aria-label="Close"></button>
                     </div>
-                    
-                    <form id="dateFilterForm" class="ms-auto">
-                        <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
-                        <div class="input-group input-group-sm">
-                            <input type="date" id="articleDateFilter" class="form-control form-control-sm"
-                                   value="{{ current_filter_date | default('', true) }}"
-                                   aria-label="Filter by date for All Articles"
-                                   title="Filter 'All Articles' by date">
-                            <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
-                            {% if current_filter_date %}
-                            <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
-                            {% endif %}
+        
+                    <div class="offcanvas-body">
+                        <div class="categories-wrapper">
+                            <div class="category-links-container">
+                                {% for cat_item in categories %}
+                                    {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
+                                    {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
+                                        {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
+                                    {% endif %}
+                                    <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
+                                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-2"></i>
+                                        {{ cat_item }}
+                                    </a>
+                                {% endfor %}
+                            </div>
+                            <form id="dateFilterForm">
+                                <label for="articleDateFilter" class="form-label fw-medium d-lg-none mt-3">Filter 'All Articles' by date</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="date" id="articleDateFilter" class="form-control form-control-sm"
+                                           value="{{ current_filter_date | default('', true) }}"
+                                           aria-label="Filter by date for All Articles"
+                                           title="Filter 'All Articles' by date">
+                                    <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
+                                    {% if current_filter_date %}
+                                    <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
+                                    {% endif %}
+                                </div>
+                            </form>
                         </div>
-                    </form>
+                    </div>
                 </div>
             </div>
         </nav>
@@ -2231,7 +2285,6 @@ BASE_HTML_TEMPLATE = """
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
-
 """
 
 INDEX_HTML_TEMPLATE = """
