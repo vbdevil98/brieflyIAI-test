@@ -165,6 +165,27 @@ if not SCRAPER_API_KEY:
 # ==============================================================================
 # --- 4. Database Models ---
 # ==============================================================================
+
+# In Rev14.py, add this new model
+
+class ReportedArticle(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    # Foreign key to the community article that was reported
+    article_id = db.Column(db.Integer, db.ForeignKey('community_article.id', ondelete="CASCADE"), nullable=False)
+    # Foreign key to the user who filed the report
+    reporter_user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"), nullable=False)
+    # The reason for the report (optional but recommended)
+    reason = db.Column(db.String(250), nullable=True)
+    # The status of the report
+    status = db.Column(db.String(20), nullable=False, default='pending') # e.g., 'pending', 'resolved'
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Ensures a user can only report a specific article once
+    __table_args__ = (db.UniqueConstraint('article_id', 'reporter_user_id', name='_article_reporter_uc'),)
+
+    # Add a relationship back to CommunityArticle model
+    article = db.relationship('CommunityArticle', backref=db.backref('reports', lazy='dynamic'))
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -854,6 +875,46 @@ def get_sort_key(article):
     return datetime.min.replace(tzinfo=timezone.utc)
 
 # In Rev14.py, find your existing index function and REPLACE IT with this entire block.
+
+# In Rev14.py, add this new route
+
+@app.route('/report_article/<article_hash_id>', methods=['POST'])
+@login_required
+def report_article(article_hash_id):
+    # This feature is only for community articles
+    article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first_or_404()
+
+    # Check if the user has already reported this article
+    existing_report = ReportedArticle.query.filter_by(
+        article_id=article.id, 
+        reporter_user_id=session['user_id']
+    ).first()
+
+    if existing_report:
+        return jsonify({
+            "success": False, 
+            "error": "You have already reported this article."
+        }), 409 # 409 Conflict
+
+    # Create a new report record
+    new_report = ReportedArticle(
+        article_id=article.id,
+        reporter_user_id=session['user_id']
+        # You could expand this to include a reason from the request body
+    )
+    
+    try:
+        db.session.add(new_report)
+        db.session.commit()
+        app.logger.info(f"User {session['user_id']} reported article {article.id} ({article_hash_id})")
+        return jsonify({
+            "success": True, 
+            "message": "Article has been reported for review. Thank you."
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error reporting article {article.id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "A database error occurred."}), 500
 
 @app.route('/')
 @app.route('/page/<int:page>')
@@ -2411,10 +2472,24 @@ ARTICLE_HTML_TEMPLATE = """
 <article class="article-full-content-wrapper animate-fade-in">
     <div class="mb-3 d-flex justify-content-between align-items-center">
         <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
-        {% if session.user_id %}
-        <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}" data-is-community="{{ 'true' if is_community_article else 'false' }}" data-title="{{ article.title|e }}" data-source-name="{{ (article.author.name if is_community_article and article.author else article.source.name)|e }}" data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}" data-description="{{ (article.description if article.description else '')|e }}" data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}"><i class="fa-solid fa-bookmark"></i></button>
-        {% endif %}
+        
+        <!-- Wrapper for right-side action buttons -->
+        <div class="d-flex align-items-center gap-2">
+            {% if session.user_id %}
+                
+                <!-- NEW: Report Button for Community Articles -->
+                {% if is_community_article %}
+                <button id="reportBtn" class="btn btn-sm btn-outline-warning" title="Report this article for review">
+                    <i class="fas fa-flag"></i> Report
+                </button>
+                {% endif %}
+                
+                <!-- Existing Bookmark Button -->
+                <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}" data-is-community="{{ 'true' if is_community_article else 'false' }}" data-title="{{ article.title|e }}" data-source-name="{{ (article.author.name if is_community_article and article.author else article.source.name)|e }}" data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}" data-description="{{ (article.description if article.description else '')|e }}" data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}"><i class="fa-solid fa-bookmark"></i></button>
+            {% endif %}
+        </div>
     </div>
+
     <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
     <div class="article-meta-detailed d-flex align-items-center flex-wrap gap-3 text-muted small"><span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article and article.author else article.source.name }}</span><span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span></div>
     {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
@@ -2694,6 +2769,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (e.target.id === 'comment-form' || e.target.matches('.reply-form')) {
                     handleCommentSubmit(e.target);
                 }
+            });
+        }
+
+        const reportBtn = document.getElementById('reportBtn');
+        if (reportBtn) {
+            reportBtn.addEventListener('click', function() {
+                if (!confirm('Are you sure you want to report this article for review?')) {
+                    return;
+                }
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reporting...';
+                fetch(`/report_article/${articleHashIdGlobal}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(res => res.json().then(data => ({ ok: res.ok, status: res.status, data })))
+                .then(({ ok, status, data }) => {
+                    if (ok) {
+                        this.innerHTML = '<i class="fas fa-check"></i> Reported';
+                        alert(data.message);
+                    } else {
+                        this.disabled = false;
+                        this.innerHTML = '<i class="fas fa-flag"></i> Report';
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(err => {
+                    console.error("Report error:", err);
+                    alert("A network error occurred. Please try again.");
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-flag"></i> Report';
+                });
             });
         }
 
