@@ -1407,7 +1407,6 @@ def post_article():
 @login_required
 def delete_community_article(article_hash_id):
     # Security Check: Ensure the user has the admin flag from the session.
-    # The username "VBDEVIL" is checked case-insensitively on login.
     if not session.get('is_admin') or session.get('username') != 'vbdevil':
         return jsonify({"success": False, "error": "Administrator access required."}), 403
 
@@ -1417,8 +1416,7 @@ def delete_community_article(article_hash_id):
         return jsonify({"success": False, "error": "Article not found."}), 404
 
     try:
-        # The 'cascade' option in the User and CommunityArticle models will handle
-        # the deletion of related comments, reports, and bookmarks.
+        # The 'cascade' option in the models will handle related deletions.
         db.session.delete(article)
         db.session.commit()
         app.logger.info(f"Admin user 'vbdevil' deleted community article {article.id} ({article_hash_id})")
@@ -1428,7 +1426,7 @@ def delete_community_article(article_hash_id):
         db.session.rollback()
         app.logger.error(f"Error deleting community article {article.id} by admin: {e}", exc_info=True)
         return jsonify({"success": False, "error": "A database error occurred during deletion."}), 500
-
+        
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if 'user_id' in session: return redirect(url_for('index'))
@@ -1448,31 +1446,29 @@ def register():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if 'user_id' in session: return redirect(url_for('index'))
-    if request.method == 'POST':
-        username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password_hash, password):
-            session.permanent = True
-            session['user_id'] = user.id
-            session['user_name'] = user.name
-            # Store username for easy access in templates/routes
-            session['username'] = user.username
-            
-            # <<< START: ADMIN IMPLEMENTATION >>>
-            # Check if the logged-in user is the designated admin
-            if user.username == "vbdevil":
-                session['is_admin'] = True
-            else:
-                session['is_admin'] = False
-            # <<< END: ADMIN IMPLEMENTATION >>>
+    if 'user_id' in session: return redirect(url_for('index'))
+    if request.method == 'POST':
+        username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session.permanent = True
+            session['user_id'] = user.id
+            session['user_name'] = user.name
+            # Store username for easy access in templates/routes
+            session['username'] = user.username
+            
+            # Check if the logged-in user is the designated admin
+            if user.username == "vbdevil":
+                session['is_admin'] = True
+            else:
+                session['is_admin'] = False
 
-            flash(f"Welcome back, {user.name}!", "success")
-            next_url = request.args.get('next')
-            session.pop('previous_list_page', None) 
-            return redirect(next_url or url_for('index'))
-        else: flash('Invalid username or password.', 'danger')
-    return render_template("LOGIN_HTML_TEMPLATE")
+            flash(f"Welcome back, {user.name}!", "success")
+            next_url = request.args.get('next')
+            session.pop('previous_list_page', None) 
+            return redirect(next_url or url_for('index'))
+        else: flash('Invalid username or password.', 'danger')
+    return render_template("LOGIN_HTML_TEMPLATE")
 
 @app.route('/logout')
 def logout(): session.clear(); flash("You have been successfully logged out.", "info"); return redirect(url_for('index'))
