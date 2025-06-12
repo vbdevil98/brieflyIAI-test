@@ -185,9 +185,10 @@ class ReportedArticle(db.Model):
     # Ensures a user can only report a specific article once
     __table_args__ = (db.UniqueConstraint('article_id', 'reporter_user_id', name='_article_reporter_uc'),)
 
-    # Add a relationship back to CommunityArticle model
-    article = db.relationship('CommunityArticle', backref=db.backref('reports', lazy='dynamic'))
-
+    # --- THIS IS THE CORRECTED PART ---
+    # The backref now tells SQLAlchemy to delete any associated reports when an article is deleted.
+    article = db.relationship('CommunityArticle', backref=db.backref('reports', lazy='dynamic', cascade="all, delete-orphan"))
+    
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
