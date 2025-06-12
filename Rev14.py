@@ -969,7 +969,7 @@ def search_results(page=1):
 
     app.logger.info(f"Performing LIVE API search for query: '{query_str}'")
     
-    # --- NEW: Live Search Logic ---
+    # --- Live Search Logic ---
     api_articles = []
     if newsapi:
         try:
