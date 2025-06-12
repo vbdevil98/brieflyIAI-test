@@ -1398,7 +1398,7 @@ BASE_HTML_TEMPLATE = """
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
             --border-radius-sm: 0.375rem; --border-radius-md: 0.5rem; --border-radius-lg: 0.75rem;
         }
-        body { padding-top: 145px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
+        body { padding-top: 85px; font-family: 'Inter', sans-serif; line-height: 1.65; color: var(--text-color); background-color: var(--light-bg); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
         .main-content { flex-grow: 1; }
         body.dark-mode {
             --primary-color: #6366F1; --primary-light: #818CF8; --primary-dark: #4F46E5; --secondary-color: #2DD4BF; --secondary-light: #5EEAD4; --accent-color: #FB923C; --text-color: #F9FAFB; --text-muted-color: #9CA3AF; --light-bg: #111827; --card-bg: #1F2937; --card-border-color: #374151; --footer-bg: #000000; --footer-text: #9CA3AF;
@@ -1406,8 +1406,8 @@ BASE_HTML_TEMPLATE = """
             --bookmark-active-color: var(--secondary-light);
         }
         h1, h2, h3, h4, h5, .auth-title, .profile-card h2, .article-title-main, .modal-title { font-family: 'Poppins', sans-serif; font-weight: 700; }
-        .alert-top { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
-        .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; }
+        .alert-top { position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 2050; min-width:320px; text-align:center; box-shadow: var(--shadow-lg); border-radius: var(--border-radius-md); }
+        .navbar-main { background-color: var(--primary-color); padding: 0.75rem 0; box-shadow: var(--shadow-md); transition: background-color 0.3s ease; z-index: 1040; position: fixed; top: 0; width: 100%;}
         .navbar-content-wrapper { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; }
         .navbar-left { flex-shrink: 0; }
         .navbar-center { flex-grow: 1; min-width: 150px; max-width: 550px; }
@@ -1422,107 +1422,28 @@ BASE_HTML_TEMPLATE = """
         .header-controls { display: flex; gap: 0.8rem; align-items: center; }
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
-        .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
-
-        /* === RESPONSIVE CATEGORY NAVIGATION (OFFCANVAS SIDEBAR) === */
-        .category-nav {
-            background: var(--card-bg) !important;
-            box-shadow: var(--shadow-sm);
-            position: fixed;
-            top: 82px; /* Desktop position */
-            width: 100%;
-            z-index: 1020;
-            border-bottom: 1px solid var(--card-border-color);
-            padding-top: 0.4rem;
-            padding-bottom: 0.4rem;
-        }
-        .category-nav .container {
-            position: relative;
-        }
-        .category-nav .navbar-toggler {
-            border-color: rgba(var(--text-muted-color-rgb, 107 114 128), 0.4);
-            color: var(--text-muted-color);
-            font-size: 0.9rem;
-            font-weight: 500;
-            padding: .35rem .75rem;
-        }
-        .category-nav .navbar-toggler:focus {
-            box-shadow: 0 0 0 0.2rem rgba(var(--primary-color-rgb), 0.3);
-        }
-        .category-nav .offcanvas-lg {
-            background-color: var(--card-bg);
-            transition: transform .3s ease-in-out;
-        }
-        .category-nav .offcanvas-header {
-            border-bottom: 1px solid var(--card-border-color);
-        }
-        .category-nav .categories-wrapper {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-        }
-        .category-nav .category-links-container {
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-        }
-        .category-link {
-            color: var(--text-muted-color) !important;
-            font-weight: 600;
-            padding: 0.75rem 1rem !important;
-            border-radius: var(--border-radius-md);
-            transition: all 0.25s ease;
-            white-space: nowrap;
-            text-decoration: none;
-            margin: 0.2rem 0;
-            font-size: 1rem;
-            border: 1px solid transparent;
-        }
-        .category-link.active {
-            background: var(--primary-color) !important;
-            color: white !important;
-            box-shadow: var(--shadow-sm);
-        }
-        .category-link:hover:not(.active) {
-            background: var(--light-bg) !important;
-            color: var(--primary-color) !important;
-        }
-        #dateFilterForm {
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--card-border-color);
-            width: 100%;
-        }
-
-        /* === DESKTOP OVERRIDES for Category Nav (when offcanvas is not active) === */
-        @media (min-width: 992px) {
-            .category-nav .categories-wrapper {
-                flex-direction: row;
-                align-items: center;
-                justify-content: center;
-            }
-            .category-nav .category-links-container {
-                flex-direction: row;
-                width: auto;
-            }
-            .category-link {
-                padding: 0.6rem 1.3rem !important;
-                border-radius: 50px;
-                margin: 0 0.3rem;
-                font-size: 0.9rem;
-            }
-            #dateFilterForm {
-                margin-top: 0;
-                padding-top: 0;
-                border-top: none;
-                width: auto;
-                position: absolute;
-                right: 0;
-                top: 50%;
-                transform: translateY(-50%);
-            }
-        }
+       
+        /* === UNIFIED OFFCANVAS SIDEBAR === */
+        .offcanvas { background-color: #111827; color: var(--footer-text); z-index: 1045; }
+        body.dark-mode .offcanvas { background-color: var(--footer-bg); }
+        .offcanvas-header { border-bottom-color: #374151 !important; }
+        .offcanvas-header .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
+        .sidebar-section { margin-bottom: 1.5rem; }
+        .sidebar-heading { font-size: 0.8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted-color); margin-bottom: 0.75rem; font-weight: 600; }
+        .sidebar-btn { display: flex; align-items: center; padding: 0.75rem 1rem; width: 100%; text-align: left; background-color: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; text-decoration: none; border-radius: var(--border-radius-md); transition: all 0.2s ease; }
+        .sidebar-btn:hover { background-color: rgba(255,255,255,0.1); border-color: var(--primary-light); color: white; }
+        .sidebar-avatar { width: 40px; height: 40px; border-radius: 50%; background-color: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.2rem; }
+        .offcanvas .dropdown-toggle { color: white; }
+        .offcanvas .dropdown-toggle::after { color: white; }
+        .offcanvas .dropdown-menu { background-color: #374151; border-color: #4B5563;}
+        .offcanvas .dropdown-item { color: var(--footer-text); }
+        .offcanvas .dropdown-item:hover { background-color: var(--primary-color); color: white; }
+        .offcanvas .nav-link { padding: 0.6rem 1rem; font-weight: 500; border-radius: var(--border-radius-sm); transition: background-color 0.2s ease, color 0.2s ease; color: var(--footer-text) !important; }
+        .offcanvas .nav-link.active { background-color: var(--primary-color); color: white !important; }
+        .offcanvas .nav-link:not(.active):hover { background-color: rgba(255,255,255,0.1); color: white !important; }
+        #dateFilterForm .form-control { background-color: #374151; border-color: #4B5563; color: white; }
+        #dateFilterForm .form-control:focus { background-color: #374151; border-color: var(--primary-color); box-shadow: none; color: white; }
+        #dateFilterForm .btn-primary { background-color: var(--primary-color); border-color: var(--primary-color); }
         
         .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
@@ -1599,6 +1520,7 @@ BASE_HTML_TEMPLATE = """
         .bookmark-btn.active { color: var(--bookmark-active-color); transform: scale(1.1); }
         .bookmark-btn:hover { color: var(--secondary-light); }
         .article-card .bookmark-btn { font-size: 1.3rem; }
+        .bookmark-btn:focus { outline: none; box-shadow: none; }
         
         /* === COMMENT SECTION STYLES (IMPROVED) === */
         .comment-section h3 { padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border-color); }
@@ -1628,411 +1550,10 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-
-        /* === FINAL UI FIXES (INCLUDED) === */
-        .navbar-main { z-index: 1040; }
-        .header-controls .dropdown { position: static; }
-        .dropdown-menu { z-index: 1041; }
-        .bookmark-btn:focus { outline: none; box-shadow: none; }
-
-        /* === FEATURED STORY SECTION === */
-        .featured-story {
-            background-color: var(--card-bg);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow-lg);
-            margin-bottom: 2.5rem;
-            overflow: hidden;
-            display: flex;
-            border: 1px solid var(--card-border-color);
-        }
-        .featured-story-image {
-            flex: 0 0 55%;
-            background-size: cover;
-            background-position: center;
-            min-height: 450px;
-        }
-        .featured-story-content {
-            flex: 0 0 45%;
-            padding: 2.5rem;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-        .featured-story-content .meta-item {
-            font-size: 0.9rem;
-        }
-        .featured-story-content h2 {
-            font-size: 2.2rem;
-            line-height: 1.3;
-            margin: 1rem 0;
-        }
-        .featured-story-content h2 a {
-            color: var(--text-color);
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-        .featured-story-content h2 a:hover {
-            color: var(--primary-color);
-        }
-        .featured-story-content .description {
-            font-size: 1.05rem;
-            color: var(--text-muted-color);
-            margin-bottom: 2rem;
-        }
-        .featured-story-content .read-more-btn {
-            background-color: var(--primary-color);
-            color: white;
-            padding: 0.8rem 1.5rem;
-            text-decoration: none;
-            border-radius: 50px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            align-self: flex-start; /* Button does not stretch */
-        }
-        .featured-story-content .read-more-btn:hover {
-            background-color: var(--primary-dark);
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-md);
-        }
-
-        /* === UPGRADED AUTHENTICATION PAGES UI === */
-        .body-auth {
-            background-color: var(--light-bg);
-            background-image: radial-gradient(var(--card-border-color) 1px, transparent 1px);
-            background-size: 20px 20px;
-        }
-        body.dark-mode .body-auth {
-            background-image: radial-gradient(#2c3341 1px, transparent 1px);
-        }
-        .auth-card {
-            max-width: 450px;
-            margin: 2rem auto;
-            background: var(--card-bg);
-            border-radius: var(--border-radius-lg);
-            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-            border: 1px solid var(--card-border-color);
-            overflow: hidden;
-        }
-        .auth-header {
-            padding: 2rem;
-            background-color: var(--primary-color);
-            text-align: center;
-            border-bottom: 5px solid var(--secondary-color);
-        }
-        .auth-header .brand-icon {
-            font-size: 2.5rem;
-            color: var(--secondary-light);
-        }
-        .auth-header h2 {
-            color: white;
-            font-weight: 600;
-            margin-top: 0.5rem;
-            margin-bottom: 0;
-            font-size: 1.5rem;
-        }
-        .auth-body {
-            padding: 2.5rem;
-        }
-        /* This vertically centers the icon relative to the input box height */
-        .input-group-icon .input-icon {
-            position: absolute;
-            left: 1rem;
-            top: 0;
-            bottom: 0;
-            margin: auto 0;
-            height: 1em; /* Intrinsic height of the icon */
-            color: var(--text-muted-color);
-            pointer-events: none; /* Make icon non-clickable */
-        }
-        .input-group-icon .form-control {
-            padding-left: 2.8rem; /* Make room for the icon */
-            height: 50px;
-        }
-        .auth-body .btn-primary {
-            padding: 0.8rem;
-            font-weight: 600;
-            font-size: 1rem;
-            border-radius: var(--border-radius-md);
-        }
-        .auth-footer {
-            padding: 1.5rem;
-            background-color: var(--light-bg);
-            text-align: center;
-            border-top: 1px solid var(--card-border-color);
-        }
-        body.dark-mode .auth-footer {
-            background-color: var(--footer-bg);
-        }
-        .social-login-divider {
-            display: flex;
-            align-items: center;
-            text-align: center;
-            color: var(--text-muted-color);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            margin: 1.5rem 0;
-        }
-        .social-login-divider::before,
-        .social-login-divider::after {
-            content: '';
-            flex: 1;
-            border-bottom: 1px solid var(--card-border-color);
-        }
-        .social-login-divider:not(:empty)::before {
-            margin-right: .5em;
-        }
-        .social-login-divider:not(:empty)::after {
-            margin-left: .5em;
-        }
-        .social-login-buttons .btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            font-size: 0.9rem;
-            padding: 0.6rem;
-            border-color: var(--card-border-color);
-            color: var(--text-color);
-        }
-        body.dark-mode .social-login-buttons .btn {
-            color: var(--text-color);
-        }
-        .social-login-buttons .btn:hover {
-            background-color: var(--light-bg);
-        }
-        .social-login-buttons .btn i {
-            font-size: 1.2rem;
-        }
-        .fa-google { color: #DB4437; }
-        .fa-facebook { color: #4267B2; }
-
-        /* === AI DAILY SYNTHESIS COMPONENT === */
-        .ai-synthesis-card {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border-color);
-            border-radius: var(--border-radius-lg);
-            padding: 2rem;
-            margin-bottom: 2.5rem;
-            box-shadow: var(--shadow-lg);
-            position: relative;
-            overflow: hidden;
-        }
-        .ai-synthesis-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
-                              linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
-            background-size: 20px 20px;
-            opacity: 0.5;
-        }
-        .synthesis-header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-            position: relative;
-        }
-        .synthesis-header i {
-            font-size: 2rem;
-            color: var(--primary-color);
-        }
-        .synthesis-header h2 {
-            font-size: 1.5rem;
-            margin-top: 0.5rem;
-        }
-        .synthesis-text {
-            font-size: 1.15rem;
-            line-height: 1.7;
-            text-align: center;
-            color: var(--text-color);
-            position: relative;
-            font-family: 'Inter', serif;
-        }
-        .synthesis-keywords {
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--card-border-color);
-            text-align: center;
-            position: relative;
-        }
-        .synthesis-keywords .keyword-tag {
-            display: inline-block;
-            background-color: var(--light-bg);
-            border: 1px solid var(--card-border-color);
-            color: var(--text-muted-color);
-            padding: 0.4rem 1rem;
-            border-radius: 50px;
-            margin: 0.25rem;
-            font-size: 0.9rem;
-            font-weight: 500;
-            text-decoration: none;
-            transition: all 0.2s ease-in-out;
-        }
-        .synthesis-keywords .keyword-tag:hover {
-            background-color: var(--primary-color);
-            color: white;
-            border-color: var(--primary-color);
-            transform: translateY(-2px);
-        }
-
-
-        /*
-        ==========================================================================
-        === MOBILE RESPONSIVE STYLES (NEW & IMPROVED) ===
-        ==========================================================================
-        */
-
-        /* For tablets and larger phones (e.g., landscape) */
-        @media (max-width: 991.98px) {
-            .featured-story {
-                flex-direction: column;
-            }
-            .featured-story-image {
-                flex-basis: auto; /* Reset flex-basis for stacking */
-                width: 100%;
-                min-height: 300px;
-            }
-            .featured-story-content {
-                flex-basis: auto; /* Reset flex-basis for stacking */
-                padding: 2rem; /* Adjust padding for tablet */
-            }
-            .featured-story-content h2 {
-                font-size: 2rem;
-            }
-        }
-
-        /* For standard mobile phones */
-        @media (max-width: 767.98px) {
-            body {
-                padding-top: 155px; /* Adjusted for new 2-row navbar + category nav height */
-            }
-
-            .alert-top {
-                top: 120px; /* Position below main nav */
-                width: 90%;
-                max-width: 500px;
-            }
-
-            .navbar-main .container {
-                max-width: 100%; /* Use full width for more space */
-            }
-
-            .navbar-content-wrapper {
-                flex-wrap: wrap;
-                row-gap: 0.75rem; /* Add vertical space between navbar rows */
-            }
-
-            .navbar-left {
-                flex-grow: 1; /* Allow brand to take space, pushing user menu to the right */
-                text-align: left;
-            }
-
-            .navbar-center {
-                order: 3; /* Move search bar to the second row */
-                width: 100%;
-                min-width: 0;
-            }
-
-            .navbar-right {
-                position: static; /* Remove absolute positioning for robust layout */
-            }
-
-            .category-nav {
-                top: 112px; /* Position below the new 2-row main navbar */
-            }
-
-            .page-header-static h1 {
-                font-size: 2.2rem;
-            }
-            
-            .featured-story-image {
-                min-height: 220px; /* Further adjust height for phone screens */
-            }
-            .featured-story-content {
-                padding: 1.5rem;
-            }
-            .featured-story-content h2 {
-                font-size: 1.6rem;
-            }
-
-            .footer-section {
-                text-align: center; /* Center footer content on mobile */
-            }
-            .footer-links {
-                align-items: center;
-            }
-            .social-links {
-                justify-content: center;
-            }
-            .footer-links a:hover {
-                padding-left: 0; /* Disable hover effect when centered */
-            }
-        }
-
-        /* For smaller mobile phones */
-        @media (max-width: 575.98px) {
-            body {
-                font-size: 0.95rem; /* Adjust base font size for better readability */
-            }
-
-            .navbar-brand-custom {
-                font-size: 1.5rem; /* Make brand slightly smaller */
-            }
-            .navbar-brand-custom .brand-icon {
-                font-size: 1.6rem;
-            }
-
-            .comment-replies {
-                margin-left: 1.25rem; /* Reduce comment indentation */
-                padding-left: 1rem;
-            }
-            .comment-container {
-                gap: 0.75rem;
-            }
-            .comment-avatar {
-                width: 40px;
-                height: 40px;
-            }
-            .comment-replies .comment-avatar {
-                width: 35px;
-                height: 35px;
-            }
-
-            .profile-avatar {
-                width: 100px;
-                height: 100px;
-                font-size: 3rem;
-            }
-            .profile-header-card h2 {
-                font-size: 1.5rem;
-            }
-            .profile-stats {
-                gap: 1rem;
-                flex-wrap: wrap; /* Allow stats to wrap if needed */
-            }
-            
-            .auth-card {
-                margin: 1rem auto; /* Reduce vertical margin */
-                border: none; /* Remove border/shadow for a more 'app-like' feel */
-                box-shadow: none;
-            }
-
-            /* Reduce padding on major components for more content space */
-            .ai-synthesis-card, .auth-body, .static-content-container,
-            .profile-header-card, .article-body, .article-full-content-wrapper {
-                padding: 1.5rem;
-            }
-            
-            .article-full-content-wrapper {
-                padding: 1.5rem 1rem;
-            }
-
-            .synthesis-text {
-                font-size: 1.05rem;
-            }
-        }
+        .featured-story, .ai-synthesis-card { display: none; }
+        @media (min-width: 768px) { .featured-story, .ai-synthesis-card { display: flex; }}
+        
+        @media (max-width: 767.98px) { body { padding-top: 70px; } .navbar-center { display: none; } .navbar-left { flex-grow: 1; } }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -2045,6 +1566,107 @@ BASE_HTML_TEMPLATE = """
     </script>
 </head>
 <body class="{{ request.cookies.get('darkMode', 'disabled') }}{% block body_class %}{% endblock %}">
+    
+    <header>
+        <nav class="navbar-main">
+            <div class="container">
+                <div class="navbar-content-wrapper">
+                    <div class="navbar-left">
+                        <a class="navbar-brand-custom" href="{{ url_for('index') }}">
+                            <i class="fas fa-bolt-lightning brand-icon"></i>
+                            <span class="d-none d-sm-inline">Briefly</span>
+                        </a>
+                    </div>
+                    <div class="navbar-center">
+                        <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
+                            <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
+                            <i class="fas fa-search search-icon"></i>
+                        </form>
+                    </div>
+                    <div class="navbar-right">
+                        <div class="header-controls">
+                            <button class="header-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainOffcanvas" aria-controls="mainOffcanvas">
+                                <i class="fas fa-bars"></i>
+                                <span class="d-none d-sm-inline ms-1">Menu</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="mainOffcanvas" aria-labelledby="mainOffcanvasLabel">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="mainOffcanvasLabel">Briefly Menu</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body d-flex flex-column">
+
+            <div class="sidebar-section">
+                {% if session.user_id %}
+                    <div class="dropdown">
+                        <a href="#" class="sidebar-btn dropdown-toggle" id="offcanvasUserDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <div class="sidebar-avatar">{{ session.user_name[0]|upper }}</div>
+                            <strong class="ms-3">{{ session.user_name|truncate(20) }}</strong>
+                        </a>
+                        <ul class="dropdown-menu shadow" aria-labelledby="offcanvasUserDropdown">
+                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card fa-fw me-2"></i>Profile</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt fa-fw me-2"></i>Logout</a></li>
+                        </ul>
+                    </div>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="sidebar-btn">
+                        <i class="fas fa-sign-in-alt fa-fw me-2"></i> Login / Register
+                    </a>
+                {% endif %}
+            </div>
+
+            <div class="sidebar-section">
+                 <button class="sidebar-btn dark-mode-toggle w-100">
+                    <i class="fas fa-moon fa-fw me-2"></i> <span class="theme-text">Dark Mode</span>
+                 </button>
+            </div>
+            
+            <hr class="my-2">
+
+            <div class="sidebar-section flex-grow-1">
+                <h6 class="sidebar-heading">Categories</h6>
+                <ul class="nav nav-pills flex-column mb-auto">
+                    {% for cat_item in categories %}
+                        {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
+                        {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
+                            {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
+                        {% endif %}
+                        <li class="nav-item">
+                            <a href="{{ url_for('index', **cat_url_params) }}" class="nav-link {% if selected_category == cat_item %}active{% endif %}">
+                                <i class="fas fa-fw fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-2"></i>
+                                {{ cat_item }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <hr class="my-2">
+
+            <div class="sidebar-section">
+                <h6 class="sidebar-heading">Filter by Date</h6>
+                <form id="dateFilterForm" class="mt-2">
+                    <label for="articleDateFilter" class="visually-hidden">Filter articles by date</label>
+                    <div class="input-group">
+                        <input type="date" id="articleDateFilter" class="form-control" title="Filter 'All Articles' by date" value="{{ current_filter_date | default('', true) }}">
+                        <button class="btn btn-primary" type="submit" title="Apply Date Filter">Go</button>
+                    </div>
+                     {% if current_filter_date %}
+                        <button class="btn btn-sm btn-outline-danger mt-2 w-100" type="button" id="clearDateFilter">Clear Date Filter</button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="alert-placeholder">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -2057,97 +1679,6 @@ BASE_HTML_TEMPLATE = """
             {% endif %}
         {% endwith %}
     </div>
-
-    <header class="fixed-top">
-        <nav class="navbar-main">
-            <div class="container">
-                <div class="navbar-content-wrapper">
-                    <div class="navbar-left">
-                        <a class="navbar-brand-custom" href="{{ url_for('index') }}">
-                            <i class="fas fa-bolt-lightning brand-icon"></i>
-                            <span>Briefly</span>
-                        </a>
-                    </div>
-                    <div class="navbar-center">
-                        <form action="{{ url_for('search_results') }}" method="GET" class="search-container">
-                            <input type="search" name="query" class="form-control navbar-search" placeholder="Search news articles..." value="{{ request.args.get('query', '') }}">
-                            <i class="fas fa-search search-icon"></i>
-                            <button type="submit" class="d-none">Search</button>
-                        </form>
-                    </div>
-                    <div class="navbar-right">
-                        <div class="header-controls">
-                            <button class="header-btn dark-mode-toggle" aria-label="Toggle dark mode" title="Toggle Dark Mode">
-                                <i class="fas fa-moon"></i>
-                            </button>
-                            {% if session.user_id %}
-                            <div class="dropdown">
-                                <button class="header-btn dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="User Menu">
-                                    <i class="fas fa-user-circle"></i> <span class="d-none d-md-inline">Hi, {{ session.user_name|truncate(15) }}!</span>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                                    <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-card me-2"></i>Profile</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
-                                </ul>
-                            </div>
-                            {% else %}
-                            <a href="{{ url_for('login') }}" class="header-btn" title="Login/Register">
-                                <i class="fas fa-user"></i> <span class="d-none d-sm-inline">Login</span>
-                            </a>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </nav>
-
-        <nav class="category-nav navbar navbar-expand-lg">
-            <div class="container">
-                <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#categoryOffcanvas" aria-controls="categoryOffcanvas" aria-expanded="false" aria-label="Toggle category navigation">
-                    <i class="fas fa-bars"></i>
-                    <span class="ms-2">Categories</span>
-                </button>
-        
-                <div class="offcanvas-lg offcanvas-start" tabindex="-1" id="categoryOffcanvas" aria-labelledby="categoryOffcanvasLabel">
-                    <div class="offcanvas-header">
-                        <h5 class="offcanvas-title" id="categoryOffcanvasLabel"><i class="fas fa-compass me-2"></i> Browse Categories</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#categoryOffcanvas" aria-label="Close"></button>
-                    </div>
-        
-                    <div class="offcanvas-body">
-                        <div class="categories-wrapper">
-                            <div class="category-links-container">
-                                {% for cat_item in categories %}
-                                    {% set cat_url_params = {'category_name': cat_item, 'page': 1} %}
-                                    {% if cat_item == 'All Articles' and selected_category == 'All Articles' and request.args.get('filter_date') %}
-                                        {% set _ = cat_url_params.update({'filter_date': request.args.get('filter_date')}) %}
-                                    {% endif %}
-                                    <a href="{{ url_for('index', **cat_url_params) }}" class="category-link {% if selected_category == cat_item %}active{% endif %}">
-                                        <i class="fas fa-{% if cat_item == 'All Articles' %}globe-americas{% elif cat_item == 'Popular Stories' %}fire-alt{% elif cat_item == "Yesterday's Headlines" %}history{% elif cat_item == 'Community Hub' %}users{% endif %} me-2"></i>
-                                        {{ cat_item }}
-                                    </a>
-                                {% endfor %}
-                            </div>
-                            <form id="dateFilterForm">
-                                <label for="articleDateFilter" class="form-label fw-medium d-lg-none mt-3">Filter 'All Articles' by date</label>
-                                <div class="input-group input-group-sm">
-                                    <input type="date" id="articleDateFilter" class="form-control form-control-sm"
-                                           value="{{ current_filter_date | default('', true) }}"
-                                           aria-label="Filter by date for All Articles"
-                                           title="Filter 'All Articles' by date">
-                                    <button class="btn btn-outline-secondary btn-sm" type="submit" title="Apply Date Filter" style="padding-left: 0.5rem; padding-right: 0.5rem;">Go</button>
-                                    {% if current_filter_date %}
-                                    <button class="btn btn-outline-danger btn-sm" type="button" id="clearDateFilter" title="Clear Date Filter"><i class="fas fa-times"></i></button>
-                                    {% endif %}
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </nav>
-    </header>
 
     <main class="container main-content my-4">
         {% block content %}{% endblock %}
@@ -2221,7 +1752,7 @@ BASE_HTML_TEMPLATE = """
                     </form>
                 </div>
             </div>
-            <div class="copyright">&copy; {{ current_year }} Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
+            <div class="copyright">&copy; 2025 Briefly. All rights reserved. Made with <i class="fas fa-heart text-danger"></i> in India.</div>
         </div>
     </footer>
 
@@ -2232,23 +1763,28 @@ BASE_HTML_TEMPLATE = """
             const darkModeToggle = document.querySelector('.dark-mode-toggle');
             if (darkModeToggle) {
                 const body = document.body;
-                const updateThemeIcon = () => { darkModeToggle.innerHTML = body.classList.contains('dark-mode') ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>'; };
+                const updateThemeUI = () => {
+                    const isDarkMode = body.classList.contains('dark-mode');
+                    const themeIcon = darkModeToggle.querySelector('i');
+                    const themeText = darkModeToggle.querySelector('.theme-text');
+                    if (themeIcon) {
+                        themeIcon.className = isDarkMode ? 'fas fa-sun fa-fw me-2' : 'fas fa-moon fa-fw me-2';
+                    }
+                    if (themeText) {
+                        themeText.textContent = isDarkMode ? 'Light Mode' : 'Dark Mode';
+                    }
+                };
                 const applyTheme = (theme) => {
                     body.classList.toggle('dark-mode', theme === 'enabled');
-                    updateThemeIcon();
                     localStorage.setItem('darkMode', theme);
                     document.cookie = "darkMode=" + theme + ";path=/;max-age=31536000;SameSite=Lax";
+                    updateThemeUI();
                 };
                 darkModeToggle.addEventListener('click', () => {
                     const isEnabled = body.classList.contains('dark-mode');
                     applyTheme(isEnabled ? 'disabled' : 'enabled');
                 });
-                let storedTheme = localStorage.getItem('darkMode');
-                if (storedTheme) {
-                    applyTheme(storedTheme);
-                } else {
-                    updateThemeIcon();
-                }
+                updateThemeUI();
             }
 
             const flashedAlerts = document.querySelectorAll('#alert-placeholder .alert');
@@ -2285,6 +1821,7 @@ BASE_HTML_TEMPLATE = """
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
+
 """
 
 INDEX_HTML_TEMPLATE = """
