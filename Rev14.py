@@ -1,3 +1,4 @@
+Perfect code: 
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -1413,13 +1414,7 @@ BASE_HTML_TEMPLATE = """
         .navbar-center { flex-grow: 1; min-width: 150px; max-width: 550px; }
         .navbar-right { flex-shrink: 0; }
         .navbar-brand-custom { color: white !important; font-weight: 700; font-size: 2rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
-        
-        /* === CHANGE 1 OF 2: CSS FOR THE NEW LOGO === */
-        .brand-logo { 
-            height: 40px; /* Adjust the height for desktop view */
-            width: auto;
-        }
-
+        .navbar-brand-custom .brand-icon { color: var(--secondary-light); font-size: 2.2rem; }
         .search-container { position: relative; width: 100%; }
         .navbar-search { width: 100%; border-radius: 50px; padding: 0.6rem 1.25rem 0.6rem 2.8rem; border: 1px solid transparent; font-size: 0.95rem; transition: all 0.3s ease; background: rgba(255,255,255,0.15); color: white; }
         .navbar-search::placeholder { color: rgba(255,255,255,0.7); }
@@ -1747,10 +1742,9 @@ BASE_HTML_TEMPLATE = """
             }
             .navbar-brand-custom {
                 font-size: 1.5rem;
-                gap: 8px;
             }
-            .brand-logo {
-                height: 30px; /* Adjust logo height for mobile */
+            .navbar-brand-custom .brand-icon {
+                font-size: 1.6rem;
             }
             .comment-replies {
                 margin-left: 1.25rem;
@@ -1814,7 +1808,7 @@ BASE_HTML_TEMPLATE = """
                 <div class="navbar-content-wrapper">
                     <div class="navbar-left">
                         <a class="navbar-brand-custom" href="{{ url_for('index') }}">
-                            <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Briefly Logo" class="brand-logo">
+                            <i class="fas fa-bolt-lightning brand-icon"></i>
                             <span>Briefly</span>
                         </a>
                     </div>
