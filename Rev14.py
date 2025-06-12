@@ -1424,13 +1424,65 @@ BASE_HTML_TEMPLATE = """
         .header-btn { background: transparent; border: 1px solid rgba(255,255,255,0.4); padding: 0.5rem 1rem; border-radius: 50px; color: white; font-weight: 500; transition: all 0.3s ease; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-decoration:none; font-size: 0.9rem; }
         .header-btn:hover { background: rgba(255,255,255,0.9); border-color: transparent; color: var(--primary-dark); }
         .dark-mode-toggle { font-size: 1.1rem; width: 42px; height: 42px; justify-content: center;}
-        .category-nav { background: var(--card-bg); box-shadow: var(--shadow-sm); position: fixed; top: 82px; width: 100%; z-index: 1020; border-bottom: 1px solid var(--card-border-color); transition: background-color 0.3s ease, border-bottom-color 0.3s ease; }
-        .categories-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; overflow-x: auto; padding: 0.4rem 0.5rem; scrollbar-width: none; }
-        .categories-wrapper::-webkit-scrollbar { display: none; }
-        .category-links-container { display: flex; flex-shrink: 0; }
-        .category-link { color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent; }
-        .category-link.active { background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm); }
-        .category-link:hover:not(.active) { background: var(--light-bg) !important; color: var(--primary-color) !important; }
+
+        /* === RESPONSIVE CATEGORY NAVIGATION (SLIDING ON MOBILE) === */
+        .category-nav {
+            background: var(--card-bg);
+            box-shadow: var(--shadow-sm);
+            position: fixed;
+            top: 82px; /* Default desktop position */
+            width: 100%;
+            z-index: 1020;
+            border-bottom: 1px solid var(--card-border-color);
+            transition: background-color 0.3s ease, border-bottom-color 0.3s ease;
+        }
+        .category-nav .container {
+            position: relative; /* Context for the date form on desktop */
+        }
+        .categories-wrapper {
+            display: flex;
+            align-items: center;
+            overflow-x: auto; /* This creates the sliding bar on mobile */
+            padding: 0.4rem 0;
+            scrollbar-width: none; /* Hide scrollbar for Firefox */
+            -ms-overflow-style: none; /* Hide scrollbar for IE/Edge */
+        }
+        .categories-wrapper::-webkit-scrollbar {
+            display: none; /* Hide scrollbar for Chrome, Safari, Opera */
+        }
+        .category-links-container {
+            display: flex; /* Kept for containing links */
+            flex-shrink: 0; /* Prevents links from shrinking/wrapping */
+        }
+        #dateFilterForm {
+            flex-shrink: 0; /* Prevents form from shrinking */
+            margin-left: 1rem; /* Space between links and form in the scroll flow */
+        }
+        .category-link {
+            color: var(--text-muted-color) !important; font-weight: 600; padding: 0.6rem 1.3rem !important; border-radius: 50px; transition: all 0.25s ease; white-space: nowrap; text-decoration: none; margin: 0 0.3rem; font-size: 0.9rem; border: 1px solid transparent;
+        }
+        .category-link.active {
+            background: var(--primary-color) !important; color: white !important; box-shadow: var(--shadow-sm);
+        }
+        .category-link:hover:not(.active) {
+            background: var(--light-bg) !important; color: var(--primary-color) !important;
+        }
+
+        /* DESKTOP OVERRIDES FOR CATEGORY NAV */
+        @media (min-width: 992px) {
+            .categories-wrapper {
+                overflow-x: hidden; /* No scrolling on desktop */
+                justify-content: center; /* Center the links container */
+            }
+            #dateFilterForm {
+                position: absolute;
+                right: 0; /* Align to the right edge of the .container */
+                top: 50%;
+                transform: translateY(-50%);
+                margin-left: 0; /* Reset mobile margin */
+            }
+        }
+        
         .article-card, .article-full-content-wrapper, .auth-container, .profile-card { background: var(--card-bg); border-radius: var(--border-radius-lg); transition: all 0.3s ease; border: 1px solid var(--card-border-color); box-shadow: var(--shadow-md); }
         .article-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
         .article-image-container { height: 220px; overflow: hidden; position: relative; border-top-left-radius: var(--border-radius-lg); border-top-right-radius: var(--border-radius-lg);}
@@ -2009,7 +2061,7 @@ BASE_HTML_TEMPLATE = """
             </div>
         </nav>
 
-        <nav class="navbar navbar-expand-lg category-nav">
+        <nav class="category-nav">
             <div class="container">
                 <div class="categories-wrapper">
                     <div class="category-links-container">
@@ -2179,6 +2231,7 @@ BASE_HTML_TEMPLATE = """
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
+
 """
 
 INDEX_HTML_TEMPLATE = """
