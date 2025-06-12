@@ -1420,6 +1420,30 @@ def register():
         return redirect(url_for('register'))
     return render_template("REGISTER_HTML_TEMPLATE")
 
+@app.route('/delete_community_article/<article_hash_id>', methods=['POST'])
+@login_required
+def delete_community_article(article_hash_id):
+    # Security Check: Ensure the user has the admin flag from the session.
+    if not session.get('is_admin') or session.get('username') != 'vbdevil':
+        return jsonify({"success": False, "error": "Administrator access required."}), 403
+
+    article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
+    
+    if not article:
+        return jsonify({"success": False, "error": "Article not found."}), 404
+
+    try:
+        # The 'cascade' option in the models will handle related deletions.
+        db.session.delete(article)
+        db.session.commit()
+        app.logger.info(f"Admin user 'vbdevil' deleted community article {article.id} ({article_hash_id})")
+        flash("Community article has been successfully deleted by the administrator.", "success")
+        return jsonify({"success": True, "redirect_url": url_for('index', category_name='Community Hub')})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting community article {article.id} by admin: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "A database error occurred during deletion."}), 500
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session: return redirect(url_for('index'))
@@ -1427,7 +1451,18 @@ def login():
         username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
-            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
+            session.permanent = True
+            session['user_id'] = user.id
+            session['user_name'] = user.name
+            # Store username for easy access in templates/routes
+            session['username'] = user.username
+            
+            # Check if the logged-in user is the designated admin
+            if user.username == "vbdevil":
+                session['is_admin'] = True
+            else:
+                session['is_admin'] = False
+
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
             session.pop('previous_list_page', None) 
@@ -2475,18 +2510,21 @@ ARTICLE_HTML_TEMPLATE = """
     <div class="mb-3 d-flex justify-content-between align-items-center">
         <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
         
-        <!-- Wrapper for right-side action buttons -->
         <div class="d-flex align-items-center gap-2">
+            
+            {% if session.get('is_admin') and is_community_article %}
+            <button id="adminDeleteBtn" class="btn btn-sm btn-danger" title="Admin: Delete Post">
+                <i class="fas fa-trash-alt"></i> Delete Post
+            </button>
+            {% endif %}
+
             {% if session.user_id %}
-                
-                <!-- NEW: Report Button for Community Articles -->
                 {% if is_community_article %}
                 <button id="reportBtn" class="btn btn-sm btn-outline-warning" title="Report this article for review">
                     <i class="fas fa-flag"></i> Report
                 </button>
                 {% endif %}
                 
-                <!-- Existing Bookmark Button -->
                 <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}" data-is-community="{{ 'true' if is_community_article else 'false' }}" data-title="{{ article.title|e }}" data-source-name="{{ (article.author.name if is_community_article and article.author else article.source.name)|e }}" data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}" data-description="{{ (article.description if article.description else '')|e }}" data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}"><i class="fa-solid fa-bookmark"></i></button>
             {% endif %}
         </div>
@@ -2540,6 +2578,39 @@ document.addEventListener('DOMContentLoaded', function () {
         const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
         const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
         const isCommunityArticle = {{ is_community_article | tojson }};
+
+        const adminDeleteBtn = document.getElementById('adminDeleteBtn');
+        if (adminDeleteBtn) {
+            adminDeleteBtn.addEventListener('click', function() {
+                if (!confirm('ADMIN ACTION: Are you sure you want to permanently delete this community post? This action cannot be undone.')) {
+                    return;
+                }
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+                
+                fetch(`/delete_community_article/${articleHashIdGlobal}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(res => res.json().then(data => ({ ok: res.ok, data })))
+                .then(({ ok, data }) => {
+                    if (ok && data.success) {
+                        // On successful deletion, redirect to the Community Hub
+                        window.location.href = data.redirect_url;
+                    } else {
+                        alert('Deletion failed: ' + (data.error || 'Unknown error'));
+                        this.disabled = false;
+                        this.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Post';
+                    }
+                })
+                .catch(err => {
+                    console.error("Admin delete error:", err);
+                    alert("A network error occurred. Could not delete the post.");
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Post';
+                });
+            });
+        }
 
         if (!isCommunityArticle) {
             const contentLoader = document.getElementById('contentLoader');
