@@ -960,6 +960,11 @@ def public_profile(username):
 @app.route('/search')
 @app.route('/search/page/<int:page>')
 def search_results(page=1):
+    # --- STEP 1: VERIFICATION ---
+    # This message will appear on your webpage if this function is running correctly.
+    # If you don't see it, your server has not reloaded the new code.
+    flash("DEBUG: The correct search_results function was called!", "success")
+
     session['previous_list_page'] = request.full_path
     query_str = request.args.get('query', '').strip()
     per_page = app.config['PER_PAGE']
@@ -967,29 +972,43 @@ def search_results(page=1):
     if not query_str:
         return redirect(url_for('index'))
 
+    # This log will appear in your server console (terminal).
     app.logger.info(f"Performing LIVE API search for query: '{query_str}'")
     
-    # --- Live Search Logic ---
+    # This list will hold the fresh results from our new API call.
     api_articles = []
     if newsapi:
         try:
-            # Perform a live search against the NewsAPI for the user's query
+            # --- STEP 2: LIVE API CALL ---
+            # We are making a new, targeted request to the NewsAPI here.
+            
+            # Log the exact parameters to be sent to the API for debugging.
+            app.logger.info(f"NEWSAPI CALL PARAMS: q='{query_str}', language='en', sort_by='relevancy'")
+
             search_response = newsapi.get_everything(
-                q=query_str,
+                q=query_str,          # Use the user's keyword for the query.
                 language='en',
-                sort_by='relevancy', # Sort by the most relevant articles for the query
-                page_size=100 # Get a full set of results for pagination
+                sort_by='relevancy',  # Get the most relevant articles first.
+                page_size=100         # Fetch a good number of articles for pagination.
             )
 
+            # Log the raw response from the API to see exactly what it returned.
+            app.logger.info(f"RAW API RESPONSE (first 500 chars): {str(search_response)[:500]}")
+
+            # --- STEP 3: PROCESS THE RELEVANT RESULTS ---
+            # The following code processes the fresh articles returned by the API.
             if search_response.get('status') == 'ok':
-                # Process the results just like our other fetch functions
                 raw_articles = search_response.get('articles', [])
                 unique_urls = set()
                 for art_data in raw_articles:
                     url = art_data.get('url')
-                    if not url or url in unique_urls: continue
+                    if not url or url in unique_urls: 
+                        continue
+                        
                     title = art_data.get('title')
                     description = art_data.get('description')
+
+                    # Skip articles that are malformed or removed.
                     if not all([title, description, art_data.get('source')]) or title == '[Removed]':
                         continue
                     
@@ -997,46 +1016,59 @@ def search_results(page=1):
                     article_id = generate_article_id(url)
                     source_name = art_data['source'].get('name', 'Unknown Source')
                     placeholder_text = urllib.parse.quote_plus(source_name[:20])
+                    
                     published_at_dt = None
                     if art_data.get('publishedAt'):
-                        try: published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
-                        except ValueError: published_at_dt = datetime.now(timezone.utc)
+                        try:
+                            published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
+                        except ValueError:
+                            published_at_dt = datetime.now(timezone.utc)
                     else:
                         published_at_dt = datetime.now(timezone.utc)
                     
                     standardized_article = {
-                        'id': article_id, 'title': title, 'description': description, 'url': url,
+                        'id': article_id,
+                        'title': title,
+                        'description': description,
+                        'url': url,
                         'urlToImage': art_data.get('urlToImage') or f'https://via.placeholder.com/400x220/0D2C54/FFFFFF?text={placeholder_text}',
-                        'publishedAt': published_at_dt.isoformat(), 'source': {'name': source_name},
+                        'publishedAt': published_at_dt.isoformat(),
+                        'source': {'name': source_name},
                         'is_community_article': False
                     }
-                    MASTER_ARTICLE_STORE[article_id] = standardized_article # Add to cache
+                    # Add to the master store so the article detail page can find it.
+                    MASTER_ARTICLE_STORE[article_id] = standardized_article 
                     api_articles.append(standardized_article)
             else:
-                app.logger.error(f"NewsAPI error on search: {search_response.get('message')}")
-                flash(f"Could not perform search at this time. Error: {search_response.get('message')}", "danger")
+                # Handle cases where the API returns an error.
+                api_error_message = search_response.get('message', 'Unknown API error')
+                app.logger.error(f"NewsAPI error on search: {api_error_message}")
+                flash(f"Could not perform search at this time. Error: {api_error_message}", "danger")
 
         except Exception as e:
             app.logger.error(f"Exception during API search for '{query_str}': {e}", exc_info=True)
             flash("An unexpected error occurred during the search.", "danger")
     
-    # Also search our own community-posted articles
+    # --- STEP 4: COMBINE WITH LOCAL RESULTS ---
+    # Also search your app's own community-posted articles for the same keyword.
     community_db_articles = []
     community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
         db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))
     ).order_by(CommunityArticle.published_at.desc())
+    
     for art in community_db_articles_query.all():
         art.is_community_article = True
         community_db_articles.append(art)
 
-    # Combine and sort results
+    # --- STEP 5: FINALIZE AND RENDER ---
+    # Combine API results and community results, then sort them by date.
     all_search_results_raw = api_articles + community_db_articles
     all_search_results_raw.sort(key=get_sort_key, reverse=True)
 
-    # Paginate the combined results
+    # Paginate the final combined list.
     paginated_search_articles_raw, total_pages = get_paginated_articles(all_search_results_raw, page, per_page)
 
-    # Add bookmark status to the paginated results
+    # Add user-specific data like bookmark status before rendering.
     paginated_search_articles_with_bookmark_status = []
     user_bookmarks_hashes = set()
     if 'user_id' in session:
@@ -1052,6 +1084,7 @@ def search_results(page=1):
             art_item_copy['is_bookmarked'] = art_item_copy.get('id') in user_bookmarks_hashes
             paginated_search_articles_with_bookmark_status.append(art_item_copy)
             
+    # Render the results page.
     return render_template("INDEX_HTML_TEMPLATE",
                            articles=paginated_search_articles_with_bookmark_status,
                            selected_category=f"Search: {query_str}",
@@ -1061,6 +1094,7 @@ def search_results(page=1):
                            featured_article_on_this_page=False,
                            query=query_str,
                            current_filter_date=None)
+
 
 @app.route('/article/<article_hash_id>')
 def article_detail(article_hash_id):
