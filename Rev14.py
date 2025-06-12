@@ -1551,14 +1551,15 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
         
-        /* === FEATURED STORY SECTION === */
+        /* === FEATURED STORY & AI CARD SECTION === */
+        .featured-story { display: flex; } /* Ensure it's visible by default */
+        .ai-synthesis-card { display: block; } /* Ensure it's visible by default */
         .featured-story {
             background-color: var(--card-bg);
             border-radius: var(--border-radius-lg);
             box-shadow: var(--shadow-lg);
             margin-bottom: 2.5rem;
             overflow: hidden;
-            display: flex;
             border: 1px solid var(--card-border-color);
         }
         .featured-story-image {
@@ -1610,8 +1611,6 @@ BASE_HTML_TEMPLATE = """
             transform: translateY(-2px);
             box-shadow: var(--shadow-md);
         }
-
-        /* === AI DAILY SYNTHESIS COMPONENT === */
         .ai-synthesis-card {
             background: var(--card-bg);
             border: 1px solid var(--card-border-color);
@@ -1809,7 +1808,7 @@ BASE_HTML_TEMPLATE = """
                     <div class="navbar-left">
                         <a class="navbar-brand-custom" href="{{ url_for('index') }}">
                             <i class="fas fa-bolt-lightning brand-icon"></i>
-                            <span class="d-none d-sm-inline">Briefly</span>
+                            <span>Briefly</span>
                         </a>
                     </div>
                     <div class="navbar-center">
