@@ -188,23 +188,17 @@ class ReportedArticle(db.Model):
     # Add a relationship back to CommunityArticle model
     article = db.relationship('CommunityArticle', backref=db.backref('reports', lazy='dynamic'))
 
-# In Rev14.py, find the User model and add the is_admin field.
-
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     name = db.Column(db.String(120), nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    
-    # --- ADD THIS LINE ---
-    is_admin = db.Column(db.Boolean, nullable=False, default=False)
-    
     articles = db.relationship('CommunityArticle', backref='author', lazy='dynamic', cascade="all, delete-orphan")
     comments = db.relationship('Comment', backref=db.backref('author', lazy='joined'), lazy='dynamic', cascade="all, delete-orphan")
     comment_votes = db.relationship('CommentVote', backref='user', lazy='dynamic', cascade="all, delete-orphan")
     bookmarks = db.relationship('BookmarkedArticle', backref='user', lazy='dynamic', cascade="all, delete-orphan")
-    
+
 class CommunityArticle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     article_hash_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
@@ -316,7 +310,6 @@ def jinja_truncate_filter(s, length=120, killwords=False, end='...'):
     return ' '.join(result_words) + end
 app.jinja_env.filters['truncate'] = jinja_truncate_filter
 
-
 def to_ist_filter(utc_dt):
     if not utc_dt: return "N/A"
     if isinstance(utc_dt, str):
@@ -365,23 +358,6 @@ def login_required(f):
             else:
                 flash("You must be logged in to access this page.", "warning")
                 return redirect(url_for('login', next=request.url))
-        return f(*args, **kwargs)
-    return decorated_function
-
-# In Rev14.py, add this new decorator function after your login_required decorator.
-
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            flash("You must be logged in to access this page.", "warning")
-            return redirect(url_for('login', next=request.url))
-        
-        user = User.query.get(session['user_id'])
-        if not user or not user.is_admin:
-            flash("You do not have permission to access this page.", "danger")
-            return redirect(url_for('index'))
-            
         return f(*args, **kwargs)
     return decorated_function
 
@@ -900,40 +876,9 @@ def get_sort_key(article):
     elif isinstance(date_val, datetime): return date_val if date_val.tzinfo else pytz.utc.localize(date_val)
     return datetime.min.replace(tzinfo=timezone.utc)
 
-# In Rev14.py, add these new routes, for example, after your edit_comment route.
+# In Rev14.py, find your existing index function and REPLACE IT with this entire block.
 
-@app.route('/admin/delete_comment/<int:comment_id>', methods=['POST'])
-@login_required
-@admin_required
-def admin_delete_comment(comment_id):
-    comment = Comment.query.get_or_404(comment_id)
-    try:
-        # Cascade delete will handle replies
-        db.session.delete(comment)
-        db.session.commit()
-        flash(f"Comment (ID: {comment_id}) has been deleted by an admin.", "success")
-        return jsonify({"success": True})
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Admin failed to delete comment {comment_id}: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "A database error occurred."}), 500
-
-@app.route('/admin/delete_article/<article_hash_id>', methods=['POST'])
-@login_required
-@admin_required
-def admin_delete_article(article_hash_id):
-    article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first_or_404()
-    try:
-        # Cascade delete will handle associated comments, reports, etc.
-        db.session.delete(article)
-        db.session.commit()
-        flash(f"Community article '{article.title}' has been deleted by an admin.", "success")
-        return redirect(url_for('index')) # Redirect to home page after deletion
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Admin failed to delete article {article_hash_id}: {e}", exc_info=True)
-        flash("An error occurred while deleting the article.", "danger")
-        return redirect(request.referrer or url_for('index'))
+# In Rev14.py, add this new route
 
 @app.route('/report_article/<article_hash_id>', methods=['POST'])
 @login_required
@@ -1475,8 +1420,6 @@ def register():
         return redirect(url_for('register'))
     return render_template("REGISTER_HTML_TEMPLATE")
 
-# In Rev14.py, find the login route and modify it.
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session: return redirect(url_for('index'))
@@ -1484,20 +1427,14 @@ def login():
         username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
-            session.permanent = True
-            session['user_id'] = user.id
-            session['user_name'] = user.name
-            
-            # --- ADD THIS LINE ---
-            session['is_admin'] = user.is_admin 
-            
+            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
-            session.pop('previous_list_page', None)
+            session.pop('previous_list_page', None) 
             return redirect(next_url or url_for('index'))
-        else:
-            flash('Invalid username or password.', 'danger')
+        else: flash('Invalid username or password.', 'danger')
     return render_template("LOGIN_HTML_TEMPLATE")
+
 @app.route('/logout')
 def logout(): session.clear(); flash("You have been successfully logged out.", "info"); return redirect(url_for('index'))
 @app.route('/about')
@@ -2554,16 +2491,7 @@ ARTICLE_HTML_TEMPLATE = """
             {% endif %}
         </div>
     </div>
-{# --- ADD THIS BLOCK --- #}
-{# Admin Delete Form for Community Articles #}
-{% if session.is_admin and is_community_article %}
-<div class="alert alert-danger p-2 my-3 d-flex justify-content-between align-items-center">
-    <span class="fw-bold small"><i class="fas fa-shield-alt me-2"></i>Admin Controls</span>
-    <form action="{{ url_for('admin_delete_article', article_hash_id=article.article_hash_id) }}" method="POST" onsubmit="return confirm('ADMIN ACTION: Are you sure you want to permanently delete this community article?');">
-        <button type="submit" class="btn btn-sm btn-danger">Delete Article</button>
-    </form>
-</div>
-{% endif %}
+
     <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
     <div class="article-meta-detailed d-flex align-items-center flex-wrap gap-3 text-muted small"><span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article and article.author else article.source.name }}</span><span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span></div>
     {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
@@ -2779,42 +2707,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
-                 const adminDeleteBtn = e.target.closest('.admin-delete-comment-btn');
-    if (adminDeleteBtn) {
-        e.preventDefault();
-        const commentId = adminDeleteBtn.dataset.commentId;
-        if (confirm('ADMIN ACTION: Are you sure you want to delete this comment?')) {
-            fetch(`/admin/delete_comment/${commentId}`, { 
-                method: 'POST',
-                headers: { 'Accept': 'application/json' }
-            })
-            .then(res => res.json().then(data => ({ ok: res.ok, data })))
-            .then(({ ok, data }) => {
-                if (ok && data.success) {
-                    const commentElement = document.getElementById(`comment-${commentId}`);
-                    if (commentElement) {
-                        commentElement.style.transition = 'opacity 0.5s ease';
-                        commentElement.style.opacity = '0';
-                        setTimeout(() => commentElement.remove(), 500);
-                        
-                        // Update total comment count
-                        const countEl = document.getElementById('comment-count');
-                        const repliesCount = commentElement.querySelectorAll('.comment-thread').length;
-                        countEl.textContent = Math.max(0, parseInt(countEl.textContent) - (1 + repliesCount));
-                    }
-                    // You can add a flash message here if desired, but redirect might be better.
-                } else {
-                    alert('Admin Error: ' + (data.error || 'Could not delete comment.'));
-                }
-            })
-            .catch(err => {
-                console.error("Admin delete error:", err);
-                alert("A network error occurred during admin deletion.");
-            });
-        }
-    }
-});
-
                 const reactionEmoji = target.closest('.reaction-emoji');
                 if (reactionEmoji) {
                     e.preventDefault();
@@ -2983,14 +2875,6 @@ _COMMENT_TEMPLATE = """
                     <button class="edit-btn" data-comment-id="{{ comment.id }}" title="Edit"><i class="fas fa-pencil-alt"></i> Edit</button>
                     <button class="delete-btn" data-comment-id="{{ comment.id }}" title="Delete"><i class="fas fa-trash-alt"></i> Delete</button>
                 {% endif %}
-                {# --- ADD THIS BLOCK --- #}
-    {# Admin Delete Button - visible if the user is an admin and NOT the comment owner (to avoid duplicate buttons) #}
-    {% if session.is_admin and session.user_id != comment.user_id %}
-    <button class="admin-delete-comment-btn btn btn-sm btn-outline-danger py-0 px-1" data-comment-id="{{ comment.id }}" title="Admin: Delete Comment">
-        <i class="fas fa-shield-alt fa-xs"></i> <i class="fas fa-trash-alt fa-xs"></i>
-    </button>
-    {% endif %}
-
             </div>
             <div class="reply-form-container" id="reply-form-container-{{ comment.id }}" style="display:none;">
                 <form class="reply-form">
@@ -3407,46 +3291,6 @@ template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 template_storage['_COMMENT_TEMPLATE'] = _COMMENT_TEMPLATE
 template_storage['PUBLIC_PROFILE_HTML_TEMPLATE'] = PUBLIC_PROFILE_HTML_TEMPLATE
 
-
-# In Rev14.py, add this new function before the main execution block.
-
-@app.cli.command("make-admin")
-def make_admin_command():
-    """Gives a user admin privileges."""
-    import click
-    username = click.prompt("Enter the username of the user to make admin", type=str)
-    user = User.query.filter_by(username=username).first()
-    
-    if not user:
-        click.echo(f"Error: User '{username}' not found.")
-        return
-
-    if user.is_admin:
-        click.echo(f"User '{username}' is already an admin.")
-        return
-
-    user.is_admin = True
-    db.session.commit()
-    click.echo(f"Success! User '{username}' has been granted admin privileges.")
-
-@app.cli.command("revoke-admin")
-def revoke_admin_command():
-    """Revokes admin privileges from a user."""
-    import click
-    username = click.prompt("Enter the username of the user to revoke admin from", type=str)
-    user = User.query.filter_by(username=username).first()
-    
-    if not user:
-        click.echo(f"Error: User '{username}' not found.")
-        return
-
-    if not user.is_admin:
-        click.echo(f"User '{username}' is not an admin.")
-        return
-
-    user.is_admin = False
-    db.session.commit()
-    click.echo(f"Success! Admin privileges have been revoked for user '{username}'.")
 
 # ==============================================================================
 # --- 9. App Context & Main Execution Block ---
