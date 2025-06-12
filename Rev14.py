@@ -1550,10 +1550,245 @@ BASE_HTML_TEMPLATE = """
         .reaction-pill.user-reacted { background-color: var(--primary-color); color: white; border-color: var(--primary-dark); }
         .reaction-pill .emoji { font-size: 0.9rem; margin-right: 4px; }
         .reply-form-container { padding: 1rem; border-radius: var(--border-radius-md); margin-top: 0.75rem; background-color: var(--light-bg); border: 1px solid var(--card-border-color); }
-        .featured-story, .ai-synthesis-card { display: none; }
-        @media (min-width: 768px) { .featured-story, .ai-synthesis-card { display: flex; }}
         
-        @media (max-width: 767.98px) { body { padding-top: 70px; } .navbar-center { display: none; } .navbar-left { flex-grow: 1; } }
+        /* === FEATURED STORY SECTION === */
+        .featured-story {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-lg);
+            margin-bottom: 2.5rem;
+            overflow: hidden;
+            display: flex;
+            border: 1px solid var(--card-border-color);
+        }
+        .featured-story-image {
+            flex: 0 0 55%;
+            background-size: cover;
+            background-position: center;
+            min-height: 450px;
+        }
+        .featured-story-content {
+            flex: 0 0 45%;
+            padding: 2.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .featured-story-content .meta-item {
+            font-size: 0.9rem;
+        }
+        .featured-story-content h2 {
+            font-size: 2.2rem;
+            line-height: 1.3;
+            margin: 1rem 0;
+        }
+        .featured-story-content h2 a {
+            color: var(--text-color);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        .featured-story-content h2 a:hover {
+            color: var(--primary-color);
+        }
+        .featured-story-content .description {
+            font-size: 1.05rem;
+            color: var(--text-muted-color);
+            margin-bottom: 2rem;
+        }
+        .featured-story-content .read-more-btn {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.8rem 1.5rem;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            align-self: flex-start;
+        }
+        .featured-story-content .read-more-btn:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* === AI DAILY SYNTHESIS COMPONENT === */
+        .ai-synthesis-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 2rem;
+            margin-bottom: 2.5rem;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+        }
+        .ai-synthesis-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%),
+                              linear-gradient(225deg, rgba(var(--primary-color-rgb), 0.05) 25%, transparent 25%);
+            background-size: 20px 20px;
+            opacity: 0.5;
+        }
+        .synthesis-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        .synthesis-header i {
+            font-size: 2rem;
+            color: var(--primary-color);
+        }
+        .synthesis-header h2 {
+            font-size: 1.5rem;
+            margin-top: 0.5rem;
+        }
+        .synthesis-text {
+            font-size: 1.15rem;
+            line-height: 1.7;
+            text-align: center;
+            color: var(--text-color);
+            position: relative;
+            font-family: 'Inter', serif;
+        }
+        .synthesis-keywords {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--card-border-color);
+            text-align: center;
+            position: relative;
+        }
+        .synthesis-keywords .keyword-tag {
+            display: inline-block;
+            background-color: var(--light-bg);
+            border: 1px solid var(--card-border-color);
+            color: var(--text-muted-color);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            margin: 0.25rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease-in-out;
+        }
+        .synthesis-keywords .keyword-tag:hover {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+        }
+
+        /*
+        ==========================================================================
+        === MOBILE RESPONSIVE STYLES ===
+        ==========================================================================
+        */
+        @media (max-width: 991.98px) {
+            .featured-story {
+                flex-direction: column;
+            }
+            .featured-story-image {
+                flex-basis: auto;
+                width: 100%;
+                min-height: 300px;
+            }
+            .featured-story-content {
+                flex-basis: auto;
+                padding: 2rem;
+            }
+            .featured-story-content h2 {
+                font-size: 2rem;
+            }
+        }
+        @media (max-width: 767.98px) {
+            .navbar-center {
+                display: none;
+            }
+            .navbar-left {
+                flex-grow: 1;
+            }
+            .page-header-static h1 {
+                font-size: 2.2rem;
+            }
+            .featured-story-image {
+                min-height: 220px;
+            }
+            .featured-story-content {
+                padding: 1.5rem;
+            }
+            .featured-story-content h2 {
+                font-size: 1.6rem;
+            }
+            .footer-section {
+                text-align: center;
+            }
+            .footer-links {
+                align-items: center;
+            }
+            .social-links {
+                justify-content: center;
+            }
+            .footer-links a:hover {
+                padding-left: 0;
+            }
+        }
+        @media (max-width: 575.98px) {
+            body {
+                font-size: 0.95rem;
+            }
+            .navbar-brand-custom {
+                font-size: 1.5rem;
+            }
+            .navbar-brand-custom .brand-icon {
+                font-size: 1.6rem;
+            }
+            .comment-replies {
+                margin-left: 1.25rem;
+                padding-left: 1rem;
+            }
+            .comment-container {
+                gap: 0.75rem;
+            }
+            .comment-avatar {
+                width: 40px;
+                height: 40px;
+            }
+            .comment-replies .comment-avatar {
+                width: 35px;
+                height: 35px;
+            }
+            .profile-avatar {
+                width: 100px;
+                height: 100px;
+                font-size: 3rem;
+            }
+            .profile-header-card h2 {
+                font-size: 1.5rem;
+            }
+            .profile-stats {
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+            .auth-card {
+                margin: 1rem auto;
+                border: none;
+                box-shadow: none;
+            }
+            .ai-synthesis-card, .auth-body, .static-content-container,
+            .profile-header-card, .article-body, .article-full-content-wrapper {
+                padding: 1.5rem;
+            }
+            .article-full-content-wrapper {
+                padding: 1.5rem 1rem;
+            }
+            .synthesis-text {
+                font-size: 1.05rem;
+            }
+        }
     </style>
     {% block head_extra %}{% endblock %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886" crossorigin="anonymous"></script>
@@ -1821,7 +2056,6 @@ BASE_HTML_TEMPLATE = """
     {% block scripts_extra %}{% endblock %}
 </body>
 </html>
-
 """
 
 INDEX_HTML_TEMPLATE = """
