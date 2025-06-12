@@ -1403,30 +1403,6 @@ def post_article():
     flash("Your article has been posted!", "success")
     return redirect(url_for('article_detail', article_hash_id=new_article.article_hash_id))
 
-@app.route('/delete_community_article/<article_hash_id>', methods=['POST'])
-@login_required
-def delete_community_article(article_hash_id):
-    # Security Check: Ensure the user has the admin flag from the session.
-    if not session.get('is_admin') or session.get('username') != 'vbdevil':
-        return jsonify({"success": False, "error": "Administrator access required."}), 403
-
-    article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
-    
-    if not article:
-        return jsonify({"success": False, "error": "Article not found."}), 404
-
-    try:
-        # The 'cascade' option in the models will handle related deletions.
-        db.session.delete(article)
-        db.session.commit()
-        app.logger.info(f"Admin user 'vbdevil' deleted community article {article.id} ({article_hash_id})")
-        flash("Community article has been successfully deleted by the administrator.", "success")
-        return jsonify({"success": True, "redirect_url": url_for('index', category_name='Community Hub')})
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error deleting community article {article.id} by admin: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "A database error occurred during deletion."}), 500
-        
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if 'user_id' in session: return redirect(url_for('index'))
@@ -1451,18 +1427,7 @@ def login():
         username, password = request.form.get('username', '').strip().lower(), request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
-            session.permanent = True
-            session['user_id'] = user.id
-            session['user_name'] = user.name
-            # Store username for easy access in templates/routes
-            session['username'] = user.username
-            
-            # Check if the logged-in user is the designated admin
-            if user.username == "vbdevil":
-                session['is_admin'] = True
-            else:
-                session['is_admin'] = False
-
+            session.permanent = True; session['user_id'] = user.id; session['user_name'] = user.name
             flash(f"Welcome back, {user.name}!", "success")
             next_url = request.args.get('next')
             session.pop('previous_list_page', None) 
@@ -2240,10 +2205,10 @@ BASE_HTML_TEMPLATE = """
 INDEX_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}
-    {% if query %}Search: {{ query|truncate(30) }}
-    {% elif selected_category == 'All Articles' and is_main_homepage == False %}All Articles
-    {% elif selected_category and not is_main_homepage %}{{ selected_category }}
-    {% else %}Popular & Latest News from India{% endif %} - BrieflyAI
+    {% if query %}Search: {{ query|truncate(30) }}
+    {% elif selected_category == 'All Articles' and is_main_homepage == False %}All Articles
+    {% elif selected_category and not is_main_homepage %}{{ selected_category }}
+    {% else %}Popular & Latest News from India{% endif %} - BrieflyAI
 {% endblock %}
 
 {% block content %}
@@ -2251,297 +2216,235 @@ INDEX_HTML_TEMPLATE = """
 {# This is the main controller: It shows the full homepage, or the list view for categories. #}
 {% if is_main_homepage %}
 
-    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH ALL FEATURES) ============== #}
-    <div class="animate-fade-in">
-        
-        {% if synthesis %}
-        <div class="ai-synthesis-card">
-            <div class="synthesis-header">
-                <i class="fas fa-brain"></i>
-                <h2>Today's Briefing: The Big Picture</h2>
-            </div>
-            <p class="synthesis-text">"{{ synthesis }}"</p>
-            {% if keywords %}
-            <div class="synthesis-keywords">
-                {% for keyword in keywords %}
-                    <a href="{{ url_for('search_results', query=keyword) }}" class="keyword-tag">{{ keyword }}</a>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
+    {# ============== LAYOUT 1: MAIN HOMEPAGE (WITH ALL FEATURES) ============== #}
+    <div class="animate-fade-in">
+        
+        {% if synthesis %}
+        <div class="ai-synthesis-card">
+            <div class="synthesis-header">
+                <i class="fas fa-brain"></i>
+                <h2>Today's Briefing: The Big Picture</h2>
+            </div>
+            <p class="synthesis-text">"{{ synthesis }}"</p>
+            {% if keywords %}
+            <div class="synthesis-keywords">
+                {% for keyword in keywords %}
+                    <a href="{{ url_for('search_results', query=keyword) }}" class="keyword-tag">{{ keyword }}</a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
 
-        {% if featured_article %}
-        <article class="featured-story">
-            <div class="featured-story-image" style="background-image: url('{{ featured_article.urlToImage }}')"></div>
-            <div class="featured-story-content">
-                <div class="article-meta">
-                    <span class="meta-item"><i class="fas fa-fire-alt text-danger"></i> Top Story</span>
-                    <span class="meta-item"><i class="fas fa-building"></i> {{ featured_article.source.name|truncate(20) }}</span>
-                </div>
-                <h2><a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}">{{ featured_article.title }}</a></h2>
-                <p class="description">{{ featured_article.description|truncate(150) }}</p>
-                <a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}" class="read-more-btn">Read Full Story <i class="fas fa-arrow-right ms-1"></i></a>
-            </div>
-        </article>
-        {% endif %}
+        {% if featured_article %}
+        <article class="featured-story">
+            <div class="featured-story-image" style="background-image: url('{{ featured_article.urlToImage }}')"></div>
+            <div class="featured-story-content">
+                <div class="article-meta">
+                    <span class="meta-item"><i class="fas fa-fire-alt text-danger"></i> Top Story</span>
+                    <span class="meta-item"><i class="fas fa-building"></i> {{ featured_article.source.name|truncate(20) }}</span>
+                </div>
+                <h2><a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}">{{ featured_article.title }}</a></h2>
+                <p class="description">{{ featured_article.description|truncate(150) }}</p>
+                <a href="{{ url_for('article_detail', article_hash_id=featured_article.id) }}" class="read-more-btn">Read Full Story <i class="fas fa-arrow-right ms-1"></i></a>
+            </div>
+        </article>
+        {% endif %}
 
-        <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist" style="font-weight: 600;">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="popular-tab" data-bs-toggle="tab" data-bs-target="#popular-tab-pane" type="button" role="tab" aria-controls="popular-tab-pane" aria-selected="true">
-                    <i class="fas fa-fire-alt me-1"></i> POPULAR STORIES
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="yesterday-tab" data-bs-toggle="tab" data-bs-target="#yesterday-tab-pane" type="button" role="tab" aria-controls="yesterday-tab-pane" aria-selected="false">
-                    <i class="fas fa-history me-1"></i> YESTERDAY'S HEADLINES
-                </button>
-            </li>
-        </ul>
+        <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist" style="font-weight: 600;">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="popular-tab" data-bs-toggle="tab" data-bs-target="#popular-tab-pane" type="button" role="tab" aria-controls="popular-tab-pane" aria-selected="true">
+                    <i class="fas fa-fire-alt me-1"></i> POPULAR STORIES
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="yesterday-tab" data-bs-toggle="tab" data-bs-target="#yesterday-tab-pane" type="button" role="tab" aria-controls="yesterday-tab-pane" aria-selected="false">
+                    <i class="fas fa-history me-1"></i> YESTERDAY'S HEADLINES
+                </button>
+            </li>
+        </ul>
 
-        <div class="tab-content" id="newsTabContent">
-            <div class="tab-pane fade show active" id="popular-tab-pane" role="tabpanel" aria-labelledby="popular-tab">
-                <div class="row g-4 pt-3">
-                    {% if popular_articles %}
-                        {% for art in popular_articles %}
-                            <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card d-flex flex-column w-100">
-                                    {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
-                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
-                                    <div class="article-body d-flex flex-column">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
-                                        </div>
-                                        <div class="article-meta small mb-2">
-                                            <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
-                                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
-                                        </div>
-                                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                                    </div>
-                                </article>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="col-12"><div class="alert alert-light text-center">More popular stories are currently unavailable.</div></div>
-                    {% endif %}
-                </div>
-                {% if popular_articles %}
-                <div class="text-center mt-4">
-                    <a href="{{ url_for('index', category_name='Popular Stories') }}" class="btn btn-outline-primary">View All Popular Stories <i class="fas fa-arrow-right ms-1"></i></a>
-                </div>
-                {% endif %}
-            </div>
-            <div class="tab-pane fade" id="yesterday-tab-pane" role="tabpanel" aria-labelledby="yesterday-tab">
-                <div class="row g-4 pt-3">
-                    {% if latest_yesterday_articles %}
-                        {% for art in latest_yesterday_articles %}
-                             <div class="col-md-6 col-lg-4 d-flex">
-                                <article class="article-card d-flex flex-column w-100">
-                                    {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
-                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
-                                    <div class="article-body d-flex flex-column">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
-                                        </div>
-                                        <div class="article-meta small mb-2">
-                                            <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
-                                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
-                                        </div>
-                                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                                    </div>
-                                </article>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="col-12"><div class="alert alert-light text-center">Could not load yesterday's articles.</div></div>
-                    {% endif %}
-                </div>
-                {% if latest_yesterday_articles %}
-                <div class="text-center mt-4">
-                    <a href="{{ url_for('index', category_name="Yesterday's Headlines") }}" class="btn btn-outline-primary">View All of Yesterday's Headlines <i class="fas fa-arrow-right ms-1"></i></a>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
+        <div class="tab-content" id="newsTabContent">
+            <div class="tab-pane fade show active" id="popular-tab-pane" role="tabpanel" aria-labelledby="popular-tab">
+                <div class="row g-4 pt-3">
+                    {% if popular_articles %}
+                        {% for art in popular_articles %}
+                            <div class="col-md-6 col-lg-4 d-flex">
+                                <article class="article-card d-flex flex-column w-100">
+                                    {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
+                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
+                                    <div class="article-body d-flex flex-column">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
+                                        </div>
+                                        <div class="article-meta small mb-2">
+                                            <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
+                                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
+                                        </div>
+                                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                                    </div>
+                                </article>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12"><div class="alert alert-light text-center">More popular stories are currently unavailable.</div></div>
+                    {% endif %}
+                </div>
+                {% if popular_articles %}
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('index', category_name='Popular Stories') }}" class="btn btn-outline-primary">View All Popular Stories <i class="fas fa-arrow-right ms-1"></i></a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="tab-pane fade" id="yesterday-tab-pane" role="tabpanel" aria-labelledby="yesterday-tab">
+                <div class="row g-4 pt-3">
+                    {% if latest_yesterday_articles %}
+                        {% for art in latest_yesterday_articles %}
+                             <div class="col-md-6 col-lg-4 d-flex">
+                                <article class="article-card d-flex flex-column w-100">
+                                    {% set article_url = url_for('article_detail', article_hash_id=art.id) %}
+                                    <div class="article-image-container"><a href="{{ article_url }}"><img src="{{ art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a></div>
+                                    <div class="article-body d-flex flex-column">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                                            {% if session.user_id %}<button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;" title="Bookmark" data-article-hash-id="{{ art.id }}" data-is-community="false" data-title="{{ art.title|e }}" data-source-name="{{ art.source.name|e }}" data-image-url="{{ art.urlToImage|e }}" data-description="{{ (art.description if art.description else '')|e }}" data-published-at="{{ (art.publishedAt if art.publishedAt else '')|e }}"><i class="fa-solid fa-bookmark"></i></button>{% endif %}
+                                        </div>
+                                        <div class="article-meta small mb-2">
+                                            <span class="meta-item text-muted"><i class="fas fa-building"></i> {{ art.source.name|truncate(20) }}</span>
+                                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.publishedAt | to_ist if art.publishedAt else 'N/A') }}</span>
+                                        </div>
+                                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                                    </div>
+                                </article>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12"><div class="alert alert-light text-center">Could not load yesterday's articles.</div></div>
+                    {% endif %}
+                </div>
+                {% if latest_yesterday_articles %}
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('index', category_name="Yesterday's Headlines") }}" class="btn btn-outline-primary">View All of Yesterday's Headlines <i class="fas fa-arrow-right ms-1"></i></a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
 {% else %}
 
-    {# ============ LAYOUT 2: STANDARD PAGINATED LIST VIEW (RESTORED) ============ #}
-    {# This block handles all other pages like categories, search, and date filters. #}
+    {# ============ LAYOUT 2: STANDARD PAGINATED LIST VIEW (RESTORED) ============ #}
+    {# This block handles all other pages like categories, search, and date filters. #}
 
-    {% if selected_category == 'All Articles' and current_filter_date %}
-        <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
-    {% elif selected_category != 'All Articles' and selected_category != 'Community Hub' %}
-         <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
-    {% endif %}
+    {% if selected_category == 'All Articles' and current_filter_date %}
+        <h4 class="mb-3 fst-italic">Showing articles for: {{ current_filter_date }}</h4>
+    {% elif selected_category != 'All Articles' and selected_category != 'Community Hub' %}
+         <h2 class="pb-2 border-bottom mb-4">{{ selected_category }}</h2>
+    {% endif %}
 
-    {% if articles and not is_main_homepage %} {# This section is for the paginated list view only #}
-        <div class="row g-4">
-            {% for art in articles %}
-            <div class="col-md-6 col-lg-4 d-flex">
-                <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
-                    {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
-                    <div class="article-image-container">
-                        <a href="{{ article_url }}">
-                        <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
-                    </div>
-                    <div class="article-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
-                            {% if session.user_id %}
-                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
-                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
-                                    data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
-                                    data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
-                                    data-title="{{ art.title|e }}"
-                                    data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
-                                    data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
-                                    data-description="{{ (art.description if art.description else '')|e }}"
-                                    data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
-                                <i class="fa-solid fa-bookmark"></i>
-                            </button>
-                            {% endif %}
-                        </div>
-                        <div class="article-meta small mb-2">
-                            <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {% if art.is_community_article and art.author %}<a href="{{ url_for('public_profile', username=art.author.username) }}" class="text-muted text-decoration-none">{{ art.author.name|truncate(20) }}</a>{% else %}{{ art.source.name|truncate(20) }}{% endif %}</span>
-                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
-                        </div>
-                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
-                                                <div class="mt-auto d-flex align-items-center gap-2">
-                            <a href="{{ article_url }}" class="read-more btn btn-sm flex-grow-1">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
-                            {% if session.get('is_admin') and art.is_community_article %}
-                                <button class="btn btn-sm btn-outline-danger admin-delete-card-btn"
-                                        data-article-hash-id="{{ art.article_hash_id }}"
-                                        title="Admin: Delete Post">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            {% endif %}
-                        </div>
-                                            </div>
-                </article>
-            </div>
-            {% endfor %}
-        </div>
-    {% elif not articles %}
-        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No articles found.</h4><p>Please try a different category or search query.</p></div>
-    {% endif %}
+    {% if articles and not is_main_homepage %} {# This section is for the paginated list view only #}
+        <div class="row g-4">
+            {% for art in articles %}
+            <div class="col-md-6 col-lg-4 d-flex">
+                <article class="article-card animate-fade-in d-flex flex-column w-100" style="animation-delay: {{ loop.index0 * 0.05 }}s">
+                    {% set article_url = url_for('article_detail', article_hash_id=(art.article_hash_id if art.is_community_article else art.id)) %}
+                    <div class="article-image-container">
+                        <a href="{{ article_url }}">
+                        <img src="{{ art.image_url if art.is_community_article else art.urlToImage }}" class="article-image" alt="{{ art.title|truncate(50) }}"></a>
+                    </div>
+                    <div class="article-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5 class="article-title mb-2 flex-grow-1"><a href="{{ article_url }}" class="text-decoration-none">{{ art.title|truncate(70) }}</a></h5>
+                            {% if session.user_id %}
+                            <button class="bookmark-btn homepage-bookmark-btn {% if art.is_bookmarked %}active{% endif %}" style="margin-left: 10px; padding-top:0;"
+                                    title="{% if art.is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}"
+                                    data-article-hash-id="{{ art.article_hash_id if art.is_community_article else art.id }}"
+                                    data-is-community="{{ 'true' if art.is_community_article else 'false' }}"
+                                    data-title="{{ art.title|e }}"
+                                    data-source-name="{{ (art.author.name if art.is_community_article and art.author else art.source.name)|e }}"
+                                    data-image-url="{{ (art.image_url if art.is_community_article else art.urlToImage)|e }}"
+                                    data-description="{{ (art.description if art.description else '')|e }}"
+                                    data-published-at="{{ (art.published_at.isoformat() if art.is_community_article and art.published_at else (art.publishedAt if not art.is_community_article and art.publishedAt else ''))|e }}">
+                                <i class="fa-solid fa-bookmark"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                        <div class="article-meta small mb-2">
+                            <span class="meta-item text-muted"><i class="fas fa-{{ 'user-edit' if art.is_community_article else 'building' }}"></i> {% if art.is_community_article and art.author %}<a href="{{ url_for('public_profile', username=art.author.username) }}" class="text-muted text-decoration-none">{{ art.author.name|truncate(20) }}</a>{% else %}{{ art.source.name|truncate(20) }}{% endif %}</span>
+                            <span class="meta-item text-muted"><i class="far fa-calendar-alt"></i> {{ (art.published_at | to_ist if art.is_community_article else (art.publishedAt | to_ist if art.publishedAt else 'N/A')) }}</span>
+                        </div>
+                        <p class="article-description small">{{ art.description|truncate(100) }}</p>
+                        <a href="{{ article_url }}" class="read-more btn btn-sm mt-auto">Read More <i class="fas fa-chevron-right ms-1 small"></i></a>
+                    </div>
+                </article>
+            </div>
+            {% endfor %}
+        </div>
+    {% elif not articles %}
+        <div class="alert alert-info text-center my-5 p-4"><h4><i class="fas fa-search me-2"></i>No articles found.</h4><p>Please try a different category or search query.</p></div>
+    {% endif %}
 
-    {% if total_pages and total_pages > 1 %}
-    <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
-        {% set filter_date_for_url = request.args.get('filter_date') if selected_category == 'All Articles' and request.args.get('filter_date') else None %}
-        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page > 1 else '#' }}">&laquo; Prev</a>
-        </li>
-        {% set page_window = 1 %}{% set show_first = 1 %}{% set show_last = total_pages %}
-        {% if current_page - page_window > show_first %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">1</a></li>{% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endif %}
-        {% for p in range(1, total_pages + 1) %}{% if p == current_page %}<li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>{% elif p >= current_page - page_window and p <= current_page + page_window %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ p }}</a></li>{% endif %}{% endfor %}
-        {% if current_page + page_window < show_last %}{% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ total_pages }}</a></li>{% endif %}
-        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page < total_pages else '#' }}">Next &raquo;</a>
-        </li>
-    </ul></nav>
-    {% endif %}
+    {% if total_pages and total_pages > 1 %}
+    <nav aria-label="Page navigation" class="mt-5"><ul class="pagination justify-content-center">
+        {% set filter_date_for_url = request.args.get('filter_date') if selected_category == 'All Articles' and request.args.get('filter_date') else None %}
+        <li class="page-item page-link-prev-next {% if current_page == 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page-1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page > 1 else '#' }}">&laquo; Prev</a>
+        </li>
+        {% set page_window = 1 %}{% set show_first = 1 %}{% set show_last = total_pages %}
+        {% if current_page - page_window > show_first %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">1</a></li>{% if current_page - page_window > show_first + 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endif %}
+        {% for p in range(1, total_pages + 1) %}{% if p == current_page %}<li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>{% elif p >= current_page - page_window and p <= current_page + page_window %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=p, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ p }}</a></li>{% endif %}{% endfor %}
+        {% if current_page + page_window < show_last %}{% if current_page + page_window < show_last - 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}<li class="page-item"><a class="page-link" href="{{ url_for(request.endpoint, page=total_pages, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) }}">{{ total_pages }}</a></li>{% endif %}
+        <li class="page-item page-link-prev-next {% if current_page == total_pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for(request.endpoint, page=current_page+1, category_name=selected_category if request.endpoint != 'search_results' else None, query=query if request.endpoint == 'search_results' else None, filter_date=filter_date_for_url) if current_page < total_pages else '#' }}">Next &raquo;</a>
+        </li>
+    </ul></nav>
+    {% endif %}
 {% endif %}
 {% endblock %}
 
 {% block scripts_extra %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
-    document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
-        if (isUserLoggedInForHomepage) {
-            button.addEventListener('click', function(event) {
-                event.preventDefault(); event.stopPropagation();
-                const articleHashId = this.dataset.articleHashId;
-                const isCommunity = this.dataset.isCommunity;
-                const title = this.dataset.title;
-                const sourceName = this.dataset.sourceName;
-                const imageUrl = this.dataset.imageUrl;
-                const description = this.dataset.description;
-                const publishedAt = this.dataset.publishedAt;
-                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
-                })
-                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
-                .then(data => {
-                    if (data.success) {
-                        this.classList.toggle('active', data.status === 'added');
-                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                        const alertPlaceholder = document.getElementById('alert-placeholder');
-                        if(alertPlaceholder) {
-                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
-                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
-                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
-                            const newAlert = alertPlaceholder.lastChild;
-                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
-                        }
-                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
-                })
-                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
-            });
-        }
-    });
-
-    // <<< START: ADMIN IMPLEMENTATION (Card View) >>>
-    document.body.addEventListener('click', function(event) {
-        const deleteButton = event.target.closest('.admin-delete-card-btn');
-        if (!deleteButton) {
-            return; // Exit if the clicked element is not an admin delete button
+    const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
+    document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
+        if (isUserLoggedInForHomepage) {
+            button.addEventListener('click', function(event) {
+                event.preventDefault(); event.stopPropagation();
+                const articleHashId = this.dataset.articleHashId;
+                const isCommunity = this.dataset.isCommunity;
+                const title = this.dataset.title;
+                const sourceName = this.dataset.sourceName;
+                const imageUrl = this.dataset.imageUrl;
+                const description = this.dataset.description;
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_community_article: isCommunity, title: title, source_name: sourceName, image_url: imageUrl, description: description, published_at: publishedAt })
+                })
+                .then(res => { if (!res.ok) { return res.json().then(err => { throw new Error(err.error || `HTTP error! status: ${res.status}`); }); } return res.json(); })
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added');
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                        const alertPlaceholder = document.getElementById('alert-placeholder');
+                        if(alertPlaceholder) {
+                            const existingAlerts = alertPlaceholder.querySelectorAll('.bookmark-alert');
+                            existingAlerts.forEach(al => bootstrap.Alert.getOrCreateInstance(al)?.close());
+                            const alertDiv = `<div class="alert alert-info alert-dismissible fade show alert-top bookmark-alert" role="alert" style="z-index: 2060;">${data.message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                            alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
+                            const newAlert = alertPlaceholder.lastChild;
+                            setTimeout(() => { bootstrap.Alert.getOrCreateInstance(newAlert)?.close(); }, 3000);
+                        }
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error on homepage:", err); alert("Could not update bookmark: " + err.message); });
+            });
         }
-
-        event.preventDefault();
-        event.stopPropagation();
-        
-        if (!confirm('ADMIN ACTION: Are you sure you want to permanently delete this community post?')) {
-            return;
-        }
-
-        const articleHashId = deleteButton.dataset.articleHashId;
-        const articleCard = deleteButton.closest('.article-card');
-
-        fetch(`/delete_community_article/${articleHashId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        })
-        .then(res => res.json().then(data => ({ ok: res.ok, data })))
-        .then(({ ok, data }) => {
-            if (ok && data.success) {
-                // If successful, fade out and remove the card from the view
-                if (articleCard) {
-                    articleCard.style.transition = 'opacity 0.5s ease';
-                    articleCard.style.opacity = '0';
-                    setTimeout(() => articleCard.remove(), 500);
-                }
-                
-                // Show a temporary success message at the top
-                const alertPlaceholder = document.getElementById('alert-placeholder');
-                if (alertPlaceholder) {
-                    const alertDiv = `<div class="alert alert-success alert-dismissible fade show alert-top" role="alert">Article successfully deleted.<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                    alertPlaceholder.insertAdjacentHTML('beforeend', alertDiv);
-                    const newAlert = alertPlaceholder.lastChild;
-                    setTimeout(() => {
-                        const bsAlert = bootstrap.Alert.getOrCreateInstance(newAlert);
-                        if (bsAlert) bsAlert.close();
-                    }, 4000);
-                }
-            } else {
-                alert('Deletion failed: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(err => {
-            console.error("Admin delete error:", err);
-            alert("A network error occurred. Could not delete the post.");
-        });
     });
-    // <<< END: ADMIN IMPLEMENTATION (Card View) >>>
 });
 </script>
 {% endblock %}
@@ -2552,419 +2455,382 @@ ARTICLE_HTML_TEMPLATE = """
 {% block title %}{{ article.title|truncate(50) if article else "Article" }} - BrieflyAI{% endblock %}
 {% block head_extra %}
 <style>
-    .article-full-content-wrapper { background-color: var(--card-bg); padding: clamp(1rem, 4vw, 2rem); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); margin-bottom: 2rem; margin-top: 1rem; }
-    .article-title-main {font-weight: 700; color: var(--text-color); line-height:1.3; font-family: 'Poppins', sans-serif;}
-    .summary-box, .takeaways-box { background-color: rgba(var(--primary-color-rgb), 0.04); border: 1px solid rgba(var(--primary-color-rgb), 0.1); border-radius: var(--border-radius-md); margin: 1.5rem 0; padding: 1.5rem; }
-    body.dark-mode .summary-box, body.dark-mode .takeaways-box { background-color: #2a30422e; }
-    .takeaways-box { border-left: 4px solid var(--secondary-color); }
-    .loader-container { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; padding: 2rem; color: var(--text-muted-color); }
-    .loader { border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
-    .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .edit-form-container { display: none; } /* Hide edit form by default */
+    .article-full-content-wrapper { background-color: var(--card-bg); padding: clamp(1rem, 4vw, 2rem); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); margin-bottom: 2rem; margin-top: 1rem; }
+    .article-title-main {font-weight: 700; color: var(--text-color); line-height:1.3; font-family: 'Poppins', sans-serif;}
+    .summary-box, .takeaways-box { background-color: rgba(var(--primary-color-rgb), 0.04); border: 1px solid rgba(var(--primary-color-rgb), 0.1); border-radius: var(--border-radius-md); margin: 1.5rem 0; padding: 1.5rem; }
+    body.dark-mode .summary-box, body.dark-mode .takeaways-box { background-color: #2a30422e; }
+    .takeaways-box { border-left: 4px solid var(--secondary-color); }
+    .loader-container { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; padding: 2rem; color: var(--text-muted-color); }
+    .loader { border: 5px solid var(--light-bg); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 1rem; }
+    .content-text { white-space: pre-wrap; line-height: 1.8; font-size: 1.05rem; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .edit-form-container { display: none; } /* Hide edit form by default */
 </style>
 {% endblock %}
 {% block content %}
 {% if not article %}
-    <div class="alert alert-danger text-center my-5 p-4"><h4><i class="fas fa-exclamation-triangle me-2"></i>Article Not Found</h4><p>The article you are looking for could not be found.</p><a href="{{ url_for('index') }}" class="btn btn-primary mt-2">Go to Homepage</a></div>
+    <div class="alert alert-danger text-center my-5 p-4"><h4><i class="fas fa-exclamation-triangle me-2"></i>Article Not Found</h4><p>The article you are looking for could not be found.</p><a href="{{ url_for('index') }}" class="btn btn-primary mt-2">Go to Homepage</a></div>
 {% else %}
 <article class="article-full-content-wrapper animate-fade-in">
-    <div class="mb-3 d-flex justify-content-between align-items-center">
-        <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
-        
-                <div class="d-flex align-items-center gap-2">
-            
-            {% if session.get('is_admin') and is_community_article %}
-            <button id="adminDeleteBtn" class="btn btn-sm btn-danger" title="Admin: Delete Post">
-                <i class="fas fa-trash-alt"></i> Delete Post
-            </button>
+    <div class="mb-3 d-flex justify-content-between align-items-center">
+        <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
+        
+        <!-- Wrapper for right-side action buttons -->
+        <div class="d-flex align-items-center gap-2">
+            {% if session.user_id %}
+                
+                <!-- NEW: Report Button for Community Articles -->
+                {% if is_community_article %}
+                <button id="reportBtn" class="btn btn-sm btn-outline-warning" title="Report this article for review">
+                    <i class="fas fa-flag"></i> Report
+                </button>
+                {% endif %}
+                
+                <!-- Existing Bookmark Button -->
+                <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}" data-is-community="{{ 'true' if is_community_article else 'false' }}" data-title="{{ article.title|e }}" data-source-name="{{ (article.author.name if is_community_article and article.author else article.source.name)|e }}" data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}" data-description="{{ (article.description if article.description else '')|e }}" data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}"><i class="fa-solid fa-bookmark"></i></button>
             {% endif %}
+        </div>
+    </div>
 
-            {% if session.user_id %}
-                
-                                {% if is_community_article %}
-                <button id="reportBtn" class="btn btn-sm btn-outline-warning" title="Report this article for review">
-                    <i class="fas fa-flag"></i> Report
-                </button>
-                {% endif %}
-                
-                                <button id="bookmarkBtn" class="bookmark-btn {% if is_bookmarked %}active{% endif %}" title="{% if is_bookmarked %}Remove Bookmark{% else %}Add Bookmark{% endif %}" data-article-hash-id="{{ article.article_hash_id if is_community_article else article.id }}" data-is-community="{{ 'true' if is_community_article else 'false' }}" data-title="{{ article.title|e }}" data-source-name="{{ (article.author.name if is_community_article and article.author else article.source.name)|e }}" data-image-url="{{ (article.image_url if is_community_article else article.urlToImage)|e }}" data-description="{{ (article.description if article.description else '')|e }}" data-published-at="{{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|e }}"><i class="fa-solid fa-bookmark"></i></button>
-            {% endif %}
-        </div>
-    </div>
+    <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
+    <div class="article-meta-detailed d-flex align-items-center flex-wrap gap-3 text-muted small"><span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article and article.author else article.source.name }}</span><span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span></div>
+    {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
+    {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="img-fluid rounded my-3 shadow-sm">{% endif %}
+    
+    <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary...</div></div>
+    <div id="articleAnalysisContainer">
+    {% if is_community_article %}
+        {% if article.groq_summary %}<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>{% endif %}
+        {% if article.parsed_takeaways %}<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul></div>{% endif %}
+        <hr class="my-4"><h4 class="mb-3">Full Article Content</h4><div class="content-text">{{ article.full_text }}</div>
+    {% else %}<div id="apiArticleContent"></div>{% endif %}
+    </div>
 
-    <h1 class="mb-2 article-title-main display-6">{{ article.title }}</h1>
-    <div class="article-meta-detailed d-flex align-items-center flex-wrap gap-3 text-muted small"><span class="meta-item" title="Source"><i class="fas fa-{{ 'user-edit' if is_community_article else 'building' }}"></i> {{ article.author.name if is_community_article and article.author else article.source.name }}</span><span class="meta-item" title="Published Date"><i class="far fa-calendar-alt"></i> {{ (article.published_at | to_ist if is_community_article else (article.publishedAt | to_ist if article.publishedAt else 'N/A')) }}</span></div>
-    {% set image_to_display = article.image_url if is_community_article else article.urlToImage %}
-    {% if image_to_display %}<img src="{{ image_to_display }}" alt="{{ article.title|truncate(50) }}" class="img-fluid rounded my-3 shadow-sm">{% endif %}
-    
-    <div id="contentLoader" class="loader-container my-4 {% if is_community_article %}d-none{% endif %}"><div class="loader"></div><div>Analyzing article and generating summary...</div></div>
-    <div id="articleAnalysisContainer">
-    {% if is_community_article %}
-        {% if article.groq_summary %}<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>{% endif %}
-        {% if article.parsed_takeaways %}<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul></div>{% endif %}
-        <hr class="my-4"><h4 class="mb-3">Full Article Content</h4><div class="content-text">{{ article.full_text }}</div>
-    {% else %}<div id="apiArticleContent"></div>{% endif %}
-    </div>
+    <section class="comment-section mt-5" id="comment-section">
+        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ total_comment_count }}</span>)</h3>
+        
+        <div id="comments-list">
+            {% for comment in comments %}
+                {% include '_COMMENT_TEMPLATE' %}
+            {% else %}
+                <p id="no-comments-msg" class="text-muted mt-3">No comments yet. Be the first to share your thoughts!</p>
+            {% endfor %}
+        </div>
 
-    <section class="comment-section mt-5" id="comment-section">
-        <h3 class="mb-4">Community Discussion (<span id="comment-count">{{ total_comment_count }}</span>)</h3>
-        
-        <div id="comments-list">
-            {% for comment in comments %}
-                {% include '_COMMENT_TEMPLATE' %}
-            {% else %}
-                <p id="no-comments-msg" class="text-muted mt-3">No comments yet. Be the first to share your thoughts!</p>
-            {% endfor %}
-        </div>
-
-        {% if session.user_id %}
-            <div class="add-comment-form mt-4 pt-4 border-top">
-                <h5 class="mb-3">Leave a Comment</h5>
-                <form id="comment-form">
-                    <div class="mb-3"><textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea></div>
-                    <button type="submit" class="btn btn-primary">Post Comment</button>
-                </form>
-            </div>
-        {% else %}
-            <div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}" class="fw-bold">log in</a> to join the discussion.</div>
-        {% endif %}
-    </section>
+        {% if session.user_id %}
+            <div class="add-comment-form mt-4 pt-4 border-top">
+                <h5 class="mb-3">Leave a Comment</h5>
+                <form id="comment-form">
+                    <div class="mb-3"><textarea class="form-control" id="comment-content" name="content" rows="4" placeholder="Share your insights..." required></textarea></div>
+                    <button type="submit" class="btn btn-primary">Post Comment</button>
+                </form>
+            </div>
+        {% else %}
+            <div class="alert alert-light mt-4 text-center">Please <a href="{{ url_for('login', next=request.url) }}" class="fw-bold">log in</a> to join the discussion.</div>
+        {% endif %}
+    </section>
 </article>
 {% endif %}
 {% endblock %}
 {% block scripts_extra %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    try {
-        {% if article %}
-        const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
-        const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
-        const isCommunityArticle = {{ is_community_article | tojson }};
+    try {
+        {% if article %}
+        const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
+        const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
+        const isCommunityArticle = {{ is_community_article | tojson }};
 
-        const adminDeleteBtn = document.getElementById('adminDeleteBtn');
-        if (adminDeleteBtn) {
-            adminDeleteBtn.addEventListener('click', function() {
-                if (!confirm('ADMIN ACTION: Are you sure you want to permanently delete this community post? This action cannot be undone.')) {
+        if (!isCommunityArticle) {
+            const contentLoader = document.getElementById('contentLoader');
+            const apiArticleContent = document.getElementById('apiArticleContent');
+            
+            fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
+                .then(response => { if (!response.ok) { throw new Error(`Network error, status: ${response.status}`); } return response.json(); })
+                .then(data => {
+                    if (data.error) { throw new Error(data.error); }
+                    let html = '';
+                    const articleUrl = {{ article.url | tojson if article and not is_community_article else 'null' }};
+                    const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
+                    const analysis = data.groq_analysis;
+                    if (analysis) {
+                        if (analysis.error) { html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`; }
+                        else {
+                            if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
+                            if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
+                        }
+                    }
+                    if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
+                    apiArticleContent.innerHTML = html;
+                })
+                .catch(error => { console.error("Failed to load article content:", error); if (apiArticleContent) { apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; } })
+                .finally(() => { if (contentLoader) contentLoader.style.display = 'none'; });
+        }
+
+        const commentSection = document.getElementById('comment-section');
+        if (commentSection && isUserLoggedIn) {
+            
+            const handleCommentSubmit = (formElement) => {
+                const content = formElement.querySelector('textarea[name="content"]').value;
+                const parentId = formElement.querySelector('input[name="parent_id"]')?.value || null;
+                if (!content.trim()) return;
+                const submitButton = formElement.querySelector('button[type="submit"]');
+                const originalButtonText = submitButton.innerHTML;
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
+                fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ content, parent_id: parentId })
+                })
+                .then(res => {
+                    if (res.status === 401) { throw new Error("Your session has expired. Please refresh the page and log in again."); }
+                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || "An unknown server error occurred."); }); }
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        const noCommentsMsg = document.getElementById('no-comments-msg');
+                        if (noCommentsMsg) noCommentsMsg.remove();
+                        if (data.parent_id) {
+                            document.getElementById(`replies-of-${data.parent_id}`).insertAdjacentHTML('beforeend', data.html);
+                            formElement.closest('.reply-form-container').style.display = 'none';
+                        } else {
+                            document.getElementById('comments-list').insertAdjacentHTML('beforeend', data.html);
+                        }
+                        const countEl = document.getElementById('comment-count');
+                        countEl.textContent = parseInt(countEl.textContent) + 1;
+                        formElement.reset();
+                    } else { throw new Error(data.error || 'Could not post comment.'); }
+                })
+                .catch(err => { console.error("Comment submission error:", err); alert("Error: " + err.message); })
+                .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
+            };
+
+            const updateReactionUI = (commentId, reactions, userReaction) => {
+                const summaryContainer = document.getElementById(`reaction-summary-${commentId}`);
+                if (!summaryContainer) return;
+                let summaryHTML = '';
+                if (reactions) {
+                    for (const [emoji, count] of Object.entries(reactions)) {
+                        if (count > 0) {
+                            const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
+                            summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
+                        }
+                    }
+                }
+                summaryContainer.innerHTML = summaryHTML;
+            };
+
+            commentSection.addEventListener('click', function(e) {
+                const target = e.target;
+                
+                const deleteBtn = target.closest('.delete-btn');
+                if (deleteBtn) {
+                    e.preventDefault();
+                    const commentId = deleteBtn.dataset.commentId;
+                    if (confirm('Are you sure you want to delete this comment? All replies will also be removed.')) {
+                        fetch(`/delete_comment/${commentId}`, { method: 'POST' })
+                            .then(res => {
+                                if (!res.ok) { return res.json().then(err => { throw new Error(err.error) }); }
+                                return res.json();
+                            })
+                            .then(data => {
+                                if (data.success) {
+                                    const commentElement = document.getElementById(`comment-${commentId}`);
+                                    const repliesCount = commentElement.querySelectorAll('.comment-thread').length;
+                                    const totalCommentsToRemove = 1 + repliesCount;
+                                    
+                                    const countEl = document.getElementById('comment-count');
+                                    countEl.textContent = Math.max(0, parseInt(countEl.textContent) - totalCommentsToRemove);
+                                    
+                                    commentElement.style.transition = 'opacity 0.5s ease';
+                                    commentElement.style.opacity = '0';
+                                    setTimeout(() => commentElement.remove(), 500);
+                                } else {
+                                    alert('Error: ' + data.error);
+                                }
+                            })
+                            .catch(err => {
+                                console.error("Delete error:", err);
+                                alert("Could not delete comment: " + err.message);
+                            });
+                    }
+                    return;
+                }
+
+                const editBtn = target.closest('.edit-btn');
+                if (editBtn) {
+                    e.preventDefault();
+                    const commentId = editBtn.dataset.commentId;
+                    const commentThread = document.getElementById(`comment-${commentId}`);
+                    const commentBody = commentThread.querySelector('.comment-body');
+                    commentBody.querySelector('.comment-content').style.display = 'none';
+                    commentBody.querySelector('.comment-actions').style.display = 'none';
+                    commentBody.querySelector('.edit-form-container').style.display = 'block';
+                    return;
+                }
+
+                const cancelEditBtn = target.closest('.cancel-edit-btn');
+                if (cancelEditBtn) {
+                    e.preventDefault();
+                    const commentBody = cancelEditBtn.closest('.comment-body');
+                    commentBody.querySelector('.comment-content').style.display = 'block';
+                    commentBody.querySelector('.comment-actions').style.display = 'flex';
+                    commentBody.querySelector('.edit-form-container').style.display = 'none';
+                    return;
+                }
+
+                const replyBtn = target.closest('.reply-btn');
+                if (replyBtn) {
+                    e.preventDefault();
+                    const commentId = replyBtn.dataset.commentId;
+                    const formContainer = document.getElementById(`reply-form-container-${commentId}`);
+                    if (formContainer) {
+                        const isDisplayed = formContainer.style.display === 'block';
+                        document.querySelectorAll('.reply-form-container').forEach(fc => fc.style.display = 'none');
+                        formContainer.style.display = isDisplayed ? 'none' : 'block';
+                        if (!isDisplayed) formContainer.querySelector('textarea').focus();
+                    }
+                    return;
+                }
+                
+                const reactBtn = target.closest('.react-btn');
+                if (reactBtn) {
+                    e.preventDefault();
+                    const commentId = reactBtn.dataset.commentId;
+                    const reactionBox = document.getElementById(`reaction-box-${commentId}`);
+                    if (reactionBox) {
+                        const isShown = reactionBox.classList.contains('show');
+                        document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
+                        if (!isShown) reactionBox.classList.add('show');
+                    }
+                    return;
+                }
+
+                const reactionEmoji = target.closest('.reaction-emoji');
+                if (reactionEmoji) {
+                    e.preventDefault();
+                    const commentId = reactionEmoji.dataset.commentId;
+                    const emoji = reactionEmoji.dataset.emoji;
+                    reactionEmoji.closest('.reaction-box').classList.remove('show');
+                    fetch(`/vote_comment/${commentId}`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ emoji: emoji })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); } 
+                        else { throw new Error(data.error || "Failed to vote."); }
+                    })
+                    .catch(err => { console.error("Reaction error:", err); alert("Error: " + err.message); });
+                    return;
+                }
+                
+                if (!target.closest('.reaction-box') && !target.closest('.react-btn')) {
+                    document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
+                }
+            });
+
+            commentSection.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                if (e.target.matches('.edit-comment-form')) {
+                    const form = e.target;
+                    const commentId = form.closest('.comment-thread').id.replace('comment-', '');
+                    const newContent = form.querySelector('textarea[name="content"]').value.trim();
+                    if (!newContent) return;
+
+                    fetch(`/edit_comment/${commentId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: newContent })
+                    })
+                    .then(res => {
+                        if (!res.ok) { return res.json().then(err => { throw new Error(err.error) }); }
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            const commentBody = form.closest('.comment-body');
+                            const contentP = commentBody.querySelector('.comment-content');
+                            contentP.textContent = data.new_content;
+                            contentP.style.display = 'block';
+                            commentBody.querySelector('.comment-actions').style.display = 'flex';
+                            form.closest('.edit-form-container').style.display = 'none';
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Edit error:", err);
+                        alert("Could not save changes: " + err.message);
+                    });
+                    return;
+                }
+                
+                if (e.target.id === 'comment-form' || e.target.matches('.reply-form')) {
+                    handleCommentSubmit(e.target);
+                }
+            });
+        }
+
+        const reportBtn = document.getElementById('reportBtn');
+        if (reportBtn) {
+            reportBtn.addEventListener('click', function() {
+                if (!confirm('Are you sure you want to report this article for review?')) {
                     return;
                 }
                 this.disabled = true;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
-                
-                fetch(`/delete_community_article/${articleHashIdGlobal}`, {
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reporting...';
+                fetch(`/report_article/${articleHashIdGlobal}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 })
-                .then(res => res.json().then(data => ({ ok: res.ok, data })))
-                .then(({ ok, data }) => {
-                    if (ok && data.success) {
-                        // On successful deletion, redirect to the Community Hub
-                        window.location.href = data.redirect_url;
+                .then(res => res.json().then(data => ({ ok: res.ok, status: res.status, data })))
+                .then(({ ok, status, data }) => {
+                    if (ok) {
+                        this.innerHTML = '<i class="fas fa-check"></i> Reported';
+                        alert(data.message);
                     } else {
-                        alert('Deletion failed: ' + (data.error || 'Unknown error'));
                         this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Post';
+                        this.innerHTML = '<i class="fas fa-flag"></i> Report';
+                        alert('Error: ' + data.error);
                     }
                 })
                 .catch(err => {
-                    console.error("Admin delete error:", err);
-                    alert("A network error occurred. Could not delete the post.");
+                    console.error("Report error:", err);
+                    alert("A network error occurred. Please try again.");
                     this.disabled = false;
-                    this.innerHTML = '<i class="fas fa-trash-alt"></i> Delete Post';
+                    this.innerHTML = '<i class="fas fa-flag"></i> Report';
                 });
             });
         }
 
-        if (!isCommunityArticle) {
-            const contentLoader = document.getElementById('contentLoader');
-            const apiArticleContent = document.getElementById('apiArticleContent');
-            
-            fetch(`{{ url_for('get_article_content_json', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal))
-                .then(response => { if (!response.ok) { throw new Error(`Network error, status: ${response.status}`); } return response.json(); })
-                .then(data => {
-                    if (data.error) { throw new Error(data.error); }
-                    let html = '';
-                    const articleUrl = {{ article.url | tojson if article and not is_community_article else 'null' }};
-                    const articleSourceName = {{ article.source.name | tojson if article and not is_community_article and article.source else 'Source'|tojson }};
-                    const analysis = data.groq_analysis;
-                    if (analysis) {
-                        if (analysis.error) { html += `<div class="alert alert-secondary small p-3 mt-3">AI analysis could not be performed: ${analysis.error}</div>`; }
-                        else {
-                            if (analysis.groq_summary) { html += `<div class="summary-box my-3"><h5><i class="fas fa-book-open me-2"></i>AI Summary</h5><p class="mb-0">${analysis.groq_summary.replace(/\\n/g, '<br>')}</p></div>`; }
-                            if (analysis.groq_takeaways && analysis.groq_takeaways.length > 0) { html += `<div class="takeaways-box my-3"><h5><i class="fas fa-list-check me-2"></i>AI Key Takeaways</h5><ul>${analysis.groq_takeaways.map(t => `<li>${String(t)}</li>`).join('')}</ul></div>`; }
-                        }
-                    }
-                    if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1"></i></a>`; }
-                    apiArticleContent.innerHTML = html;
-                })
-                .catch(error => { console.error("Failed to load article content:", error); if (apiArticleContent) { apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; } })
-                .finally(() => { if (contentLoader) contentLoader.style.display = 'none'; });
-        }
-
-        const commentSection = document.getElementById('comment-section');
-        if (commentSection && isUserLoggedIn) {
-            
-            const handleCommentSubmit = (formElement) => {
-                const content = formElement.querySelector('textarea[name="content"]').value;
-                const parentId = formElement.querySelector('input[name="parent_id"]')?.value || null;
-                if (!content.trim()) return;
-                const submitButton = formElement.querySelector('button[type="submit"]');
-                const originalButtonText = submitButton.innerHTML;
-                submitButton.disabled = true;
-                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
-                fetch(`{{ url_for('add_comment', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashIdGlobal), {
-                    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ content, parent_id: parentId })
-                })
-                .then(res => {
-                    if (res.status === 401) { throw new Error("Your session has expired. Please refresh the page and log in again."); }
-                    if (!res.ok) { return res.json().then(err => { throw new Error(err.error || "An unknown server error occurred."); }); }
-                    return res.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        const noCommentsMsg = document.getElementById('no-comments-msg');
-                        if (noCommentsMsg) noCommentsMsg.remove();
-                        if (data.parent_id) {
-                            document.getElementById(`replies-of-${data.parent_id}`).insertAdjacentHTML('beforeend', data.html);
-                            formElement.closest('.reply-form-container').style.display = 'none';
-                        } else {
-                            document.getElementById('comments-list').insertAdjacentHTML('beforeend', data.html);
-                        }
-                        const countEl = document.getElementById('comment-count');
-                        countEl.textContent = parseInt(countEl.textContent) + 1;
-                        formElement.reset();
-                    } else { throw new Error(data.error || 'Could not post comment.'); }
-                })
-                .catch(err => { console.error("Comment submission error:", err); alert("Error: " + err.message); })
-                .finally(() => { submitButton.disabled = false; submitButton.innerHTML = originalButtonText; });
-            };
-
-            const updateReactionUI = (commentId, reactions, userReaction) => {
-                const summaryContainer = document.getElementById(`reaction-summary-${commentId}`);
-                if (!summaryContainer) return;
-                let summaryHTML = '';
-                if (reactions) {
-                    for (const [emoji, count] of Object.entries(reactions)) {
-                        if (count > 0) {
-                            const userReactedClass = (userReaction === emoji) ? 'user-reacted' : '';
-                            summaryHTML += `<div class="reaction-pill ${userReactedClass}" data-emoji="${emoji}"><span class="emoji">${emoji}</span> <span class="count">${count}</span></div>`;
-                        }
-                    }
-                }
-                summaryContainer.innerHTML = summaryHTML;
-            };
-
-            commentSection.addEventListener('click', function(e) {
-                const target = e.target;
-                
-                const deleteBtn = target.closest('.delete-btn');
-                if (deleteBtn) {
-                    e.preventDefault();
-                    const commentId = deleteBtn.dataset.commentId;
-                    if (confirm('Are you sure you want to delete this comment? All replies will also be removed.')) {
-                        fetch(`/delete_comment/${commentId}`, { method: 'POST' })
-                            .then(res => {
-                                if (!res.ok) { return res.json().then(err => { throw new Error(err.error) }); }
-                                return res.json();
-                            })
-                            .then(data => {
-                                if (data.success) {
-                                    const commentElement = document.getElementById(`comment-${commentId}`);
-                                    const repliesCount = commentElement.querySelectorAll('.comment-thread').length;
-                                    const totalCommentsToRemove = 1 + repliesCount;
-                                    
-                                    const countEl = document.getElementById('comment-count');
-                                    countEl.textContent = Math.max(0, parseInt(countEl.textContent) - totalCommentsToRemove);
-                                    
-                                    commentElement.style.transition = 'opacity 0.5s ease';
-                                    commentElement.style.opacity = '0';
-                                    setTimeout(() => commentElement.remove(), 500);
-                                } else {
-                                    alert('Error: ' + data.error);
-                                }
-                            })
-                            .catch(err => {
-                                console.error("Delete error:", err);
-                                alert("Could not delete comment: " + err.message);
-                            });
-                    }
-                    return;
-                }
-
-                const editBtn = target.closest('.edit-btn');
-                if (editBtn) {
-                    e.preventDefault();
-                    const commentId = editBtn.dataset.commentId;
-                    const commentThread = document.getElementById(`comment-${commentId}`);
-                    const commentBody = commentThread.querySelector('.comment-body');
-                    commentBody.querySelector('.comment-content').style.display = 'none';
-                    commentBody.querySelector('.comment-actions').style.display = 'none';
-                    commentBody.querySelector('.edit-form-container').style.display = 'block';
-                    return;
-                }
-
-                const cancelEditBtn = target.closest('.cancel-edit-btn');
-                if (cancelEditBtn) {
-                    e.preventDefault();
-                    const commentBody = cancelEditBtn.closest('.comment-body');
-                    commentBody.querySelector('.comment-content').style.display = 'block';
-                    commentBody.querySelector('.comment-actions').style.display = 'flex';
-                    commentBody.querySelector('.edit-form-container').style.display = 'none';
-                    return;
-                }
-
-                const replyBtn = target.closest('.reply-btn');
-                if (replyBtn) {
-                    e.preventDefault();
-                    const commentId = replyBtn.dataset.commentId;
-                    const formContainer = document.getElementById(`reply-form-container-${commentId}`);
-                    if (formContainer) {
-                        const isDisplayed = formContainer.style.display === 'block';
-                        document.querySelectorAll('.reply-form-container').forEach(fc => fc.style.display = 'none');
-                        formContainer.style.display = isDisplayed ? 'none' : 'block';
-                        if (!isDisplayed) formContainer.querySelector('textarea').focus();
-                    }
-                    return;
-                }
-                
-                const reactBtn = target.closest('.react-btn');
-                if (reactBtn) {
-                    e.preventDefault();
-                    const commentId = reactBtn.dataset.commentId;
-                    const reactionBox = document.getElementById(`reaction-box-${commentId}`);
-                    if (reactionBox) {
-                        const isShown = reactionBox.classList.contains('show');
-                        document.querySelectorAll('.reaction-box').forEach(box => box.classList.remove('show'));
-                        if (!isShown) reactionBox.classList.add('show');
-                    }
-                    return;
-                }
-
-                const reactionEmoji = target.closest('.reaction-emoji');
-                if (reactionEmoji) {
-                    e.preventDefault();
-                    const commentId = reactionEmoji.dataset.commentId;
-                    const emoji = reactionEmoji.dataset.emoji;
-                    reactionEmoji.closest('.reaction-box').classList.remove('show');
-                    fetch(`/vote_comment/${commentId}`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({ emoji: emoji })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success) { updateReactionUI(commentId, data.reactions, data.user_reaction); } 
-                        else { throw new Error(data.error || "Failed to vote."); }
-                    })
-                    .catch(err => { console.error("Reaction error:", err); alert("Error: " + err.message); });
-                    return;
-                }
-                
-                if (!target.closest('.reaction-box') && !target.closest('.react-btn')) {
-                    document.querySelectorAll('.reaction-box.show').forEach(box => box.classList.remove('show'));
-                }
-            });
-
-            commentSection.addEventListener('submit', function(e) {
-                e.preventDefault();
-
-                if (e.target.matches('.edit-comment-form')) {
-                    const form = e.target;
-                    const commentId = form.closest('.comment-thread').id.replace('comment-', '');
-                    const newContent = form.querySelector('textarea[name="content"]').value.trim();
-                    if (!newContent) return;
-
-                    fetch(`/edit_comment/${commentId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content: newContent })
-                    })
-                    .then(res => {
-                        if (!res.ok) { return res.json().then(err => { throw new Error(err.error) }); }
-                        return res.json();
-                    })
-                    .then(data => {
-                        if (data.success) {
-                            const commentBody = form.closest('.comment-body');
-                            const contentP = commentBody.querySelector('.comment-content');
-                            contentP.textContent = data.new_content;
-                            contentP.style.display = 'block';
-                            commentBody.querySelector('.comment-actions').style.display = 'flex';
-                            form.closest('.edit-form-container').style.display = 'none';
-                        } else {
-                            alert('Error: ' + data.error);
-                        }
-                    })
-                    .catch(err => {
-                        console.error("Edit error:", err);
-                        alert("Could not save changes: " + err.message);
-                    });
-                    return;
-                }
-                
-                if (e.target.id === 'comment-form' || e.target.matches('.reply-form')) {
-                    handleCommentSubmit(e.target);
-                }
-            });
-        }
-
-        const reportBtn = document.getElementById('reportBtn');
-        if (reportBtn) {
-            reportBtn.addEventListener('click', function() {
-                if (!confirm('Are you sure you want to report this article for review?')) {
-                    return;
-                }
-                this.disabled = true;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reporting...';
-                fetch(`/report_article/${articleHashIdGlobal}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                })
-                .then(res => res.json().then(data => ({ ok: res.ok, status: res.status, data })))
-                .then(({ ok, status, data }) => {
-                    if (ok) {
-                        this.innerHTML = '<i class="fas fa-check"></i> Reported';
-                        alert(data.message);
-                    } else {
-                        this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-flag"></i> Report';
-                        alert('Error: ' + data.error);
-                    }
-                })
-                .catch(err => {
-                    console.error("Report error:", err);
-                    alert("A network error occurred. Please try again.");
-                    this.disabled = false;
-                    this.innerHTML = '<i class="fas fa-flag"></i> Report';
-                });
-            });
-        }
-
-        const bookmarkBtn = document.getElementById('bookmarkBtn');
-        if (bookmarkBtn && isUserLoggedIn) {
-            bookmarkBtn.addEventListener('click', function() {
-                const articleHashId = this.dataset.articleHashId;
-                const isCommunity = this.dataset.isCommunity;
-                const title = this.dataset.title;
-                const sourceName = this.dataset.sourceName;
-                const imageUrl = this.dataset.imageUrl;
-                const description = this.dataset.description;
-                const publishedAt = this.dataset.publishedAt;
-                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt }) })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        this.classList.toggle('active', data.status === 'added');
-                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
-                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
-                })
-                .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
-            });
-        }
-        {% endif %}
-    } catch (e) {
-        console.error("A critical error occurred on the article page:", e);
-    }
+        const bookmarkBtn = document.getElementById('bookmarkBtn');
+        if (bookmarkBtn && isUserLoggedIn) {
+            bookmarkBtn.addEventListener('click', function() {
+                const articleHashId = this.dataset.articleHashId;
+                const isCommunity = this.dataset.isCommunity;
+                const title = this.dataset.title;
+                const sourceName = this.dataset.sourceName;
+                const imageUrl = this.dataset.imageUrl;
+                const description = this.dataset.description;
+                const publishedAt = this.dataset.publishedAt;
+                fetch(`{{ url_for('toggle_bookmark', article_hash_id='PLACEHOLDER') }}`.replace('PLACEHOLDER', articleHashId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_community_article: isCommunity, title, source_name: sourceName, image_url: imageUrl, description, published_at: publishedAt }) })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        this.classList.toggle('active', data.status === 'added');
+                        this.title = data.status === 'added' ? 'Remove Bookmark' : 'Add Bookmark';
+                    } else { alert('Error: ' + (data.error || 'Could not update bookmark.')); }
+                })
+                .catch(err => { console.error("Bookmark error:", err); alert("Could not update bookmark: " + err.message); });
+            });
+        }
+        {% endif %}
+    } catch (e) {
+        console.error("A critical error occurred on the article page:", e);
+    }
 });
 </script>
 {% endblock %}
