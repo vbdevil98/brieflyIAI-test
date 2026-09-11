@@ -62,6 +62,13 @@ app = Flask(__name__)
 template_storage = {}
 app.jinja_loader = DictLoader(template_storage)
 
+# SECURITY: Flask decides autoescaping from the template *filename* extension
+# (select_jinja_autoescape -> endswith(".html", ".htm", ".xml", ...)). These templates are
+# keyed as "ARTICLE_HTML_TEMPLATE" etc., which match none of those, so autoescaping would be
+# OFF and every user-supplied value (comment text, article titles, display names) would render
+# as live HTML -> stored XSS. Force it on for all templates.
+app.jinja_env.autoescape = True
+
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'YOUR_FALLBACK_FLASK_SECRET_KEY_HERE_32_CHARS')
 app.config['PER_PAGE'] = 9
 app.config['CATEGORIES'] = ['All Articles', 'Popular Stories', "Yesterday's Headlines", 'Community Hub']
@@ -1569,6 +1576,21 @@ BASE_HTML_TEMPLATE = """
     <meta name="theme-color" content="#0B0C10">
     <title>{% block title %}BrieflyAI{% endblock %}</title>
 
+    {# --- SEO / social sharing. Pages override the inner blocks. --- #}
+    {% block meta %}
+    <meta name="description" content="{% block meta_description %}AI-summarized, India-centric news. Get the key facts in seconds.{% endblock %}">
+    <link rel="canonical" href="{% block canonical_url %}{{ request.base_url }}{% endblock %}">
+    <meta property="og:site_name" content="BrieflyAI">
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}BrieflyAI{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}AI-summarized, India-centric news. Get the key facts in seconds.{% endblock %}">
+    <meta property="og:url" content="{% block og_url %}{{ request.base_url }}{% endblock %}">
+    {% block og_image %}{% endblock %}
+    <meta name="twitter:card" content="{% block twitter_card %}summary_large_image{% endblock %}">
+    <meta name="twitter:title" content="{{ self.og_title() }}">
+    <meta name="twitter:description" content="{{ self.og_description() }}">
+    {% endblock %}
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -1660,7 +1682,10 @@ BASE_HTML_TEMPLATE = """
            BASE
            ========================================================================== */
         *, *::before, *::after { box-sizing: border-box; }
-        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+        /* overflow-x must live on html, not body: setting it on body makes body its own
+           scroll container (overflow-y computes to auto), which stops window.scrollY from
+           tracking the page and silently breaks the progress bar, parallax and nav state. */
+        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; overflow-x: hidden; }
         ::selection { background: rgba(var(--primary-color-rgb), 0.22); }
         body {
             padding-top: 84px; margin: 0; font-family: var(--font-sans); font-size: 1rem; line-height: 1.65;
@@ -1668,7 +1693,6 @@ BASE_HTML_TEMPLATE = """
             display: flex; flex-direction: column; min-height: 100vh;
             transition: background-color 0.35s var(--ease-standard), color 0.35s var(--ease-standard);
             -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-            overflow-x: hidden;
         }
         .main-content { flex-grow: 1; }
         p { max-width: 75ch; }
@@ -2094,6 +2118,84 @@ BASE_HTML_TEMPLATE = """
         .synthesis-keywords .keyword-tag:hover { background-image: linear-gradient(135deg, var(--primary-light), var(--primary-color)); color: #fff; border-color: transparent; transform: translateY(-2px); }
 
         /* ==========================================================================
+           READING PROGRESS BAR
+           ========================================================================== */
+        .reading-progress { position: fixed; top: 0; left: 0; height: 3px; width: 100%; z-index: 1050; background: transparent; pointer-events: none; }
+        .reading-progress__fill { height: 100%; width: 0%; background-image: linear-gradient(90deg, var(--primary-light), var(--secondary-color)); transform-origin: left; transition: width 80ms linear; }
+
+        /* ==========================================================================
+           ARTICLE TOOLBAR (read time, listen, text size, share)
+           ========================================================================== */
+        .article-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.85rem 0; margin: 1.25rem 0; border-top: 1px solid var(--card-border-color); border-bottom: 1px solid var(--card-border-color); }
+        .toolbar-btn { display: inline-flex; align-items: center; gap: 0.4rem; background: none; border: 1px solid var(--card-border-color); color: var(--text-muted-color); border-radius: var(--border-radius-pill); padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-spring); white-space: nowrap; }
+        .toolbar-btn:hover { color: var(--primary-color); border-color: var(--primary-color); transform: translateY(-1px); }
+        .toolbar-btn.is-active { background-image: linear-gradient(135deg, var(--primary-light), var(--primary-color)); color: #fff; border-color: transparent; }
+        .read-time-badge { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 600; color: var(--text-muted-color); margin-right: auto; }
+        .read-time-badge i { color: var(--secondary-color); }
+        .toolbar-spacer { margin-left: auto; }
+
+        /* Share menu */
+        .share-wrap { position: relative; }
+        .share-menu { display: none; position: absolute; right: 0; bottom: calc(100% + 8px); background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-md); box-shadow: var(--shadow-lg); padding: 0.4rem; min-width: 190px; z-index: 20; animation: fadeInUp 0.22s var(--ease-spring); }
+        .share-menu.show { display: block; }
+        .share-menu button, .share-menu a { display: flex; align-items: center; gap: 0.65rem; width: 100%; background: none; border: none; color: var(--text-color); text-decoration: none; padding: 0.55rem 0.75rem; border-radius: var(--border-radius-sm); font-size: 0.86rem; font-weight: 500; text-align: left; transition: background-color var(--duration-fast) var(--ease-standard); }
+        .share-menu button:hover, .share-menu a:hover { background-color: var(--light-bg); color: var(--text-color); }
+        .share-menu i { width: 1.1rem; text-align: center; }
+        .share-menu .i-whatsapp { color: #25D366; } .share-menu .i-x { color: var(--text-color); }
+        .share-menu .i-facebook { color: #1877F2; } .share-menu .i-linkedin { color: #0A66C2; }
+        .share-menu .i-link { color: var(--primary-color); }
+
+        /* Text-size presets, applied to the article body */
+        .article-full-content-wrapper[data-text-size="large"] .content-text,
+        .article-full-content-wrapper[data-text-size="large"] .summary-box p,
+        .article-full-content-wrapper[data-text-size="large"] .takeaways-box li { font-size: 1.22rem; line-height: 1.85; }
+        .article-full-content-wrapper[data-text-size="xlarge"] .content-text,
+        .article-full-content-wrapper[data-text-size="xlarge"] .summary-box p,
+        .article-full-content-wrapper[data-text-size="xlarge"] .takeaways-box li { font-size: 1.4rem; line-height: 1.9; }
+        .tts-highlight { background: rgba(var(--accent-color-rgb), 0.22); border-radius: 3px; }
+
+        /* ==========================================================================
+           RECENTLY VIEWED STRIP
+           ========================================================================== */
+        .recent-strip { margin-bottom: 2rem; }
+        .recent-strip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.85rem; }
+        .recent-strip__list { display: flex; gap: 0.85rem; overflow-x: auto; padding-bottom: 0.5rem; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+        .recent-strip__list::-webkit-scrollbar { height: 6px; }
+        .recent-item { flex: 0 0 clamp(200px, 44vw, 260px); scroll-snap-align: start; background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-md); padding: 0.85rem 1rem; text-decoration: none; color: var(--text-color); transition: transform var(--duration-base) var(--ease-premium), box-shadow var(--duration-base) var(--ease-premium), border-color var(--duration-base) var(--ease-standard); }
+        .recent-item:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: rgba(var(--primary-color-rgb), 0.35); color: var(--text-color); }
+        .recent-item__title { font-size: 0.88rem; font-weight: 700; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+        .recent-item__source { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--text-muted-color); }
+        .link-btn { background: none; border: none; color: var(--text-muted-color); font-size: 0.78rem; font-weight: 600; text-decoration: underline; text-underline-offset: 0.2em; padding: 0; }
+        .link-btn:hover { color: var(--primary-color); }
+
+        /* ==========================================================================
+           KEYBOARD SHORTCUTS
+           ========================================================================== */
+        .kbd-list { display: grid; grid-template-columns: 1fr auto; gap: 0.6rem 1.5rem; align-items: center; }
+        .kbd-list dt { color: var(--text-color); font-size: 0.9rem; }
+        .kbd-list dd { margin: 0; text-align: right; }
+        kbd { font-family: var(--font-mono); font-size: 0.75rem; background: var(--light-bg); border: 1px solid var(--card-border-color); border-bottom-width: 2px; border-radius: var(--border-radius-xs); padding: 0.15rem 0.45rem; color: var(--text-color); }
+
+        /* Comment sort control */
+        .comment-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+        .sort-select { font-size: 0.82rem; font-weight: 600; padding: 0.35rem 2rem 0.35rem 0.75rem; border-radius: var(--border-radius-pill); border: 1px solid var(--card-border-color); background-color: var(--card-bg); color: var(--text-color); width: auto; }
+
+        /* ==========================================================================
+           PRINT
+           ========================================================================== */
+        @media print {
+            .navbar-main, .offcanvas, footer, .admin-controls, .article-toolbar, .reading-progress,
+            #alert-placeholder, .comment-section, .recent-strip, .modal, .offcanvas-backdrop,
+            .bookmark-btn, .read-more, .pagination, .btn { display: none !important; }
+            body { padding-top: 0; background: #fff; color: #000; font-size: 12pt; }
+            .article-full-content-wrapper { box-shadow: none; border: none; padding: 0; max-width: 100%; }
+            .summary-box, .takeaways-box { border: 1px solid #ccc; background: none !important; break-inside: avoid; }
+            .content-text, p { max-width: none; }
+            a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #555; word-break: break-all; }
+            .hero-image-wrap { max-height: 240px; break-inside: avoid; }
+        }
+
+        /* ==========================================================================
            RESPONSIVE
            ========================================================================== */
         @media (max-width: 991.98px) {
@@ -2257,6 +2359,30 @@ BASE_HTML_TEMPLATE = """
                 <div class="modal-footer border-0 pt-0">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-danger" id="confirmActionModalConfirm">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="shortcutsModal" tabindex="-1" aria-hidden="true" aria-labelledby="shortcutsModalLabel">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-2">
+                    <h2 class="modal-title h5" id="shortcutsModalLabel"><i class="fas fa-keyboard me-2" aria-hidden="true"></i>Keyboard shortcuts</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="kbd-list mb-0">
+                        <dt>Focus search</dt><dd><kbd>/</kbd></dd>
+                        <dt>Open menu</dt><dd><kbd>m</kbd></dd>
+                        <dt>Toggle dark mode</dt><dd><kbd>d</kbd></dd>
+                        <dt>Go to homepage</dt><dd><kbd>g</kbd> <kbd>h</kbd></dd>
+                        <dt>Go to profile</dt><dd><kbd>g</kbd> <kbd>p</kbd></dd>
+                        <dt>Bookmark this article</dt><dd><kbd>b</kbd></dd>
+                        <dt>Jump to comments</dt><dd><kbd>c</kbd></dd>
+                        <dt>Back to top</dt><dd><kbd>t</kbd></dd>
+                        <dt>Show this help</dt><dd><kbd>?</kbd></dd>
+                    </dl>
                 </div>
             </div>
         </div>
@@ -2513,11 +2639,138 @@ BASE_HTML_TEMPLATE = """
         });
     };
 
+    /* --- Sharing ------------------------------------------------------------
+       Uses the native share sheet where available (mobile), falls back to a
+       menu of per-network intent URLs plus copy-to-clipboard. */
+    BrieflyAI.share = {
+        targets: function (url, title) {
+            var u = encodeURIComponent(url), t = encodeURIComponent(title || '');
+            return {
+                whatsapp: 'https://wa.me/?text=' + t + '%20' + u,
+                x: 'https://twitter.com/intent/tweet?url=' + u + '&text=' + t,
+                facebook: 'https://www.facebook.com/sharer/sharer.php?u=' + u,
+                linkedin: 'https://www.linkedin.com/sharing/share-offsite/?url=' + u
+            };
+        },
+        native: function (url, title, text) {
+            if (!navigator.share) { return Promise.reject(new Error('unsupported')); }
+            return navigator.share({ title: title, text: text || title, url: url });
+        },
+        copy: function (url) {
+            if (navigator.clipboard && window.isSecureContext) {
+                return navigator.clipboard.writeText(url);
+            }
+            // Fallback for non-HTTPS / older browsers.
+            return new Promise(function (resolve, reject) {
+                try {
+                    var ta = document.createElement('textarea');
+                    ta.value = url;
+                    ta.setAttribute('readonly', '');
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    var ok = document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    ok ? resolve() : reject(new Error('copy failed'));
+                } catch (e) { reject(e); }
+            });
+        }
+    };
+
+    /* --- Recently viewed (per-browser, never leaves the device) -------------- */
+    BrieflyAI.recent = {
+        KEY: 'brieflyai:recent',
+        MAX: 8,
+        read: function () {
+            try {
+                var raw = localStorage.getItem(this.KEY);
+                var list = raw ? JSON.parse(raw) : [];
+                return Array.isArray(list) ? list : [];
+            } catch (e) { return []; }
+        },
+        add: function (item) {
+            if (!item || !item.url || !item.title) { return; }
+            try {
+                var list = this.read().filter(function (x) { return x.url !== item.url; });
+                list.unshift({ url: item.url, title: item.title, source: item.source || '' });
+                localStorage.setItem(this.KEY, JSON.stringify(list.slice(0, this.MAX)));
+            } catch (e) { /* storage unavailable -- feature simply does nothing */ }
+        },
+        clear: function () {
+            try { localStorage.removeItem(this.KEY); } catch (e) {}
+        }
+    };
+
+    /* --- Keyboard shortcuts -------------------------------------------------- */
+    BrieflyAI.initShortcuts = function () {
+        var pendingG = false, gTimer = null;
+        function isTyping(el) {
+            if (!el) { return false; }
+            var tag = el.tagName;
+            return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+        }
+        document.addEventListener('keydown', function (e) {
+            if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+            if (isTyping(document.activeElement)) { return; }
+            // Don't hijack keys while a dialog is open.
+            if (document.querySelector('.modal.show') && e.key !== '?') { return; }
+
+            var k = e.key;
+
+            if (pendingG) {
+                pendingG = false;
+                clearTimeout(gTimer);
+                if (k === 'h') { e.preventDefault(); window.location.href = "{{ url_for('index') }}"; return; }
+                if (k === 'p') { e.preventDefault(); window.location.href = "{{ url_for('profile') if session.user_id else url_for('login') }}"; return; }
+            }
+
+            switch (k) {
+                case '/':
+                    e.preventDefault();
+                    var search = document.getElementById('navbarSearchInput');
+                    if (search && search.offsetParent !== null) { search.focus(); search.select(); }
+                    else { document.querySelector('[data-bs-target="#mainOffcanvas"]').click(); }
+                    break;
+                case '?':
+                    e.preventDefault();
+                    if (window.bootstrap) { bootstrap.Modal.getOrCreateInstance(document.getElementById('shortcutsModal')).show(); }
+                    break;
+                case 'm':
+                    e.preventDefault();
+                    document.querySelector('[data-bs-target="#mainOffcanvas"]').click();
+                    break;
+                case 'd':
+                    e.preventDefault();
+                    var t = document.querySelector('.dark-mode-toggle');
+                    if (t) { t.click(); }
+                    break;
+                case 't':
+                    e.preventDefault();
+                    window.scrollTo({ top: 0, behavior: BrieflyAI.reducedMotion ? 'auto' : 'smooth' });
+                    break;
+                case 'b':
+                    var bm = document.getElementById('bookmarkBtn');
+                    if (bm) { e.preventDefault(); bm.click(); }
+                    break;
+                case 'c':
+                    var cs = document.getElementById('comment-section');
+                    if (cs) { e.preventDefault(); cs.scrollIntoView({ behavior: BrieflyAI.reducedMotion ? 'auto' : 'smooth' }); }
+                    break;
+                case 'g':
+                    pendingG = true;
+                    gTimer = setTimeout(function () { pendingG = false; }, 1200);
+                    break;
+            }
+        });
+    };
+
     document.addEventListener('DOMContentLoaded', function () {
         try {
             BrieflyAI.initImageLoadStates();
             BrieflyAI.initScrollReveal();
             BrieflyAI.initParallax();
+            BrieflyAI.initShortcuts();
 
             var navbar = document.getElementById('mainNavbar');
             if (navbar) {
@@ -2758,6 +3011,14 @@ INDEX_HTML_TEMPLATE = """
         </article>
         {% endif %}
 
+        <section class="recent-strip" id="recentStrip" hidden aria-labelledby="recentStripHeading">
+            <div class="recent-strip__head">
+                <h2 class="section-heading h5 mb-0" id="recentStripHeading"><i class="fas fa-clock-rotate-left me-2" aria-hidden="true"></i>Pick up where you left off</h2>
+                <button type="button" class="link-btn" id="clearRecentBtn">Clear</button>
+            </div>
+            <div class="recent-strip__list" id="recentStripList"></div>
+        </section>
+
         <ul class="nav nav-tabs nav-fill mb-3" id="newsTab" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="popular-tab" data-bs-toggle="tab" data-bs-target="#popular-tab-pane" type="button" role="tab" aria-controls="popular-tab-pane" aria-selected="true">
@@ -2972,6 +3233,45 @@ INDEX_HTML_TEMPLATE = """
 {% block scripts_extra %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    /* --- Recently viewed strip (reads local-only history; renders nothing if empty) --- */
+    (function () {
+        var strip = document.getElementById('recentStrip');
+        var list = document.getElementById('recentStripList');
+        if (!strip || !list || !window.BrieflyAI || !BrieflyAI.recent) { return; }
+
+        function render() {
+            var items = BrieflyAI.recent.read();
+            if (!items.length) { strip.hidden = true; return; }
+            list.textContent = '';
+            items.forEach(function (item) {
+                var a = document.createElement('a');
+                a.className = 'recent-item';
+                a.href = item.url;
+                var h3 = document.createElement('h3');
+                h3.className = 'recent-item__title';
+                h3.textContent = item.title;          // textContent, so stored titles can't inject markup
+                var span = document.createElement('span');
+                span.className = 'recent-item__source';
+                span.textContent = item.source || '';
+                a.appendChild(h3);
+                a.appendChild(span);
+                list.appendChild(a);
+            });
+            strip.hidden = false;
+            if (BrieflyAI.initScrollReveal) { BrieflyAI.initScrollReveal(strip); }
+        }
+
+        var clearBtn = document.getElementById('clearRecentBtn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function () {
+                BrieflyAI.recent.clear();
+                render();
+                BrieflyAI.showToast('Reading history cleared.', 'success', 2500);
+            });
+        }
+        render();
+    })();
+
     const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
     document.querySelectorAll('.homepage-bookmark-btn').forEach(button => {
         if (isUserLoggedInForHomepage) {
@@ -3016,6 +3316,41 @@ document.addEventListener('DOMContentLoaded', function () {
 ARTICLE_HTML_TEMPLATE = """
 {% extends "BASE_HTML_TEMPLATE" %}
 {% block title %}{{ article.title|truncate(50) if article else "Article" }} - BrieflyAI{% endblock %}
+
+{# Jinja hoists block definitions and gives each its own scope, so the values are
+   recomputed inside every block rather than shared via a top-level {% set %}. #}
+{% block meta_description %}{% if article %}{{ ((article.groq_summary if is_community_article and article.groq_summary else article.description) or 'AI-summarized news from BrieflyAI.')|striptags|truncate(155) }}{% else %}AI-summarized, India-centric news.{% endif %}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block og_title %}{% if article %}{{ article.title }}{% else %}Article not found{% endif %}{% endblock %}
+{% block og_description %}{% if article %}{{ ((article.groq_summary if is_community_article and article.groq_summary else article.description) or 'AI-summarized news from BrieflyAI.')|striptags|truncate(200) }}{% else %}AI-summarized, India-centric news.{% endif %}{% endblock %}
+{% block og_image %}
+    {% if article %}
+        {% set art_image = article.image_url if is_community_article else article.urlToImage %}
+        {% if art_image %}
+        <meta property="og:image" content="{{ art_image }}">
+        <meta name="twitter:image" content="{{ art_image }}">
+        <meta property="og:image:alt" content="{{ article.title|truncate(100) }}">
+        {% endif %}
+    {% endif %}
+{% endblock %}
+{% block head_extra %}
+{% if article %}
+{% set art_image = article.image_url if is_community_article else article.urlToImage %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "NewsArticle",
+  "headline": {{ article.title|truncate(110)|tojson }},
+  "description": {{ ((article.groq_summary if is_community_article and article.groq_summary else article.description) or '')|striptags|truncate(250)|tojson }},
+  {% if art_image %}"image": [{{ art_image|tojson }}],{% endif %}
+  "datePublished": {{ (article.published_at.isoformat() if is_community_article and article.published_at else (article.publishedAt if not is_community_article and article.publishedAt else ''))|tojson }},
+  "author": { "@type": "Person", "name": {{ (article.author.name if is_community_article and article.author else (article.source.name if not is_community_article and article.source else 'BrieflyAI'))|tojson }} },
+  "publisher": { "@type": "Organization", "name": "BrieflyAI" },
+  "mainEntityOfPage": { "@type": "WebPage", "@id": {{ request.base_url|tojson }} }
+}
+</script>
+{% endif %}
+{% endblock %}
 {% block content %}
 {% if not article %}
     <div class="state-card state-card-danger">
@@ -3025,7 +3360,8 @@ ARTICLE_HTML_TEMPLATE = """
         <div class="state-card-actions"><a href="{{ url_for('index') }}" class="btn btn-primary-modal">Go to Homepage</a></div>
     </div>
 {% else %}
-<article class="article-full-content-wrapper animate-fade-in">
+<div class="reading-progress" aria-hidden="true"><div class="reading-progress__fill" id="readingProgressFill"></div></div>
+<article class="article-full-content-wrapper animate-fade-in" id="articleWrapper" data-text-size="normal">
     <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <a href="{{ previous_list_page }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-2" aria-hidden="true"></i>Back to List</a>
 
@@ -3062,6 +3398,38 @@ ARTICLE_HTML_TEMPLATE = """
     </div>
     {% endif %}
 
+    <div class="article-toolbar" role="toolbar" aria-label="Article tools">
+        <span class="read-time-badge" id="readTimeBadge" {% if not is_community_article %}hidden{% endif %}>
+            <i class="far fa-clock" aria-hidden="true"></i>
+            <span id="readTimeValue">{% if is_community_article and article.full_text %}{{ [1, ((article.full_text|wordcount) / 220)|round(0, 'ceil')|int]|max }} min read{% endif %}</span>
+        </span>
+
+        <button type="button" class="toolbar-btn" id="listenBtn" hidden aria-pressed="false">
+            <i class="fas fa-headphones" aria-hidden="true"></i> <span class="listen-label">Listen</span>
+        </button>
+
+        <button type="button" class="toolbar-btn" id="textSizeBtn" aria-label="Change text size">
+            <i class="fas fa-font" aria-hidden="true"></i> <span id="textSizeLabel">Normal</span>
+        </button>
+
+        <div class="share-wrap">
+            <button type="button" class="toolbar-btn" id="shareBtn" aria-haspopup="true" aria-expanded="false" aria-controls="shareMenu">
+                <i class="fas fa-share-nodes" aria-hidden="true"></i> Share
+            </button>
+            <div class="share-menu" id="shareMenu" role="menu" aria-label="Share this article">
+                <a href="#" data-share="whatsapp" role="menuitem" target="_blank" rel="noopener noreferrer"><i class="fab fa-whatsapp i-whatsapp" aria-hidden="true"></i> WhatsApp</a>
+                <a href="#" data-share="x" role="menuitem" target="_blank" rel="noopener noreferrer"><i class="fab fa-x-twitter i-x" aria-hidden="true"></i> X (Twitter)</a>
+                <a href="#" data-share="facebook" role="menuitem" target="_blank" rel="noopener noreferrer"><i class="fab fa-facebook i-facebook" aria-hidden="true"></i> Facebook</a>
+                <a href="#" data-share="linkedin" role="menuitem" target="_blank" rel="noopener noreferrer"><i class="fab fa-linkedin i-linkedin" aria-hidden="true"></i> LinkedIn</a>
+                <button type="button" data-share="copy" role="menuitem"><i class="fas fa-link i-link" aria-hidden="true"></i> Copy link</button>
+            </div>
+        </div>
+
+        <button type="button" class="toolbar-btn" id="printBtn" aria-label="Print this article">
+            <i class="fas fa-print" aria-hidden="true"></i>
+        </button>
+    </div>
+
     <div id="contentLoader" class="ai-skeleton my-4 {% if is_community_article %}d-none{% endif %}" aria-hidden="true">
         <div class="ai-skeleton-box">
             <div class="ai-skeleton-label"></div>
@@ -3078,14 +3446,26 @@ ARTICLE_HTML_TEMPLATE = """
     </div>
     <div id="articleAnalysisContainer">
     {% if is_community_article %}
-        {% if article.groq_summary %}<div class="summary-box my-3"><h2><i class="fas fa-book-open me-2" aria-hidden="true"></i>AI Summary</h2><p class="mb-0">{{ article.groq_summary|replace('\\n', '<br>')|safe }}</p></div>{% endif %}
+        {% if article.groq_summary %}<div class="summary-box my-3"><h2><i class="fas fa-book-open me-2" aria-hidden="true"></i>AI Summary</h2><p class="mb-0">{{ article.groq_summary|e|replace('\\n', '<br>')|safe }}</p></div>{% endif %}
         {% if article.parsed_takeaways %}<div class="takeaways-box my-3"><h2><i class="fas fa-list-check me-2" aria-hidden="true"></i>AI Key Takeaways</h2><ul>{% for takeaway in article.parsed_takeaways %}<li>{{ takeaway }}</li>{% endfor %}</ul></div>{% endif %}
         <hr class="my-4"><h2 class="content-divider-heading">Full Article Content</h2><div class="content-text">{{ article.full_text }}</div>
     {% else %}<div id="apiArticleContent"></div>{% endif %}
     </div>
 
     <section class="comment-section mt-5" id="comment-section">
-        <h2 class="mb-4">Community Discussion (<span id="comment-count">{{ total_comment_count }}</span>)</h2>
+        <div class="comment-toolbar">
+            <h2 class="mb-0">Community Discussion (<span id="comment-count">{{ total_comment_count }}</span>)</h2>
+            {% if comments %}
+            <div class="d-flex align-items-center gap-2">
+                <label for="commentSort" class="small text-muted mb-0">Sort</label>
+                <select class="form-select sort-select" id="commentSort" aria-label="Sort comments">
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="reactions">Most reactions</option>
+                </select>
+            </div>
+            {% endif %}
+        </div>
 
         <div id="comments-list">
             {% for comment in comments %}
@@ -3122,6 +3502,193 @@ document.addEventListener('DOMContentLoaded', function () {
         const articleHashIdGlobal = {{ (article.article_hash_id if is_community_article else article.id) | tojson }};
         const isUserLoggedIn = {{ 'true' if session.user_id else 'false' }};
         const isCommunityArticle = {{ is_community_article | tojson }};
+        const articleTitleGlobal = {{ article.title | tojson }};
+        const articleSourceGlobal = {{ (article.author.name if is_community_article and article.author else (article.source.name if not is_community_article and article.source else 'BrieflyAI')) | tojson }};
+
+        /* --- Remember this article locally for the "Recently viewed" strip --- */
+        BrieflyAI.recent.add({
+            url: window.location.pathname,
+            title: articleTitleGlobal,
+            source: articleSourceGlobal
+        });
+
+        /* --- Reading progress bar --- */
+        (function () {
+            var fill = document.getElementById('readingProgressFill');
+            var wrapper = document.getElementById('articleWrapper');
+            if (!fill || !wrapper) { return; }
+            var ticking = false;
+            function update() {
+                var rect = wrapper.getBoundingClientRect();
+                var total = rect.height - window.innerHeight;
+                var pct = total <= 0 ? 100 : ((-rect.top) / total) * 100;
+                fill.style.width = Math.min(100, Math.max(0, pct)).toFixed(1) + '%';
+                ticking = false;
+            }
+            window.addEventListener('scroll', function () {
+                if (!ticking) { ticking = true; requestAnimationFrame(update); }
+            }, { passive: true });
+            window.addEventListener('resize', update, { passive: true });
+            update();
+        })();
+
+        /* --- Read time: server-rendered for community posts, computed after fetch for API ones --- */
+        BrieflyAI.setReadTime = function (text) {
+            if (!text) { return; }
+            var words = String(text).trim().split(/\\s+/).length;
+            var mins = Math.max(1, Math.ceil(words / 220));
+            var badge = document.getElementById('readTimeBadge');
+            var value = document.getElementById('readTimeValue');
+            if (badge && value) { value.textContent = mins + ' min read'; badge.hidden = false; }
+        };
+
+        /* --- Listen (Web Speech API) --- */
+        (function () {
+            var btn = document.getElementById('listenBtn');
+            if (!btn || !('speechSynthesis' in window)) { return; }
+            btn.hidden = false;
+            var speaking = false;
+            function textToRead() {
+                var parts = [];
+                var h1 = document.querySelector('.article-title-main');
+                if (h1) { parts.push(h1.textContent); }
+                var summary = document.querySelector('.summary-box p');
+                if (summary) { parts.push('Summary. ' + summary.textContent); }
+                document.querySelectorAll('.takeaways-box li').forEach(function (li, i) {
+                    if (i === 0) { parts.push('Key takeaways.'); }
+                    parts.push(li.textContent);
+                });
+                var body = document.querySelector('.content-text');
+                if (body) { parts.push(body.textContent); }
+                return parts.join('. ');
+            }
+            function setState(on) {
+                speaking = on;
+                btn.classList.toggle('is-active', on);
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                btn.querySelector('.listen-label').textContent = on ? 'Stop' : 'Listen';
+                btn.querySelector('i').className = on ? 'fas fa-stop' : 'fas fa-headphones';
+            }
+            btn.addEventListener('click', function () {
+                if (speaking) { window.speechSynthesis.cancel(); setState(false); return; }
+                var text = textToRead();
+                if (!text.trim()) { BrieflyAI.showToast('Nothing to read yet -- still loading.', 'info', 3000); return; }
+                var utter = new SpeechSynthesisUtterance(text);
+                utter.rate = 1.0;
+                utter.lang = document.documentElement.lang || 'en';
+                utter.onend = function () { setState(false); };
+                utter.onerror = function () { setState(false); };
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utter);
+                setState(true);
+            });
+            // Browsers keep speaking after navigation otherwise.
+            window.addEventListener('beforeunload', function () { window.speechSynthesis.cancel(); });
+        })();
+
+        /* --- Text size preference --- */
+        (function () {
+            var btn = document.getElementById('textSizeBtn');
+            var wrapper = document.getElementById('articleWrapper');
+            var label = document.getElementById('textSizeLabel');
+            if (!btn || !wrapper) { return; }
+            var sizes = ['normal', 'large', 'xlarge'];
+            var names = { normal: 'Normal', large: 'Large', xlarge: 'X-Large' };
+            var current = 'normal';
+            try { current = localStorage.getItem('brieflyai:textSize') || 'normal'; } catch (e) {}
+            if (sizes.indexOf(current) === -1) { current = 'normal'; }
+            function apply(size) {
+                current = size;
+                wrapper.dataset.textSize = size;
+                if (label) { label.textContent = names[size]; }
+                try { localStorage.setItem('brieflyai:textSize', size); } catch (e) {}
+            }
+            apply(current);
+            btn.addEventListener('click', function () {
+                apply(sizes[(sizes.indexOf(current) + 1) % sizes.length]);
+            });
+        })();
+
+        /* --- Share --- */
+        (function () {
+            var btn = document.getElementById('shareBtn');
+            var menu = document.getElementById('shareMenu');
+            if (!btn || !menu) { return; }
+            var url = window.location.href;
+            var targets = BrieflyAI.share.targets(url, articleTitleGlobal);
+            Object.keys(targets).forEach(function (k) {
+                var link = menu.querySelector('[data-share="' + k + '"]');
+                if (link) { link.href = targets[k]; }
+            });
+
+            function closeMenu() { menu.classList.remove('show'); btn.setAttribute('aria-expanded', 'false'); }
+
+            btn.addEventListener('click', function () {
+                // Prefer the OS share sheet where it exists (mobile), menu everywhere else.
+                if (navigator.share) {
+                    BrieflyAI.share.native(url, articleTitleGlobal)
+                        .catch(function (err) {
+                            if (err && err.name === 'AbortError') { return; }
+                            menu.classList.add('show');
+                            btn.setAttribute('aria-expanded', 'true');
+                        });
+                    return;
+                }
+                var show = !menu.classList.contains('show');
+                menu.classList.toggle('show', show);
+                btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+            });
+
+            menu.querySelector('[data-share="copy"]').addEventListener('click', function () {
+                BrieflyAI.share.copy(url)
+                    .then(function () { BrieflyAI.showToast('Link copied to clipboard.', 'success', 2500); })
+                    .catch(function () { BrieflyAI.showToast('Could not copy the link.', 'danger'); });
+                closeMenu();
+            });
+            menu.querySelectorAll('a[data-share]').forEach(function (a) {
+                a.addEventListener('click', closeMenu);
+            });
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.share-wrap')) { closeMenu(); }
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && menu.classList.contains('show')) { closeMenu(); btn.focus(); }
+            });
+        })();
+
+        var printBtn = document.getElementById('printBtn');
+        if (printBtn) { printBtn.addEventListener('click', function () { window.print(); }); }
+
+        /* --- Comment sorting (client-side reorder of top-level threads) --- */
+        (function () {
+            var select = document.getElementById('commentSort');
+            var list = document.getElementById('comments-list');
+            if (!select || !list) { return; }
+            function reactionScore(thread) {
+                var total = 0;
+                thread.querySelectorAll(':scope > .comment-container .reaction-pill .count').forEach(function (c) {
+                    total += parseInt(c.textContent, 10) || 0;
+                });
+                return total;
+            }
+            select.addEventListener('change', function () {
+                var mode = select.value;
+                var threads = Array.prototype.slice.call(list.children).filter(function (el) {
+                    return el.classList.contains('comment-thread');
+                });
+                // DOM order is oldest-first as rendered by the server.
+                threads.sort(function (a, b) {
+                    if (mode === 'reactions') {
+                        var diff = reactionScore(b) - reactionScore(a);
+                        if (diff !== 0) { return diff; }
+                    }
+                    var ai = parseInt(a.id.replace('comment-', ''), 10) || 0;
+                    var bi = parseInt(b.id.replace('comment-', ''), 10) || 0;
+                    return mode === 'oldest' ? ai - bi : bi - ai;
+                });
+                threads.forEach(function (t) { list.appendChild(t); });
+            });
+        })();
 
         const adminDeleteBtn = document.getElementById('adminDeleteBtn');
         if (adminDeleteBtn) {
@@ -3181,6 +3748,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     if (articleUrl) { html += `<hr class="my-4"><a href="${articleUrl}" class="btn btn-outline-primary mt-3 mb-3" target="_blank" rel="noopener noreferrer">Read Original Article at ${articleSourceName} <i class="fas fa-external-link-alt ms-1" aria-hidden="true"></i></a>`; }
                     apiArticleContent.innerHTML = html;
+                    // Read time comes from whatever text we actually received.
+                    BrieflyAI.setReadTime(data.full_text || (analysis && analysis.groq_summary) || '');
                 })
                 .catch(error => { console.error("Failed to load article content:", error); if (apiArticleContent) { apiArticleContent.innerHTML = `<div class="alert alert-danger small p-3">Failed to load article analysis. Details: ${error.message}</div>`; } })
                 .finally(() => { if (contentLoader) contentLoader.style.display = 'none'; });
