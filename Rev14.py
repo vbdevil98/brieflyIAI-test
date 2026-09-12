@@ -26,8 +26,6 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
 from jinja2 import DictLoader
-from newsapi import NewsApiClient
-from newsapi.newsapi_exception import NewsAPIException
 from newspaper import Article, Config
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -467,8 +465,10 @@ def too_many_requests(e):
 # --- 3. API Client Initialization ---
 # ==============================================================================
 NEWSAPI_KEY = os.environ.get('NEWSAPI_KEY')
-newsapi = NewsApiClient(api_key=NEWSAPI_KEY) if NEWSAPI_KEY else None
-if not newsapi: app.logger.error("NEWSAPI_KEY missing. News fetching will fail.")
+# NewsAPI has been removed. Its free tier delayed articles ~24h, capped usage at
+# 100 requests/day, forbade commercial use, and never returned full article text.
+# All headlines now come from publisher RSS feeds: real-time, unlimited and free.
+newsapi = None
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 groq_client = None
@@ -604,6 +604,125 @@ class ArticleStat(db.Model):
     article_hash_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
     view_count = db.Column(db.Integer, nullable=False, default=0)
     last_viewed_at = db.Column(db.DateTime, nullable=True, index=True)
+
+
+class Subscription(db.Model):
+    """
+    A user's paid plan.
+
+    NOTE: this records subscription STATE only. No payment processing is wired up --
+    see the /pricing and /billing/checkout routes for where a real gateway
+    (Razorpay is the usual choice for INR) would plug in.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="CASCADE"), nullable=False, index=True)
+    plan = db.Column(db.String(20), nullable=False, default='plus')      # free | plus | patron
+    status = db.Column(db.String(20), nullable=False, default='inactive')  # active | cancelled | expired | inactive
+    billing_period = db.Column(db.String(10), nullable=False, default='monthly')  # monthly | yearly
+    started_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
+    # Gateway bookkeeping, filled in once a real provider is connected.
+    provider = db.Column(db.String(30), nullable=True)
+    provider_ref = db.Column(db.String(120), nullable=True, index=True)
+    user = db.relationship('User', backref=db.backref('subscription', uselist=False, cascade="all, delete-orphan"))
+
+
+# Plans are priced in paise internally to avoid floating-point money bugs.
+PLANS = {
+    'free': {
+        'key': 'free',
+        'name': 'Reader',
+        'price_paise': 0,
+        'price_display': '\u20b90',
+        'period': 'forever',
+        'tagline': 'Everything you need to stay informed.',
+        'features': [
+            'AI summary and key takeaways on every story',
+            'Community Hub: post, comment and react',
+            'Up to 50 bookmarks',
+            'Dark mode, listen-to-article, keyboard shortcuts',
+        ],
+        'limits': {'bookmarks': 50},
+    },
+    'plus': {
+        'key': 'plus',
+        'name': 'Plus',
+        'price_paise': 5000,           # Rs 50
+        'price_display': '\u20b950',
+        'yearly_paise': 50000,         # Rs 500 -- two months free
+        'yearly_display': '\u20b9500',
+        'period': 'month',
+        'tagline': 'Support the site and read without interruptions.',
+        'features': [
+            'Everything in Reader',
+            'Ad-free reading across the whole site',
+            'Unlimited bookmarks',
+            'Daily briefing email, tuned to the topics you read',
+            'Supporter badge on your comments and profile',
+            'Higher posting limits in the Community Hub',
+        ],
+        'limits': {'bookmarks': None},
+        'popular': True,
+    },
+    'patron': {
+        'key': 'patron',
+        'name': 'Patron',
+        'price_paise': 20000,          # Rs 200
+        'price_display': '\u20b9200',
+        'yearly_paise': 200000,
+        'yearly_display': '\u20b92,000',
+        'period': 'month',
+        'tagline': 'For readers who want to fund independent coverage.',
+        'features': [
+            'Everything in Plus',
+            'Name listed on the supporters page',
+            'Early access to new features',
+            'Direct line to the team for feedback',
+        ],
+        'limits': {'bookmarks': None},
+    },
+}
+
+PAID_PLANS = ('plus', 'patron')
+
+
+def get_subscription(user_id=None):
+    """Return the user's active subscription, or None."""
+    user_id = user_id or session.get('user_id')
+    if not user_id:
+        return None
+    try:
+        sub = Subscription.query.filter_by(user_id=user_id).first()
+        if not sub or sub.status != 'active':
+            return None
+        if sub.expires_at:
+            expires = sub.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires < datetime.now(timezone.utc):
+                # Lapsed: mark it so the UI and limits agree.
+                sub.status = 'expired'
+                db.session.commit()
+                return None
+        return sub
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"Subscription lookup failed for user {user_id}: {e}")
+        return None
+
+
+def current_plan(user_id=None):
+    sub = get_subscription(user_id)
+    return PLANS.get(sub.plan, PLANS['free']) if sub else PLANS['free']
+
+
+def is_premium(user_id=None):
+    sub = get_subscription(user_id)
+    return bool(sub and sub.plan in PAID_PLANS)
+
+
+def bookmark_limit(user_id=None):
+    return current_plan(user_id)['limits'].get('bookmarks')
 
 
 def init_db():
@@ -883,350 +1002,74 @@ def get_daily_synthesis():
 # ==============================================================================
 @simple_cache()
 def fetch_news_from_api(target_date_str=None):
-    # RSS first: it is real-time, unlimited and carries no commercial-use restriction,
-    # whereas NewsAPI's free tier is ~24h delayed, capped at 100 requests/day and is
-    # licensed for development only. NewsAPI remains the fallback.
-    if os.environ.get('USE_RSS', 'true').lower() in ('1', 'true', 'yes'):
-        try:
-            rss_articles = fetch_news_from_rss()
-            if rss_articles:
-                if target_date_str:
-                    # Keep the same date-filtering contract the callers expect.
-                    rss_articles = [a for a in rss_articles
-                                    if (a.get('publishedAt') or '')[:10] == target_date_str]
-                if rss_articles:
-                    return rss_articles
-            app.logger.warning("RSS returned nothing usable; falling back to NewsAPI.")
-        except Exception as e:
-            app.logger.error(f"RSS ingestion failed, falling back to NewsAPI: {e}", exc_info=True)
+    """
+    Primary news source: publisher RSS feeds.
 
-    if not newsapi:
-        app.logger.error("NewsAPI client not initialized. Cannot fetch news.")
+    Kept under the original name so every caller and cache key stays unchanged.
+    `target_date_str` (YYYY-MM-DD) filters to a single day, as before.
+    """
+    try:
+        articles = fetch_news_from_rss()
+    except Exception as e:
+        app.logger.error(f"RSS ingestion failed: {e}", exc_info=True)
         return []
-
-    api_call_from_date_str = None
-    api_call_to_date_str = None
-    is_specific_date_fetch = False
-
-    # INDIAN_TIMEZONE should be globally defined in your script, e.g.,
-    # INDIAN_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
     if target_date_str:
-        try:
-            # Primary: Interpret target_date_str as user's local day in INDIAN_TIMEZONE
-            local_day_start_naive = datetime.strptime(target_date_str, '%Y-%m-%d')
-            local_day_start_aware_ist = INDIAN_TIMEZONE.localize(local_day_start_naive) # Assign IST timezone
-            # Define end of the local day in IST
-            local_day_end_aware_ist = local_day_start_aware_ist.replace(hour=23, minute=59, second=59, microsecond=999999)
+        articles = [a for a in articles if (a.get('publishedAt') or '')[:10] == target_date_str]
 
-            # Convert these IST times to UTC for the NewsAPI query
-            api_call_from_utc_dt = local_day_start_aware_ist.astimezone(timezone.utc)
-            api_call_to_utc_dt = local_day_end_aware_ist.astimezone(timezone.utc)
-
-            api_call_from_date_str = api_call_from_utc_dt.strftime('%Y-%m-%dT%H:%M:%S')
-            api_call_to_date_str = api_call_to_utc_dt.strftime('%Y-%m-%dT%H:%M:%S')
-            
-            app.logger.info(f"Date filter active for '{target_date_str}' (interpreted as IST).")
-            app.logger.info(f"Querying NewsAPI with UTC range: FROM {api_call_from_date_str} TO {api_call_to_date_str}")
-            is_specific_date_fetch = True
-        except Exception as e:
-            app.logger.error(f"Error processing target_date_str '{target_date_str}' with IST conversion: {e}. Reverting to simpler UTC day or default fetch.", exc_info=True)
-            # Fallback 1: Try interpreting target_date_str as a simple UTC date (original behavior for specific date)
-            try:
-                utc_target_dt = datetime.strptime(target_date_str, '%Y-%m-%d')
-                api_call_from_date_str = utc_target_dt.strftime('%Y-%m-%dT00:00:00')
-                api_call_to_date_str = utc_target_dt.strftime('%Y-%m-%dT23:59:59')
-                app.logger.info(f"Fallback: Fetching news specifically for UTC date: {target_date_str} (from {api_call_from_date_str} to {api_call_to_date_str})")
-                is_specific_date_fetch = True
-            except ValueError: # If target_date_str is malformed even for simple parsing
-                 app.logger.warning(f"Invalid target_date_str '{target_date_str}' for both IST and UTC interpretation. Clearing date filter.")
-                 target_date_str = None # This will ensure it uses the default N-day range logic in the next block
-                 is_specific_date_fetch = False # Ensure default logic runs if date string is unusable
-
-    if not is_specific_date_fetch: 
-        # Default fetch logic (no specific date selected, or date was invalid)
-        # This fetches news from the last N days up to the end of the current UTC day.
-        from_date_utc_default = datetime.now(timezone.utc) - timedelta(days=app.config['NEWS_API_DAYS_AGO'])
-        api_call_from_date_str = from_date_utc_default.strftime('%Y-%m-%dT%H:%M:%S')
-        
-        current_day_utc_end_default = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=0)
-        api_call_to_date_str = current_day_utc_end_default.strftime('%Y-%m-%dT%H:%M:%S')
-        app.logger.info(f"Fetching news with default date range (last {app.config['NEWS_API_DAYS_AGO']} days up to current UTC day end): from {api_call_from_date_str} to {api_call_to_date_str}")
-
-    # --- API Call Attempts (The rest of the function remains the same as my previous detailed response) ---
-    all_raw_articles = []
-
-    # Attempt 1: Top Headlines (only if not fetching for a specific historical date, or for default range)
-    # Note: is_specific_date_fetch is true if a date was successfully parsed (either IST-based or fallback UTC-based)
-    if not is_specific_date_fetch: # Only run top_headlines if no specific date was successfully set for the fetch
-        try:
-            app.logger.info("Attempt 1: Fetching top headlines from country: 'in' (default range).")
-            top_headlines_response = newsapi.get_top_headlines(
-                country='in',
-                language='en',
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-            status = top_headlines_response.get('status')
-            total_results = top_headlines_response.get('totalResults', 0)
-            app.logger.info(f"Top-Headlines API Response -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0:
-                all_raw_articles.extend(top_headlines_response['articles'])
-            elif status == 'error':
-                app.logger.error(f"NewsAPI Error (Top-Headlines): Code: {top_headlines_response.get('code')}, Message: {top_headlines_response.get('message')}. Full response: {top_headlines_response}")
-            elif total_results == 0:
-                app.logger.info(f"NewsAPI (Top-Headlines) returned 0 results. Response: {top_headlines_response}")
-        except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException (Top-Headlines): {e.get_message() if hasattr(e, 'get_message') else str(e)}", exc_info=False)
-        except Exception as e:
-            app.logger.error(f"Generic Exception (Top-Headlines): {e}", exc_info=True)
-
-    # Attempt 2: Everything query (This will always run, using the determined date range)
-    try:
-        current_query = app.config['NEWS_API_QUERY']
-        current_sort_by = app.config['NEWS_API_SORT_BY']
-        app.logger.info(f"Attempt 2: Fetching 'everything' with query: \"{current_query}\" for period: {api_call_from_date_str} to {api_call_to_date_str}, sort_by: {current_sort_by}")
-        everything_response = newsapi.get_everything(
-            q=current_query,
-            from_param=api_call_from_date_str,
-            to=api_call_to_date_str,
-            language='en',
-            sort_by=current_sort_by,
-            page_size=app.config['NEWS_API_PAGE_SIZE']
-        )
-        status = everything_response.get('status')
-        total_results = everything_response.get('totalResults', 0)
-        app.logger.info(f"Everything API Response -> Status: {status}, TotalResults: {total_results}")
-        if status == 'ok' and total_results > 0:
-            all_raw_articles.extend(everything_response['articles'])
-        elif status == 'error':
-            app.logger.error(f"NewsAPI Error (Everything Query): Code: {everything_response.get('code')}, Message: {everything_response.get('message')}. Parameters used: q='{current_query}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by}'. Full response: {everything_response}")
-        elif total_results == 0:
-            app.logger.info(f"NewsAPI (Everything Query) returned 0 results for q='{current_query}' from '{api_call_from_date_str}' to '{api_call_to_date_str}', sort_by='{current_sort_by}'. Response: {everything_response}")
-    except NewsAPIException as e:
-        app.logger.error(f"NewsAPIException (Everything Query): {e.get_message() if hasattr(e, 'get_message') else str(e)}. Parameters used: q='{current_query}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by}'.", exc_info=False)
-    except Exception as e:
-        app.logger.error(f"Generic Exception (Everything Query): {e}", exc_info=True)
-
-    # Attempt 3: Fallback with domains
-    # Condition: Run if no articles yet, OR if it was a specific date fetch (to maximize chances for that day)
-    # The `is_specific_date_fetch` flag is true if the target_date_str was successfully parsed into a date range (either IST-based or UTC-based fallback).
-    if not all_raw_articles or is_specific_date_fetch:
-        log_prefix_attempt3 = "Fallback/Augment"
-        if not all_raw_articles and not is_specific_date_fetch:
-             app.logger.warning("No articles from primary calls. Trying Fallback with domains for default range.")
-        elif not all_raw_articles and is_specific_date_fetch:
-            app.logger.warning(f"No articles from query for specific date '{target_date_str}'. Trying with domains.")
-        elif all_raw_articles and is_specific_date_fetch:
-            app.logger.info(f"Augmenting results for specific date '{target_date_str}' with domain-specific search.")
+    app.logger.info(f"fetch_news_from_api returned {len(articles)} RSS articles"
+                    f"{' for ' + target_date_str if target_date_str else ''}.")
+    return articles
 
 
-        try:
-            domains_to_check = app.config['NEWS_API_DOMAINS']
-            current_sort_by_fallback = app.config['NEWS_API_SORT_BY']
-            app.logger.info(f"Attempt 3 ({log_prefix_attempt3}): Fetching from domains: {domains_to_check} for period: {api_call_from_date_str} to {api_call_to_date_str}, sort_by: {current_sort_by_fallback}")
-            fallback_response = newsapi.get_everything(
-                domains=domains_to_check,
-                from_param=api_call_from_date_str,
-                to=api_call_to_date_str,
-                language='en',
-                sort_by=current_sort_by_fallback,
-                page_size=app.config['NEWS_API_PAGE_SIZE']
-            )
-            status = fallback_response.get('status')
-            total_results = fallback_response.get('totalResults', 0)
-            app.logger.info(f"{log_prefix_attempt3} API Response -> Status: {status}, TotalResults: {total_results}")
-            if status == 'ok' and total_results > 0:
-                all_raw_articles.extend(fallback_response['articles'])
-            elif status == 'error':
-                app.logger.error(f"NewsAPI Error ({log_prefix_attempt3}): Code: {fallback_response.get('code')}, Message: {fallback_response.get('message')}. Parameters used: domains='{domains_to_check}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by_fallback}'. Full response: {fallback_response}")
-            elif total_results == 0:
-                app.logger.info(f"NewsAPI ({log_prefix_attempt3}) returned 0 results for domains='{domains_to_check}' from '{api_call_from_date_str}' to '{api_call_to_date_str}', sort_by='{current_sort_by_fallback}'. Response: {fallback_response}")
-        except NewsAPIException as e:
-            app.logger.error(f"NewsAPIException ({log_prefix_attempt3}): {e.get_message() if hasattr(e, 'get_message') else str(e)}. Parameters used: domains='{domains_to_check}', from='{api_call_from_date_str}', to='{api_call_to_date_str}', sort_by='{current_sort_by_fallback}'.", exc_info=False)
-        except Exception as e:
-            app.logger.error(f"Generic Exception ({log_prefix_attempt3}): {e}", exc_info=True)
-
-    processed_articles, unique_urls = [], set()
-    app.logger.info(f"Total raw articles fetched before deduplication: {len(all_raw_articles)}")
-    for art_data in all_raw_articles:
-        url = art_data.get('url')
-        if not url or url in unique_urls: continue
-        title = art_data.get('title')
-        description = art_data.get('description')
-
-        if not all([title, art_data.get('source'), description]) or title == '[Removed]' or not title.strip() or not description.strip():
-            continue
-        unique_urls.add(url)
-        article_id = generate_article_id(url)
-        source_name = art_data['source'].get('name', 'Unknown Source')
-        published_at_dt = None
-        if art_data.get('publishedAt'):
-            try:
-                published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
-            except ValueError:
-                app.logger.warning(f"Could not parse publishedAt date for article: {title} - Date: {art_data.get('publishedAt')}")
-                published_at_dt = datetime.now(timezone.utc) # Fallback if parsing fails
-        else:
-            # If publishedAt is missing, which can happen, use current time as a fallback.
-            # Or decide if such articles should be skipped. For now, using current time.
-            app.logger.warning(f"Missing 'publishedAt' for article: {title}. Using current UTC time.")
-            published_at_dt = datetime.now(timezone.utc)
-
-
-        standardized_article = {
-            'id': article_id, 'title': title, 'description': description,
-            'url': url, 'urlToImage': art_data.get('urlToImage') or None,
-            'publishedAt': published_at_dt.isoformat(), # Store as ISO string
-            'source': {'name': source_name}, 'is_community_article': False,
-            'groq_summary': None, 'groq_takeaways': None
-        }
-        MASTER_ARTICLE_STORE[article_id] = standardized_article
-        processed_articles.append(standardized_article)
-    
-    processed_articles.sort(key=lambda x: x.get('publishedAt', datetime.min.replace(tzinfo=timezone.utc).isoformat()), reverse=True)
-    app.logger.info(f"Total unique articles processed and returned by fetch_news_from_api: {len(processed_articles)} for period from {api_call_from_date_str} to {api_call_to_date_str}.")
-    return processed_articles
-
-@simple_cache(expiry_seconds_default=21600) # Cache popular news for 6 hours
+@simple_cache(expiry_seconds_default=900)
 def fetch_popular_news():
     """
-    Fetches articles from the last few days and sorts them by popularity
-    to find the most impactful stories.
+    'Popular' with no engagement API behind it: rank by our own view counts where we
+    have them, then fall back to recency. Front-page feeds are ordered by editors, so
+    an article's position in its feed is a reasonable popularity proxy too.
     """
-    app.logger.info("Fetching POPULAR news from API.")
-    if not newsapi:
+    articles = fetch_news_from_rss()
+    if not articles:
         return []
 
-    # Query a window of the last 5 days to get a good measure of popularity
-    to_date = datetime.now(timezone.utc) - timedelta(days=1)
-    from_date = to_date - timedelta(days=5)
-
+    view_counts = {}
     try:
-        response = newsapi.get_everything(
-            q=app.config['NEWS_API_QUERY'],
-            language='en',
-            from_param=from_date.strftime('%Y-%m-%d'),
-            to=to_date.strftime('%Y-%m-%d'),
-            sort_by='popularity', # This is the key for this section
-            page_size=30
-        )
-        
-        if response.get('status') == 'ok':
-            raw_articles = response.get('articles', [])
-            processed_articles, unique_urls = [], set()
-            for art_data in raw_articles:
-                url = art_data.get('url')
-                if not url or url in unique_urls: continue
-                title = art_data.get('title')
-                description = art_data.get('description')
-
-                if not all([title, art_data.get('source'), description]) or title == '[Removed]' or not title.strip() or not description.strip():
-                    continue
-                
-                unique_urls.add(url)
-                article_id = generate_article_id(url)
-                source_name = art_data['source'].get('name', 'Unknown Source')
-                
-                published_at_dt = None
-                if art_data.get('publishedAt'):
-                    try:
-                        published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
-                    except ValueError:
-                        published_at_dt = datetime.now(timezone.utc)
-                else:
-                    published_at_dt = datetime.now(timezone.utc)
-
-                standardized_article = {
-                    'id': article_id, 'title': title, 'description': description, 'url': url,
-                    'urlToImage': art_data.get('urlToImage') or None,
-                    'publishedAt': published_at_dt.isoformat(), 'source': {'name': source_name}, 
-                    'is_community_article': False, 'groq_summary': None, 'groq_takeaways': None
-                }
-                MASTER_ARTICLE_STORE[article_id] = standardized_article
-                processed_articles.append(standardized_article)
-            
-            app.logger.info(f"Returning {len(processed_articles)} unique POPULAR articles.")
-            return processed_articles
-        return []
+        hashes = [a['id'] for a in articles]
+        for stat in ArticleStat.query.filter(ArticleStat.article_hash_id.in_(hashes)).all():
+            view_counts[stat.article_hash_id] = stat.view_count or 0
     except Exception as e:
-        app.logger.error(f"Exception in fetch_popular_news: {e}", exc_info=True)
-        return []
+        app.logger.warning(f"Could not load view counts for ranking: {e}")
 
-@simple_cache(expiry_seconds_default=14400) # Cache yesterday's news for 4 hours
+    def score(pair):
+        index, article = pair
+        views = view_counts.get(article['id'], 0)
+        # Earlier in the feed = more prominent on the publisher's own front page.
+        return (views * 10) - index
+
+    ranked = [a for _, a in sorted(enumerate(articles), key=score, reverse=True)]
+    return ranked[:60]
+
+
+@simple_cache(expiry_seconds_default=1800)
 def fetch_yesterdays_latest_news():
-    """
-    Fetches all articles specifically from yesterday, calculated correctly
-    using the Indian timezone, and sorts them by time.
-    """
-    app.logger.info("Fetching LATEST news from YESTERDAY from API.")
-    if not newsapi:
-        return []
-    
-    # 1. Get the current time in the Indian Timezone
-    now_in_ist = datetime.now(INDIAN_TIMEZONE)
-    
-    # 2. Calculate the start and end of "yesterday" in IST
-    yesterday_in_ist = now_in_ist - timedelta(days=1)
-    start_of_yesterday_ist = yesterday_in_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_yesterday_ist = yesterday_in_ist.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-    # 3. Convert the IST start/end times to UTC for the API call
-    start_utc = start_of_yesterday_ist.astimezone(pytz.utc)
-    end_utc = end_of_yesterday_ist.astimezone(pytz.utc)
-
-    # 4. Format the UTC dates into the string format the API requires (THE FIX IS HERE)
-    from_param_str = start_utc.strftime('%Y-%m-%dT%H:%M:%S')
-    to_param_str = end_utc.strftime('%Y-%m-%dT%H:%M:%S')
-
-    app.logger.info(f"Querying for yesterday's news in UTC range: {from_param_str} to {to_param_str}")
-
+    """Yesterday's stories, in the site's own timezone."""
     try:
-        response = newsapi.get_everything(
-            q=app.config['NEWS_API_QUERY'],
-            language='en',
-            from_param=from_param_str,
-            to=to_param_str,
-            sort_by='publishedAt',
-            page_size=100
-        )
-        
-        if response.get('status') == 'ok':
-            raw_articles = response.get('articles', [])
-            processed_articles, unique_urls = [], set()
-            for art_data in raw_articles:
-                url = art_data.get('url')
-                if not url or url in unique_urls: continue
-                title = art_data.get('title')
-                description = art_data.get('description')
-                if not all([title, art_data.get('source'), description]) or title == '[Removed]' or not title.strip() or not description.strip():
-                    continue
-                unique_urls.add(url)
-                article_id = generate_article_id(url)
-                source_name = art_data['source'].get('name', 'Unknown Source')
-                published_at_dt = None
-                if art_data.get('publishedAt'):
-                    try:
-                        published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
-                    except ValueError:
-                        published_at_dt = datetime.now(timezone.utc)
-                else:
-                    published_at_dt = datetime.now(timezone.utc)
-                standardized_article = {
-                    'id': article_id, 'title': title, 'description': description, 'url': url,
-                    'urlToImage': art_data.get('urlToImage') or None,
-                    'publishedAt': published_at_dt.isoformat(), 'source': {'name': source_name}, 
-                    'is_community_article': False, 'groq_summary': None, 'groq_takeaways': None
-                }
-                MASTER_ARTICLE_STORE[article_id] = standardized_article
-                processed_articles.append(standardized_article)
-            app.logger.info(f"Returning {len(processed_articles)} unique LATEST articles from YESTERDAY.")
-            return processed_articles
-        return []
-    except Exception as e:
-        app.logger.error(f"Exception in fetch_yesterdays_latest_news: {e}", exc_info=True)
-        return []
-        
-@simple_cache(expiry_seconds_default=3600 * 6)
+        yesterday = (datetime.now(INDIAN_TIMEZONE) - timedelta(days=1)).strftime('%Y-%m-%d')
+    except Exception:
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    articles = fetch_news_from_rss()
+    same_day = [a for a in articles if (a.get('publishedAt') or '')[:10] == yesterday]
+    if same_day:
+        return same_day
+
+    # RSS feeds are shallow and may not reach back a full day; rather than show an
+    # empty tab, fall back to the oldest items we do have.
+    app.logger.info("No RSS items dated yesterday; showing the oldest available instead.")
+    return sorted(articles, key=lambda a: a.get('publishedAt', ''))[:30]
+
+
 def fetch_and_parse_article_content(article_hash_id, url):
     app.logger.info(f"Fetching content for API article ID: {article_hash_id}, URL: {url}")
     if not SCRAPER_API_KEY:
@@ -1311,7 +1154,10 @@ def inject_global_vars():
             'current_year': datetime.utcnow().year,
             'session': session,
             'request': request,
-            'groq_client': groq_client is not None}
+            'groq_client': groq_client is not None,
+            'is_premium': is_premium(),
+            'current_plan': current_plan(),
+            'plans': PLANS}
 
 MAX_PAGE = 10000  # guards against ?page=999999999 style requests
 
@@ -1505,82 +1351,24 @@ def search_results(page=1):
     if not query_str:
         return redirect(url_for('index'))
 
-    # This log will appear in your server console (terminal).
-    app.logger.info(f"Performing LIVE API search for query: '{query_str}'")
-    
-    # This list will hold the fresh results from our new API call.
+    app.logger.info(f"Searching RSS headlines for query: '{query_str}'")
+
+    # --- STEP 2/3: SEARCH THE RSS HEADLINES ---
+    # NewsAPI is gone, so search runs over the live RSS feed instead. Each term must
+    # appear somewhere in the title or description, so multi-word queries behave
+    # sensibly rather than requiring an exact phrase.
     api_articles = []
-    if newsapi:
-        try:
-            # --- STEP 2: LIVE API CALL ---
-            # We are making a new, targeted request to the NewsAPI here.
-            
-            # Log the exact parameters to be sent to the API for debugging.
-            app.logger.info(f"NEWSAPI CALL PARAMS: q='{query_str}', language='en', sort_by='relevancy'")
+    try:
+        terms = [t.lower() for t in re.split(r"\s+", query_str.strip()) if len(t) >= 2][:6]
+        for article in fetch_news_from_rss():
+            haystack = f"{article.get('title', '')} {article.get('description', '')}".lower()
+            if terms and all(term in haystack for term in terms):
+                api_articles.append(article)
+        app.logger.info(f"RSS search matched {len(api_articles)} headlines for '{query_str}'.")
+    except Exception as e:
+        app.logger.error(f"RSS search failed for '{query_str}': {e}", exc_info=True)
+        flash("Headline search is temporarily unavailable; showing community results only.", "warning")
 
-            search_response = newsapi.get_everything(
-                q=query_str,          # Use the user's keyword for the query.
-                language='en',
-                sort_by='relevancy',  # Get the most relevant articles first.
-                page_size=100         # Fetch a good number of articles for pagination.
-            )
-
-            # Log the raw response from the API to see exactly what it returned.
-            app.logger.info(f"RAW API RESPONSE (first 500 chars): {str(search_response)[:500]}")
-
-            # --- STEP 3: PROCESS THE RELEVANT RESULTS ---
-            # The following code processes the fresh articles returned by the API.
-            if search_response.get('status') == 'ok':
-                raw_articles = search_response.get('articles', [])
-                unique_urls = set()
-                for art_data in raw_articles:
-                    url = art_data.get('url')
-                    if not url or url in unique_urls: 
-                        continue
-                        
-                    title = art_data.get('title')
-                    description = art_data.get('description')
-
-                    # Skip articles that are malformed or removed.
-                    if not all([title, description, art_data.get('source')]) or title == '[Removed]':
-                        continue
-                    
-                    unique_urls.add(url)
-                    article_id = generate_article_id(url)
-                    source_name = art_data['source'].get('name', 'Unknown Source')
-                    
-                    published_at_dt = None
-                    if art_data.get('publishedAt'):
-                        try:
-                            published_at_dt = datetime.fromisoformat(art_data.get('publishedAt').replace('Z', '+00:00'))
-                        except ValueError:
-                            published_at_dt = datetime.now(timezone.utc)
-                    else:
-                        published_at_dt = datetime.now(timezone.utc)
-                    
-                    standardized_article = {
-                        'id': article_id,
-                        'title': title,
-                        'description': description,
-                        'url': url,
-                        'urlToImage': art_data.get('urlToImage') or None,
-                        'publishedAt': published_at_dt.isoformat(),
-                        'source': {'name': source_name},
-                        'is_community_article': False
-                    }
-                    # Add to the master store so the article detail page can find it.
-                    MASTER_ARTICLE_STORE[article_id] = standardized_article 
-                    api_articles.append(standardized_article)
-            else:
-                # Handle cases where the API returns an error.
-                api_error_message = search_response.get('message', 'Unknown API error')
-                app.logger.error(f"NewsAPI error on search: {api_error_message}")
-                flash(f"Could not perform search at this time. Error: {api_error_message}", "danger")
-
-        except Exception as e:
-            app.logger.error(f"Exception during API search for '{query_str}': {e}", exc_info=True)
-            flash("An unexpected error occurred during the search.", "danger")
-    
     # --- STEP 4: COMBINE WITH LOCAL RESULTS ---
     # Also search your app's own community-posted articles for the same keyword.
     # This matches each word independently across title, description AND body, so a
@@ -1657,9 +1445,9 @@ def article_detail(article_hash_id):
     # Define a base query for all comments on this article, loading authors efficiently.
     base_comments_query = None
     if is_community_article:
-        base_comments_query = Comment.query.options(joinedload(Comment.author)).filter_by(community_article_id=article_data.id)
+        base_comments_query = Comment.query.options(joinedload(Comment.author).joinedload(User.subscription)).filter_by(community_article_id=article_data.id)
     else:
-        base_comments_query = Comment.query.options(joinedload(Comment.author)).filter_by(api_article_hash_id=article_hash_id)
+        base_comments_query = Comment.query.options(joinedload(Comment.author).joinedload(User.subscription)).filter_by(api_article_hash_id=article_hash_id)
 
     # 1. Get ALL comments (including replies) to process reactions.
     all_comments_in_thread = base_comments_query.all()
@@ -2061,6 +1849,16 @@ def toggle_bookmark(article_hash_id):
                 fetch_news_from_api() 
                 if article_hash_id not in MASTER_ARTICLE_STORE: return jsonify({"success": False, "error": "API article not found."}), 404
         new_bookmark = BookmarkedArticle(user_id=user_id, article_hash_id=article_hash_id, is_community_article=is_community, title_cache=article_title_cache, source_name_cache=article_source_cache, image_url_cache=article_image_cache, description_cache=article_desc_cache, published_at_cache=article_published_at_dt)
+        limit = bookmark_limit()
+        if limit is not None:
+            current_count = BookmarkedArticle.query.filter_by(user_id=session['user_id']).count()
+            if current_count >= limit:
+                return jsonify({
+                    "success": False,
+                    "limit_reached": True,
+                    "error": f"You've reached the {limit}-bookmark limit on the free plan.",
+                    "upgrade_url": url_for('pricing'),
+                }), 402
         db.session.add(new_bookmark); db.session.commit()
         return jsonify({"success": True, "status": "added", "message": "Article bookmarked!"})
 
@@ -2574,11 +2372,22 @@ def save_persisted_analysis(article_hash_id, analysis):
 # feeds are free, real-time, unlimited and carry no such restriction, so they are used
 # as the primary source with NewsAPI kept as a fallback.
 DEFAULT_RSS_FEEDS = [
+    # National
     "https://www.thehindu.com/news/national/feeder/default.rss",
     "https://feeds.feedburner.com/ndtvnews-top-stories",
     "https://indianexpress.com/section/india/feed/",
     "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml",
     "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
+    # Business
+    "https://www.thehindu.com/business/feeder/default.rss",
+    "https://feeds.feedburner.com/ndtvprofit-latest",
+    # Technology
+    "https://www.thehindu.com/sci-tech/technology/feeder/default.rss",
+    "https://indianexpress.com/section/technology/feed/",
+    # World
+    "https://www.thehindu.com/news/international/feeder/default.rss",
+    # Sport
+    "https://www.thehindu.com/sport/feeder/default.rss",
 ]
 
 
@@ -2751,6 +2560,88 @@ def storage_report():
         return jsonify({"success": False, "error": "Could not build the report."}), 500
 
 
+@app.route('/pricing')
+def pricing():
+    return render_template("PRICING_HTML_TEMPLATE",
+                           plans=PLANS,
+                           active_plan=current_plan()['key'])
+
+
+@app.route('/billing/checkout', methods=['POST'])
+@login_required
+@rate_limit(10, 600, scope='checkout')
+def billing_checkout():
+    """
+    Placeholder checkout.
+
+    This deliberately does NOT take money. Wiring a real gateway means:
+      1. Create a Razorpay (or Stripe) subscription plan matching PLANS above.
+      2. Here: create an order/subscription server-side and return its id.
+      3. Client: open the gateway's checkout widget with that id.
+      4. Add a webhook endpoint that verifies the payment signature and only then
+         sets Subscription.status = 'active' -- never trust the browser for this.
+      5. Handle renewal, failure and cancellation webhooks.
+    Until then this returns a clear "not connected" response rather than pretending.
+    """
+    plan_key = (request.form.get('plan') or request.json.get('plan') if request.is_json else request.form.get('plan')) or ''
+    plan = PLANS.get(plan_key)
+    if not plan or plan_key not in PAID_PLANS:
+        return jsonify({"success": False, "error": "Unknown plan."}), 400
+
+    app.logger.info(f"Checkout requested for plan={plan_key} by user {session.get('user_id')}")
+    return jsonify({
+        "success": False,
+        "payment_configured": False,
+        "plan": plan_key,
+        "amount_paise": plan['price_paise'],
+        "currency": "INR",
+        "error": "Payments aren't connected yet. Add a payment gateway to enable checkout.",
+    }), 501
+
+
+@app.route('/billing/demo-activate', methods=['POST'])
+@login_required
+def billing_demo_activate():
+    """
+    Switch the current account between plans so the premium UI can be reviewed.
+
+    Guarded to non-production or the admin account: this grants paid features without
+    payment, so it must never be reachable by ordinary users on a live site.
+    """
+    if IS_PRODUCTION and session.get('username') != ADMIN_USERNAME:
+        abort(403)
+
+    plan_key = request.form.get('plan', 'plus')
+    if plan_key not in PLANS:
+        abort(400)
+
+    try:
+        sub = Subscription.query.filter_by(user_id=session['user_id']).first()
+        if plan_key == 'free':
+            if sub:
+                sub.status = 'cancelled'
+            flash("Switched back to the free Reader plan.", "info")
+        else:
+            period = request.form.get('period', 'monthly')
+            days = 365 if period == 'yearly' else 30
+            if not sub:
+                sub = Subscription(user_id=session['user_id'])
+                db.session.add(sub)
+            sub.plan = plan_key
+            sub.status = 'active'
+            sub.billing_period = period
+            sub.started_at = datetime.now(timezone.utc)
+            sub.expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+            sub.provider = 'demo'
+            flash(f"{PLANS[plan_key]['name']} enabled (demo - no payment taken).", "success")
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Demo activation failed: {e}", exc_info=True)
+        flash("Could not change your plan.", "danger")
+    return redirect(safe_redirect_target(request.referrer, 'pricing'))
+
+
 @app.route('/healthz')
 def health_check():
     """Liveness/readiness probe for the host platform."""
@@ -2765,7 +2656,8 @@ def health_check():
         status["database"] = "error"
         code = 503
     status["ai"] = "ok" if groq_client else "disabled"
-    status["news_api"] = "ok" if newsapi else "disabled"
+    status["news_source"] = "rss"
+    status["rss_feeds"] = len(_rss_feed_urls())
     status["caches"] = {
         "article_store": MASTER_ARTICLE_STORE.stats(),
         "api_cache": API_CACHE.stats(),
@@ -3103,8 +2995,10 @@ BASE_HTML_TEMPLATE = """
         .read-more:hover { background-image: linear-gradient(135deg, var(--primary-light), var(--primary-color)); color: #fff !important; box-shadow: var(--shadow-glow); }
         .read-more:active { transform: scale(0.98); }
 
-        /* Long card grids below the fold: let the browser skip offscreen layout work. */
-        .tab-pane .row.g-4 { content-visibility: auto; contain-intrinsic-size: 1px 900px; }
+        /* NOTE: content-visibility was tried here as an offscreen-rendering optimisation,
+           but it changes the document height as sections render, which makes "jump to
+           bottom" land short and leaves scroll-reveal elements stranded. The grids are
+           small (one page of cards), so the correctness cost outweighed the saving. */
 
         /* ==========================================================================
            PAGINATION
@@ -3408,6 +3302,44 @@ BASE_HTML_TEMPLATE = """
         }
 
         /* ==========================================================================
+           PRICING / PLANS
+           ========================================================================== */
+        .billing-toggle { display: inline-flex; gap: 0.25rem; padding: 0.3rem; background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-pill); margin: 0 auto 0.5rem; }
+        .billing-toggle { display: flex; width: fit-content; }
+        .billing-toggle__btn { border: none; background: none; color: var(--text-muted-color); font-weight: 600; font-size: 0.86rem; padding: 0.5rem 1.1rem; border-radius: var(--border-radius-pill); display: inline-flex; align-items: center; gap: 0.5rem; transition: background-color var(--duration-base) var(--ease-standard), color var(--duration-base) var(--ease-standard); }
+        .billing-toggle__btn.is-active { background-image: linear-gradient(135deg, var(--primary-light), var(--primary-color)); color: #fff; }
+        .save-pill { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; background: rgba(var(--secondary-color-rgb), 0.18); color: var(--secondary-color); padding: 0.1rem 0.45rem; border-radius: var(--border-radius-pill); }
+        .billing-toggle__btn.is-active .save-pill { background: rgba(255,255,255,0.22); color: #fff; }
+
+        .plan-card { position: relative; display: flex; flex-direction: column; width: 100%; background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-lg); padding: 2rem 1.75rem; box-shadow: var(--shadow-sm); transition: transform var(--duration-base) var(--ease-premium), box-shadow var(--duration-base) var(--ease-premium), border-color var(--duration-base) var(--ease-standard); }
+        .plan-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+        .plan-card--featured { border-color: rgba(var(--primary-color-rgb), 0.45); background-image: var(--surface-gradient); box-shadow: var(--shadow-md); }
+        .plan-card--current { border-color: var(--secondary-color); }
+        .plan-badge { position: absolute; top: -0.7rem; left: 1.75rem; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: #fff; background-image: linear-gradient(135deg, var(--primary-light), var(--primary-color)); padding: 0.25rem 0.7rem; border-radius: var(--border-radius-pill); }
+        .plan-badge--current { left: auto; right: 1.75rem; background-image: none; background-color: var(--secondary-color); }
+        .plan-name { font-family: var(--font-display); font-weight: 400; font-size: 1.9rem; margin: 0 0 0.25rem; }
+        .plan-tagline { color: var(--text-muted-color); font-size: 0.9rem; margin: 0 0 1.25rem; min-height: 2.4em; }
+        .plan-price { display: flex; align-items: baseline; gap: 0.4rem; margin: 0 0 0.25rem; }
+        .plan-price__amount { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+        .plan-price__period { color: var(--text-muted-color); font-size: 0.88rem; font-weight: 600; }
+        .plan-price-note { font-size: 0.78rem; color: var(--text-muted-color); margin: 0 0 0.5rem; }
+        .plan-features { list-style: none; padding: 0; margin: 1.5rem 0 0; display: flex; flex-direction: column; gap: 0.7rem; flex-grow: 1; }
+        .plan-features li { display: flex; gap: 0.65rem; align-items: flex-start; font-size: 0.9rem; }
+        .plan-features i { color: var(--secondary-color); margin-top: 0.28rem; font-size: 0.78rem; flex-shrink: 0; }
+        .plan-action { margin-top: 1.75rem; }
+
+        .faq-list { display: flex; flex-direction: column; gap: 0.65rem; }
+        .faq-item { background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-md); padding: 1rem 1.25rem; }
+        .faq-item summary { font-weight: 600; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+        .faq-item summary::-webkit-details-marker { display: none; }
+        .faq-item summary::after { content: '\\002b'; color: var(--primary-color); font-weight: 700; font-size: 1.2rem; line-height: 1; }
+        .faq-item[open] summary::after { content: '\\2212'; }
+        .faq-item p { margin-top: 0.75rem; color: var(--text-muted-color); font-size: 0.92rem; }
+
+        /* Supporter badge on comments/profile */
+        .supporter-badge { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #fff; background-image: linear-gradient(135deg, var(--primary-light), var(--primary-color)); padding: 0.12rem 0.45rem; border-radius: var(--border-radius-pill); vertical-align: middle; }
+
+        /* ==========================================================================
            RESPONSIVE
            ========================================================================== */
         @media (max-width: 991.98px) {
@@ -3420,11 +3352,25 @@ BASE_HTML_TEMPLATE = """
             .navbar-left { flex-grow: 1; }
             .featured-story-image { min-height: 220px; }
             .community-hub-cta, .community-hub-cta .btn { width: 100%; }
-            .footer-section { text-align: center; }
-            .footer-links { align-items: center; }
-            .social-links { justify-content: center; }
+
+            /* Footer: the four stacked full-width blocks made the page very long to
+               scroll on a phone. Brand and newsletter stay full width; the two link
+               lists sit side by side, left-aligned, with tighter spacing. */
+            footer { padding: 2.25rem 0 1rem; font-size: 0.86rem; }
+            .footer-content.row { --bs-gutter-y: 0; }
+            .footer-section { margin-bottom: 1.5rem; text-align: left; }
+            .footer-section h5 { margin-bottom: 0.7rem; font-size: 0.66rem; }
+            .footer-section--links { width: 50%; flex: 0 0 50%; max-width: 50%; }
+            .footer-links { gap: 0.5rem; align-items: flex-start; }
             .footer-links a:hover { padding-left: 0; }
-            .copyright { flex-direction: column; gap: 0.5rem; }
+            .footer-brand p { margin-bottom: 0.6rem; }
+            .social-links { justify-content: flex-start; margin-top: 0.25rem; }
+            .copyright { flex-direction: column; gap: 0.45rem; padding-top: 1.1rem; margin-top: 1.1rem; font-size: 0.74rem; }
+            .plan-tagline { min-height: 0; }
+        }
+        @media (max-width: 400px) {
+            .footer-section h5 { font-size: 0.62rem; letter-spacing: 0.1em; }
+            .footer-links { gap: 0.45rem; font-size: 0.82rem; }
         }
         @media (max-width: 575.98px) {
             body { font-size: 0.95rem; padding-top: 76px; }
@@ -3511,6 +3457,14 @@ BASE_HTML_TEMPLATE = """
                     <a href="{{ url_for('login') }}" class="sidebar-btn">
                         <i class="fas fa-sign-in-alt fa-fw me-2" aria-hidden="true"></i> Login / Register
                     </a>
+                {% endif %}
+            </div>
+
+            <div class="sidebar-section">
+                {% if is_premium %}
+                <a href="{{ url_for('pricing') }}" class="sidebar-btn"><i class="fas fa-star fa-fw me-2" style="color: var(--secondary-light);" aria-hidden="true"></i> {{ current_plan.name }} member</a>
+                {% else %}
+                <a href="{{ url_for('pricing') }}" class="sidebar-btn"><i class="fas fa-bolt fa-fw me-2" style="color: var(--secondary-light);" aria-hidden="true"></i> Go ad-free from &#8377;50</a>
                 {% endif %}
             </div>
 
@@ -3654,7 +3608,7 @@ BASE_HTML_TEMPLATE = """
     <footer class="mt-auto">
         <div class="container">
             <div class="footer-content row">
-                <div class="footer-section col-lg-4 col-md-6 mb-4">
+                <div class="footer-section footer-brand col-lg-4 col-md-6 mb-4">
                     <div class="d-flex align-items-center mb-2">
                         <i class="fas fa-bolt-lightning me-2" style="color:var(--secondary-light); font-size: 1.4rem;" aria-hidden="true"></i>
                         <span class="h5 mb-0" style="color:#fff; font-weight:800; letter-spacing:-0.03em;">BrieflyAI</span>
@@ -3664,18 +3618,19 @@ BASE_HTML_TEMPLATE = """
                         <a href="#" title="Twitter" aria-label="BrieflyAI on Twitter"><i class="fab fa-twitter" aria-hidden="true"></i></a><a href="#" title="Facebook" aria-label="BrieflyAI on Facebook"><i class="fab fa-facebook-f" aria-hidden="true"></i></a><a href="#" title="LinkedIn" aria-label="BrieflyAI on LinkedIn"><i class="fab fa-linkedin-in" aria-hidden="true"></i></a><a href="#" title="Instagram" aria-label="BrieflyAI on Instagram"><i class="fab fa-instagram" aria-hidden="true"></i></a>
                     </div>
                 </div>
-                <div class="footer-section col-lg-2 col-md-6 mb-4">
+                <div class="footer-section footer-section--links col-lg-2 col-md-6 mb-4">
                     <h5>Quick Links</h5>
                     <div class="footer-links">
                         <a href="{{ url_for('index') }}">Home</a>
                         <a href="{{ url_for('about') }}">About Us</a>
                         <a href="{{ url_for('contact') }}">Contact</a>
                         <a href="{{ url_for('privacy') }}">Privacy Policy</a>
+                        <a href="{{ url_for('pricing') }}">Plans &amp; Pricing</a>
                         <a href="{{ url_for('rss_feed') }}">RSS Feed</a>
                         {% if session.user_id %}<a href="{{ url_for('profile') }}">My Profile</a>{% endif %}
                     </div>
                 </div>
-                <div class="footer-section col-lg-2 col-md-6 mb-4">
+                <div class="footer-section footer-section--links col-lg-2 col-md-6 mb-4">
                     <h5>Categories</h5>
                     <div class="footer-links">
                         {% for cat_item in categories %}<a href="{{ url_for('index', category_name=cat_item, page=1) }}">{{ cat_item }}</a>{% endfor %}
@@ -3826,6 +3781,24 @@ BASE_HTML_TEMPLATE = """
             }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
         }
 
+        if (!BrieflyAI._revealSweepBound) {
+            BrieflyAI._revealSweepBound = true;
+            var sweeping = false;
+            var sweep = function () {
+                document.querySelectorAll('[data-reveal]:not(.is-revealed)').forEach(function (el) {
+                    var r = el.getBoundingClientRect();
+                    // Visible, or already scrolled past: either way it must be shown.
+                    if (r.top < window.innerHeight && r.bottom > -200) { el.classList.add('is-revealed'); }
+                    else if (r.bottom <= 0) { el.classList.add('is-revealed'); }
+                });
+                sweeping = false;
+            };
+            window.addEventListener('scroll', function () {
+                if (!sweeping) { sweeping = true; requestAnimationFrame(sweep); }
+            }, { passive: true });
+            window.addEventListener('resize', sweep, { passive: true });
+        }
+
         items.forEach(function (el, i) {
             if (el.dataset.reveal !== undefined) { return; }
             // Hand over from the CSS entrance animation so the two don't fight.
@@ -3863,17 +3836,18 @@ BASE_HTML_TEMPLATE = """
 
     /* Third-party tags (ads, analytics) are deferred until the page is idle so they
        never compete with content for bandwidth or main-thread time during load. */
+    BrieflyAI.isPremium = {{ 'true' if is_premium else 'false' }};
+
     BrieflyAI.loadDeferredScripts = function () {
         if (BrieflyAI._deferredLoaded) { return; }
         BrieflyAI._deferredLoaded = true;
+        // Ad-free is the headline benefit of a paid plan: never load the ad script.
+        var adTags = BrieflyAI.isPremium ? [] : ['https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886'];
         window.dataLayer = window.dataLayer || [];
         window.gtag = function () { window.dataLayer.push(arguments); };
         window.gtag('js', new Date());
         window.gtag('config', 'G-CV5LWJ7NQ7');
-        [
-            'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886',
-            'https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7'
-        ].forEach(function (src) {
+        adTags.concat(['https://www.googletagmanager.com/gtag/js?id=G-CV5LWJ7NQ7']).forEach(function (src) {
             var s = document.createElement('script');
             s.src = src; s.async = true; s.crossOrigin = 'anonymous';
             document.head.appendChild(s);
@@ -4229,7 +4203,7 @@ _COMMENT_TEMPLATE = """
         <div class="comment-body">
             <div class="comment-header">
                 {% if comment.author %}
-                <a href="{{ url_for('public_profile', username=comment.author.username) }}" class="comment-author text-decoration-none">{{ comment.author.name }}</a>
+                <a href="{{ url_for('public_profile', username=comment.author.username) }}" class="comment-author text-decoration-none">{{ comment.author.name }}</a>{% if comment.author.subscription and comment.author.subscription.status == 'active' and comment.author.subscription.plan in ('plus', 'patron') %}<span class="supporter-badge" title="Supports BrieflyAI"><i class="fas fa-star" aria-hidden="true"></i> {{ comment.author.subscription.plan|capitalize }}</span>{% endif %}
                 {% else %}
                 <span class="comment-author">Anonymous</span>
                 {% endif %}
@@ -4667,6 +4641,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         void btnRef.offsetWidth;
                         btnRef.classList.add('is-popping');
                         BrieflyAI.showToast(data.message, 'success', 3000);
+                    } else if (data.limit_reached) {
+                        BrieflyAI.showToast(data.error + ' Upgrade for unlimited bookmarks.', 'warning', 7000);
                     } else {
                         BrieflyAI.showToast(data.error || 'Could not update bookmark.', 'danger');
                     }
@@ -5408,6 +5384,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         void btnRef.offsetWidth;
                         btnRef.classList.add('is-popping');
                         BrieflyAI.showToast(data.message, 'success', 3000);
+                    } else if (data.limit_reached) {
+                        BrieflyAI.showToast(data.error + ' Upgrade for unlimited bookmarks.', 'warning', 7000);
                     } else { BrieflyAI.showToast(data.error || 'Could not update bookmark.', 'danger'); }
                 })
                 .catch(err => { console.error("Bookmark error:", err); BrieflyAI.showToast("Could not update bookmark: " + err.message, 'danger'); });
@@ -5912,6 +5890,145 @@ OFFLINE_TEMPLATE = """{% extends "BASE_HTML_TEMPLATE" %}{% block title %}Offline
     </div>
 </div>
 {% endblock %}"""
+PRICING_HTML_TEMPLATE = """
+{% extends "BASE_HTML_TEMPLATE" %}
+{% block title %}Plans &amp; Pricing - BrieflyAI{% endblock %}
+{% block meta_description %}Support BrieflyAI from &#8377;50 a month. Ad-free reading, unlimited bookmarks and a daily briefing email.{% endblock %}
+{% block og_title %}BrieflyAI Plans{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+    <div class="page-header-static">
+        <span class="eyebrow d-block mb-2">Plans</span>
+        <h1>Read more. Support the work.</h1>
+        <p class="lead mx-auto mt-3 mb-0">BrieflyAI stays free to read. Plus removes the ads and funds the servers.</p>
+    </div>
+
+    <div class="billing-toggle" role="group" aria-label="Billing period">
+        <button type="button" class="billing-toggle__btn is-active" data-period="monthly" aria-pressed="true">Monthly</button>
+        <button type="button" class="billing-toggle__btn" data-period="yearly" aria-pressed="false">Yearly <span class="save-pill">2 months free</span></button>
+    </div>
+
+    <div class="row g-4 align-items-stretch justify-content-center mt-1">
+        {% for key, plan in plans.items() %}
+        <div class="col-lg-4 col-md-6 d-flex">
+            <div class="plan-card {% if plan.get('popular') %}plan-card--featured{% endif %} {% if active_plan == key %}plan-card--current{% endif %}">
+                {% if plan.get('popular') %}<span class="plan-badge">Most popular</span>{% endif %}
+                {% if active_plan == key %}<span class="plan-badge plan-badge--current">Your plan</span>{% endif %}
+
+                <h2 class="plan-name">{{ plan.name }}</h2>
+                <p class="plan-tagline">{{ plan.tagline }}</p>
+
+                <p class="plan-price" data-monthly="{{ plan.price_display }}" data-yearly="{{ plan.get('yearly_display') or plan.price_display }}">
+                    <span class="plan-price__amount">{{ plan.price_display }}</span>
+                    <span class="plan-price__period">{% if plan.price_paise %}/ month{% else %}forever{% endif %}</span>
+                </p>
+                {% if plan.get('yearly_display') %}
+                <p class="plan-price-note" hidden>Billed {{ plan.yearly_display }} once a year.</p>
+                {% endif %}
+
+                <ul class="plan-features">
+                    {% for feature in plan.features %}
+                    <li><i class="fas fa-check" aria-hidden="true"></i><span>{{ feature }}</span></li>
+                    {% endfor %}
+                </ul>
+
+                <div class="plan-action">
+                    {% if key == 'free' %}
+                        {% if active_plan == 'free' %}
+                            <button type="button" class="btn btn-outline-secondary w-100" disabled>Current plan</button>
+                        {% else %}
+                            <form method="POST" action="{{ url_for('billing_demo_activate') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="plan" value="free">
+                                <button type="submit" class="btn btn-outline-secondary w-100">Switch to free</button>
+                            </form>
+                        {% endif %}
+                    {% elif active_plan == key %}
+                        <button type="button" class="btn btn-outline-secondary w-100" disabled>Current plan</button>
+                    {% elif session.user_id %}
+                        <button type="button" class="btn {% if plan.get('popular') %}btn-primary-modal{% else %}btn-outline-primary{% endif %} w-100 checkout-btn" data-plan="{{ key }}">
+                            Choose {{ plan.name }}
+                        </button>
+                    {% else %}
+                        <a href="{{ url_for('login', next=url_for('pricing')) }}" class="btn {% if plan.get('popular') %}btn-primary-modal{% else %}btn-outline-primary{% endif %} w-100">Log in to subscribe</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="state-card state-card-solid mt-5">
+        <div class="state-card-icon state-card-icon-sm"><i class="fas fa-circle-info" aria-hidden="true"></i></div>
+        <h2 class="state-card-title h5">Payments aren't connected yet</h2>
+        <p class="state-card-text">This is the plan model and interface. Hooking up a payment provider is the remaining step before anyone can actually be charged.</p>
+    </div>
+
+    <section class="mt-5" aria-labelledby="pricingFaq">
+        <h2 class="section-heading h4 mb-3" id="pricingFaq">Common questions</h2>
+        <div class="faq-list">
+            <details class="faq-item"><summary>Will the news stay free?</summary><p class="mb-0">Yes. Every story, AI summary and takeaway stays free to read. Plus removes ads and adds convenience features.</p></details>
+            <details class="faq-item"><summary>Can I cancel any time?</summary><p class="mb-0">Yes. You keep Plus until the end of the period you've paid for, then drop back to the free Reader plan.</p></details>
+            <details class="faq-item"><summary>What happens to my bookmarks if I downgrade?</summary><p class="mb-0">Nothing is deleted. You keep everything you saved; you just can't add new ones past the free limit until you're under it again.</p></details>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Monthly / yearly toggle
+    var buttons = document.querySelectorAll('.billing-toggle__btn');
+    buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var period = btn.dataset.period;
+            buttons.forEach(function (b) {
+                var on = b === btn;
+                b.classList.toggle('is-active', on);
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('.plan-price').forEach(function (priceEl) {
+                var amount = priceEl.querySelector('.plan-price__amount');
+                var periodEl = priceEl.querySelector('.plan-price__period');
+                var value = period === 'yearly' ? priceEl.dataset.yearly : priceEl.dataset.monthly;
+                amount.textContent = value;
+                if (periodEl.textContent.trim() !== 'forever') {
+                    periodEl.textContent = period === 'yearly' ? '/ year' : '/ month';
+                }
+            });
+            document.querySelectorAll('.plan-price-note').forEach(function (note) {
+                note.hidden = period !== 'yearly';
+            });
+        });
+    });
+
+    // Checkout is intentionally not wired to a gateway yet; say so plainly.
+    document.querySelectorAll('.checkout-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
+            var body = new URLSearchParams({ plan: btn.dataset.plan, csrf_token: BrieflyAI.csrfToken });
+            fetch('{{ url_for("billing_checkout") }}', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'X-CSRFToken': BrieflyAI.csrfToken },
+                body: body.toString()
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                BrieflyAI.showToast(data.error || 'Checkout is not available yet.', 'info', 6000);
+            })
+            .catch(function () { BrieflyAI.showToast('Could not start checkout.', 'danger'); })
+            .finally(function () { btn.disabled = false; btn.innerHTML = original; });
+        });
+    });
+});
+</script>
+{% endblock %}
+"""
 
 # ==============================================================================
 # --- 8. Add all templates to the template_storage dictionary ---
@@ -5930,6 +6047,7 @@ template_storage['500_TEMPLATE'] = ERROR_500_TEMPLATE
 template_storage['_COMMENT_TEMPLATE'] = _COMMENT_TEMPLATE
 template_storage['PUBLIC_PROFILE_HTML_TEMPLATE'] = PUBLIC_PROFILE_HTML_TEMPLATE
 template_storage['OFFLINE_TEMPLATE'] = OFFLINE_TEMPLATE
+template_storage['PRICING_HTML_TEMPLATE'] = PRICING_HTML_TEMPLATE
 
 
 # ==============================================================================
