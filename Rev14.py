@@ -13,7 +13,7 @@ import urllib.parse
 import secrets
 import re
 import threading
-from collections import defaultdict, deque
+from collections import defaultdict, deque, OrderedDict
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Response, abort, make_response
@@ -113,6 +113,8 @@ app.config['NEWS_API_PAGE_SIZE'] = 100
 app.config['NEWS_API_SORT_BY'] = 'publishedAt' #relevance, popularity, publishedAt
 app.config['CACHE_EXPIRY_SECONDS'] = 1800 
 app.permanent_session_lifetime = timedelta(days=30)
+# Reject oversized uploads/bodies before they are buffered into memory.
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH_BYTES', 2 * 1024 * 1024))
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app.logger.setLevel(logging.INFO)
@@ -178,6 +180,12 @@ else:
     # using_postgres_flag remains False (as initialized)
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    # Managed Postgres drops idle connections; without these, the first query after an
+    # idle period fails with "server closed the connection unexpectedly".
+    'pool_pre_ping': True,
+    'pool_recycle': 280,
+}
 db = SQLAlchemy(app) 
 app.logger.info(f"SQLAlchemy instance created.")
 app.logger.info(f"--- End of Database Configuration ---")
@@ -390,6 +398,71 @@ def inject_csrf_token():
     return {'csrf_token': generate_csrf_token}
 
 
+# --- Request correlation + teardown ------------------------------------------
+@app.before_request
+def attach_request_id():
+    """Tag each request so its log lines can be traced together."""
+    from flask import g
+    g.request_id = request.headers.get('X-Request-ID') or secrets.token_hex(6)
+
+
+@app.after_request
+def echo_request_id(response):
+    from flask import g
+    rid = getattr(g, 'request_id', None)
+    if rid:
+        response.headers.setdefault('X-Request-ID', rid)
+    return response
+
+
+@app.teardown_appcontext
+def release_db_session(exception=None):
+    """Always return the connection to the pool, even when a view raised."""
+    try:
+        if exception:
+            db.session.rollback()
+        db.session.remove()
+    except Exception:
+        pass
+
+
+def _wants_json():
+    return request.is_json or request.headers.get('Accept', '').startswith('application/json')
+
+
+@app.errorhandler(400)
+def bad_request(e):
+    if _wants_json():
+        return jsonify({"success": False, "error": "The request could not be understood."}), 400
+    return render_template("404_TEMPLATE"), 400
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    if _wants_json():
+        return jsonify({"success": False, "error": "You don't have permission to do that."}), 403
+    flash("You don't have permission to do that.", "danger")
+    return redirect(url_for('index'))
+
+
+@app.errorhandler(413)
+def payload_too_large(e):
+    msg = "That submission is too large. Please shorten it and try again."
+    if _wants_json():
+        return jsonify({"success": False, "error": msg}), 413
+    flash(msg, "warning")
+    return redirect(url_for('index'))
+
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    msg = "Too many requests. Please slow down and try again shortly."
+    if _wants_json():
+        return jsonify({"success": False, "error": msg}), 429
+    flash(msg, "warning")
+    return redirect(url_for('index'))
+
+
 # ==============================================================================
 # --- 3. API Client Initialization ---
 # ==============================================================================
@@ -502,6 +575,18 @@ class BookmarkedArticle(db.Model):
     bookmarked_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     __table_args__ = (db.UniqueConstraint('user_id', 'article_hash_id', name='_user_article_bookmark_uc'),)
 
+class ArticleStat(db.Model):
+    """
+    View counts, keyed by article hash so it works for both community and API
+    articles. Deliberately a NEW table: adding a column to an existing model would
+    need a migration, and db.create_all() only creates missing tables.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    article_hash_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    view_count = db.Column(db.Integer, nullable=False, default=0)
+    last_viewed_at = db.Column(db.DateTime, nullable=True, index=True)
+
+
 def init_db():
     # To access the global 'using_postgres_flag' set earlier
     global using_postgres_flag
@@ -539,7 +624,87 @@ def init_db():
 # ==============================================================================
 # --- 5. Helper Functions ---
 # ==============================================================================
-MASTER_ARTICLE_STORE, API_CACHE = {}, {}
+class BoundedCache:
+    """
+    Thread-safe cache with LRU eviction and optional TTL.
+
+    Replaces the plain dicts previously used here, which were never evicted from and
+    so grew for the lifetime of the process. Reads refresh recency, so entries that
+    are still actively viewed (including cached AI analysis) survive eviction.
+    """
+
+    def __init__(self, max_entries=5000, ttl_seconds=None):
+        self._data = OrderedDict()
+        self._lock = threading.RLock()
+        self.max_entries = max_entries
+        self.ttl_seconds = ttl_seconds
+        self.hits = 0
+        self.misses = 0
+        self.evictions = 0
+
+    def _expired(self, stamped_at):
+        return self.ttl_seconds is not None and (time.time() - stamped_at) > self.ttl_seconds
+
+    def get(self, key, default=None):
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is None:
+                self.misses += 1
+                return default
+            value, stamped_at = entry
+            if self._expired(stamped_at):
+                self._data.pop(key, None)
+                self.misses += 1
+                return default
+            self._data.move_to_end(key)  # mark as recently used
+            self.hits += 1
+            return value
+
+    def set(self, key, value):
+        with self._lock:
+            self._data[key] = (value, time.time())
+            self._data.move_to_end(key)
+            while len(self._data) > self.max_entries:
+                self._data.popitem(last=False)  # drop least-recently-used
+                self.evictions += 1
+
+    # dict-style access, so existing call sites keep working unchanged.
+    def __getitem__(self, key):
+        sentinel = object()
+        value = self.get(key, sentinel)
+        if value is sentinel:
+            raise KeyError(key)
+        return value
+
+    def __setitem__(self, key, value):
+        self.set(key, value)
+
+    def __contains__(self, key):
+        sentinel = object()
+        return self.get(key, sentinel) is not sentinel
+
+    def __len__(self):
+        with self._lock:
+            return len(self._data)
+
+    def stats(self):
+        with self._lock:
+            total = self.hits + self.misses
+            return {
+                "entries": len(self._data),
+                "max_entries": self.max_entries,
+                "hits": self.hits,
+                "misses": self.misses,
+                "evictions": self.evictions,
+                "hit_rate": round(self.hits / total, 3) if total else None,
+            }
+
+
+# MASTER_ARTICLE_STORE holds fetched API articles (including any cached AI analysis).
+# It is capped rather than unbounded; the app already handles a missing entry as
+# "article not found", which is the same behaviour as after a restart.
+MASTER_ARTICLE_STORE = BoundedCache(max_entries=int(os.environ.get('ARTICLE_STORE_MAX', '4000')))
+API_CACHE = BoundedCache(max_entries=1000, ttl_seconds=None)
 INDIAN_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
 def generate_article_id(url_or_title): return hashlib.md5(url_or_title.encode('utf-8')).hexdigest()
@@ -591,7 +756,8 @@ def simple_cache(expiry_seconds_default=None):
                 return cached_entry[0]
             app.logger.debug(f"Cache MISS for {func.__name__}. Calling function.")
             result = func(*args, **kwargs)
-            API_CACHE[cache_key] = (result, time.time())
+            # Per-call expiry is kept in the tuple; the cache itself only bounds size.
+            API_CACHE.set(cache_key, (result, time.time()))
             return result
         return wrapper
     return decorator
@@ -1032,7 +1198,8 @@ def fetch_and_parse_article_content(article_hash_id, url):
     
     params = {'api_key': SCRAPER_API_KEY, 'url': url}
     try:
-        response = requests.get('http://api.scraperapi.com', params=params, timeout=45)
+        response = requests.get('http://api.scraperapi.com', params=params,
+                                timeout=int(os.environ.get('SCRAPER_TIMEOUT_SECONDS', '25')))
         response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
 
         config = Config()
@@ -1367,12 +1534,11 @@ def search_results(page=1):
     
     # --- STEP 4: COMBINE WITH LOCAL RESULTS ---
     # Also search your app's own community-posted articles for the same keyword.
+    # This matches each word independently across title, description AND body, so a
+    # multi-word query like "modi economy" finds "Modi discusses the economy".
+    # (The previous single ilike required the whole phrase to appear contiguously.)
     community_db_articles = []
-    community_db_articles_query = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter(
-        db.or_(CommunityArticle.title.ilike(f'%{query_str}%'), CommunityArticle.description.ilike(f'%{query_str}%'))
-    ).order_by(CommunityArticle.published_at.desc())
-    
-    for art in community_db_articles_query.all():
+    for art in search_community_articles(query_str):
         art.is_community_article = True
         community_db_articles.append(art)
 
@@ -1416,6 +1582,8 @@ def search_results(page=1):
 def article_detail(article_hash_id):
     article_data, is_community_article, is_bookmarked = None, False, False
     previous_list_page = session.get('previous_list_page', url_for('index'))
+
+    _record_article_view(article_hash_id)
 
     article_db = CommunityArticle.query.options(joinedload(CommunityArticle.author)).filter_by(article_hash_id=article_hash_id).first()
     if article_db:
@@ -1740,7 +1908,7 @@ def register():
 @login_required
 def delete_community_article(article_hash_id):
     # Security Check: Ensure the user has the admin flag from the session.
-    if not session.get('is_admin') or session.get('username') != 'vbdevil':
+    if not session.get('is_admin') or session.get('username') != ADMIN_USERNAME:
         return jsonify({"success": False, "error": "Administrator access required."}), 403
 
     article = CommunityArticle.query.filter_by(article_hash_id=article_hash_id).first()
@@ -2145,6 +2313,172 @@ self.addEventListener('fetch', (event) => {
                     headers={'Cache-Control': 'no-cache'})
 
 
+def _record_article_view(article_hash_id):
+    """
+    Increment an article's view counter. Analytics must never break page rendering,
+    so every failure here is swallowed after logging.
+    """
+    if not article_hash_id:
+        return
+    try:
+        stat = ArticleStat.query.filter_by(article_hash_id=article_hash_id).first()
+        if stat:
+            stat.view_count = (stat.view_count or 0) + 1
+            stat.last_viewed_at = datetime.now(timezone.utc)
+        else:
+            db.session.add(ArticleStat(
+                article_hash_id=article_hash_id, view_count=1,
+                last_viewed_at=datetime.now(timezone.utc)))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"Could not record view for {article_hash_id}: {e}")
+
+
+def search_community_articles(query_str, limit=60):
+    """
+    Search community posts by title, description and body.
+
+    Previously /search only queried NewsAPI, so community posts were effectively
+    invisible -- you could not find a story through search right after posting it.
+    """
+    if not query_str:
+        return []
+    try:
+        terms = [t for t in re.split(r"\s+", query_str.strip()) if len(t) >= 2][:6]
+        if not terms:
+            return []
+        conditions = []
+        for term in terms:
+            like = f"%{term.lower()}%"
+            conditions.append(db.or_(
+                func.lower(CommunityArticle.title).like(like),
+                func.lower(CommunityArticle.description).like(like),
+                func.lower(CommunityArticle.full_text).like(like),
+            ))
+        return (CommunityArticle.query
+                .options(joinedload(CommunityArticle.author))
+                .filter(db.and_(*conditions))
+                .order_by(CommunityArticle.published_at.desc())
+                .limit(limit).all())
+    except Exception as e:
+        app.logger.error(f"Community search failed for {query_str!r}: {e}", exc_info=True)
+        return []
+
+
+@app.route('/trending')
+def trending():
+    """Most-viewed articles over the last week, as JSON for the homepage strip."""
+    try:
+        since = datetime.now(timezone.utc) - timedelta(days=7)
+        stats = (ArticleStat.query
+                 .filter(ArticleStat.last_viewed_at >= since)
+                 .order_by(ArticleStat.view_count.desc())
+                 .limit(20).all())
+        results = []
+        for stat in stats:
+            art = CommunityArticle.query.filter_by(article_hash_id=stat.article_hash_id).first()
+            if art:
+                title, source = art.title, (art.author.name if art.author else art.source_name)
+            else:
+                cached = MASTER_ARTICLE_STORE.get(stat.article_hash_id)
+                if not cached:
+                    continue  # article aged out of the cache; skip rather than show a dead row
+                title = cached.get('title')
+                source = (cached.get('source') or {}).get('name', 'Unknown')
+            results.append({
+                "title": title,
+                "source": source,
+                "views": stat.view_count,
+                "url": url_for('article_detail', article_hash_id=stat.article_hash_id),
+            })
+            if len(results) >= 5:
+                break
+        return jsonify({"success": True, "articles": results})
+    except Exception as e:
+        app.logger.error(f"Trending lookup failed: {e}", exc_info=True)
+        return jsonify({"success": True, "articles": []})
+
+
+@app.route('/account/export')
+@login_required
+def export_my_data():
+    """Download everything this account holds, as JSON."""
+    try:
+        user = User.query.get(session['user_id'])
+        if not user:
+            abort(404)
+        payload = {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "account": {
+                "name": user.name,
+                "username": user.username,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+            },
+            "articles": [{
+                "title": a.title,
+                "description": a.description,
+                "full_text": a.full_text,
+                "published_at": a.published_at.isoformat() if a.published_at else None,
+                "url": url_for('article_detail', article_hash_id=a.article_hash_id, _external=True),
+            } for a in user.articles],
+            "comments": [{
+                "content": c.content,
+                "timestamp": c.timestamp.isoformat() if c.timestamp else None,
+            } for c in user.comments],
+            "bookmarks": [{
+                "title": b.title_cache,
+                "source": b.source_name_cache,
+                "bookmarked_at": b.bookmarked_at.isoformat() if b.bookmarked_at else None,
+                "url": url_for('article_detail', article_hash_id=b.article_hash_id, _external=True),
+            } for b in user.bookmarks],
+        }
+        filename = f"brieflyai-export-{user.username}-{datetime.now(timezone.utc).date()}.json"
+        return Response(
+            json.dumps(payload, indent=2),
+            mimetype='application/json',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    except Exception as e:
+        app.logger.error(f"Data export failed: {e}", exc_info=True)
+        flash("Could not build your export right now. Please try again.", "danger")
+        return redirect(url_for('profile'))
+
+
+@app.route('/account/delete', methods=['POST'])
+@login_required
+@rate_limit(3, 3600, scope='delete_account')
+def delete_account():
+    """
+    Permanently delete the account. Requires the password again, so a stolen session
+    alone can't destroy someone's data.
+    """
+    user = User.query.get(session['user_id'])
+    if not user:
+        session.clear()
+        return redirect(url_for('index'))
+
+    password = request.form.get('password', '')
+    if not password or not check_password_hash(user.password_hash, password):
+        flash("Password incorrect. Your account has not been deleted.", "danger")
+        return redirect(url_for('profile'))
+
+    username = user.username
+    try:
+        # Comments/articles/bookmarks/votes cascade via the relationships.
+        db.session.delete(user)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Account deletion failed for {username}: {e}", exc_info=True)
+        flash("Could not delete your account right now. Please try again.", "danger")
+        return redirect(url_for('profile'))
+
+    session.clear()
+    app.logger.info(f"Account deleted: {username}")
+    flash("Your account and all associated data have been permanently deleted.", "info")
+    return redirect(url_for('index'))
+
+
 @app.route('/healthz')
 def health_check():
     """Liveness/readiness probe for the host platform."""
@@ -2160,6 +2494,10 @@ def health_check():
         code = 503
     status["ai"] = "ok" if groq_client else "disabled"
     status["news_api"] = "ok" if newsapi else "disabled"
+    status["caches"] = {
+        "article_store": MASTER_ARTICLE_STORE.stats(),
+        "api_cache": API_CACHE.stats(),
+    }
     return jsonify(status), code
 
 # ==============================================================================
@@ -3022,6 +3360,10 @@ BASE_HTML_TEMPLATE = """
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <p class="small text-muted d-flex align-items-center gap-2 mb-3" id="draftStatus" hidden>
+                        <i class="fas fa-cloud-arrow-up" aria-hidden="true"></i><span id="draftStatusText">Draft saved</span>
+                        <button type="button" class="link-btn ms-auto" id="discardDraftBtn">Discard draft</button>
+                    </p>
                     <form id="addArticleForm" action="{{ url_for('post_article') }}" method="POST">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="mb-3"><label for="articleTitle" class="form-label">Article Title</label><input type="text" id="articleTitle" name="title" class="form-control" required></div>
@@ -3436,8 +3778,92 @@ BASE_HTML_TEMPLATE = """
                 darkModeToggle.addEventListener('click', () => {
                     applyTheme(body.classList.contains('dark-mode') ? 'disabled' : 'enabled');
                 });
+                // First visit only: follow the OS setting rather than defaulting to light.
+                try {
+                    if (!localStorage.getItem('darkMode')) {
+                        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                            applyTheme('enabled');
+                        }
+                    }
+                } catch (e) { /* storage blocked - keep the server-rendered theme */ }
+
                 updateThemeUI();
             }
+
+            // Draft autosave for the article composer, so a mis-click or refresh
+            // doesn't discard a long post.
+            (function () {
+                var form = document.getElementById('addArticleForm');
+                var statusEl = document.getElementById('draftStatus');
+                if (!form || !statusEl) { return; }
+                var KEY = 'brieflyai:articleDraft';
+                var fields = ['title', 'description', 'sourceName', 'imageUrl', 'content'];
+                var statusText = document.getElementById('draftStatusText');
+                var submitted = false;
+
+                function fieldEl(name) { return form.querySelector('[name="' + name + '"]'); }
+
+                function restore() {
+                    try {
+                        var raw = localStorage.getItem(KEY);
+                        if (!raw) { return; }
+                        var draft = JSON.parse(raw);
+                        var restoredAny = false;
+                        fields.forEach(function (f) {
+                            var el = fieldEl(f);
+                            if (el && draft[f]) { el.value = draft[f]; restoredAny = true; }
+                        });
+                        if (restoredAny) {
+                            statusEl.hidden = false;
+                            statusText.textContent = 'Unsent draft restored';
+                        }
+                    } catch (e) { /* corrupt draft - ignore it */ }
+                }
+
+                var save = BrieflyAI.debounce(function () {
+                    if (submitted) { return; }
+                    var draft = {};
+                    var hasContent = false;
+                    fields.forEach(function (f) {
+                        var el = fieldEl(f);
+                        if (el && el.value.trim()) { draft[f] = el.value; hasContent = true; }
+                    });
+                    try {
+                        if (hasContent) {
+                            localStorage.setItem(KEY, JSON.stringify(draft));
+                            statusEl.hidden = false;
+                            statusText.textContent = 'Draft saved';
+                        } else {
+                            localStorage.removeItem(KEY);
+                            statusEl.hidden = true;
+                        }
+                    } catch (e) { /* storage full or blocked */ }
+                }, 700);
+
+                fields.forEach(function (f) {
+                    var el = fieldEl(f);
+                    if (el) { el.addEventListener('input', save); }
+                });
+
+                form.addEventListener('submit', function () {
+                    submitted = true;
+                    try { localStorage.removeItem(KEY); } catch (e) {}
+                });
+
+                var discard = document.getElementById('discardDraftBtn');
+                if (discard) {
+                    discard.addEventListener('click', function () {
+                        try { localStorage.removeItem(KEY); } catch (e) {}
+                        fields.forEach(function (f) {
+                            var el = fieldEl(f);
+                            if (el) { el.value = el.name === 'sourceName' ? 'Community Post' : ''; }
+                        });
+                        statusEl.hidden = true;
+                    });
+                }
+
+                restore();
+            })();
 
             document.querySelectorAll('#alert-placeholder .alert').forEach(function (alert) {
                 setTimeout(function () {
@@ -3644,6 +4070,13 @@ INDEX_HTML_TEMPLATE = """
             </div>
         </article>
         {% endif %}
+
+        <section class="recent-strip" id="trendingStrip" hidden aria-labelledby="trendingHeading">
+            <div class="recent-strip__head">
+                <h2 class="section-heading h5 mb-0" id="trendingHeading"><i class="fas fa-arrow-trend-up me-2" aria-hidden="true"></i>Trending this week</h2>
+            </div>
+            <div class="recent-strip__list" id="trendingList"></div>
+        </section>
 
         <section class="recent-strip" id="recentStrip" hidden aria-labelledby="recentStripHeading">
             <div class="recent-strip__head">
@@ -3904,6 +4337,34 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
         render();
+    })();
+
+    /* --- Trending strip (hidden entirely when there is nothing to show) --- */
+    (function () {
+        var strip = document.getElementById('trendingStrip');
+        var list = document.getElementById('trendingList');
+        if (!strip || !list) { return; }
+        fetch('{{ url_for("trending") }}', { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data || !data.success || !data.articles || !data.articles.length) { return; }
+                data.articles.forEach(function (item) {
+                    var a = document.createElement('a');
+                    a.className = 'recent-item';
+                    a.href = item.url;
+                    var h3 = document.createElement('h3');
+                    h3.className = 'recent-item__title';
+                    h3.textContent = item.title;          // textContent: never trust server text as markup
+                    var span = document.createElement('span');
+                    span.className = 'recent-item__source';
+                    span.textContent = item.source + ' \u00b7 ' + item.views + (item.views === 1 ? ' view' : ' views');
+                    a.appendChild(h3); a.appendChild(span);
+                    list.appendChild(a);
+                });
+                strip.hidden = false;
+                if (BrieflyAI.initScrollReveal) { BrieflyAI.initScrollReveal(strip); }
+            })
+            .catch(function () { /* trending is a nicety; stay silent on failure */ });
     })();
 
     const isUserLoggedInForHomepage = {{ 'true' if session.user_id else 'false' }};
@@ -4912,6 +5373,52 @@ PROFILE_HTML_TEMPLATE = """
                     <div class="state-card-actions"><button type="button" class="btn btn-primary-modal" data-bs-toggle="modal" data-bs-target="#addArticleModal"><i class="fas fa-pen-to-square me-2" aria-hidden="true"></i>Write a Post</button></div>
                 </div>
             {% endif %}
+        </div>
+    </div>
+</div>
+<section class="mt-5 pt-4 border-top" aria-labelledby="accountHeading">
+    <h2 class="section-heading h5 mb-3" id="accountHeading"><i class="fas fa-user-gear me-2" aria-hidden="true"></i>Your account &amp; data</h2>
+    <div class="row g-3">
+        <div class="col-md-6 d-flex">
+            <div class="contact-card text-start w-100">
+                <h3 class="h6 mb-2"><i class="fas fa-download me-2" aria-hidden="true"></i>Download your data</h3>
+                <p class="small text-muted mb-3">Get a JSON copy of your profile, articles, comments and bookmarks.</p>
+                <a href="{{ url_for('export_my_data') }}" class="btn btn-sm btn-outline-primary">Export my data</a>
+            </div>
+        </div>
+        <div class="col-md-6 d-flex">
+            <div class="contact-card text-start w-100">
+                <h3 class="h6 mb-2"><i class="fas fa-triangle-exclamation me-2" aria-hidden="true"></i>Delete your account</h3>
+                <p class="small text-muted mb-3">Permanently removes your account, articles, comments and bookmarks. This cannot be undone.</p>
+                <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">Delete account</button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="modal fade" id="deleteAccountModal" tabindex="-1" aria-hidden="true" aria-labelledby="deleteAccountLabel">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('delete_account') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header border-0 pb-0">
+                    <h2 class="modal-title h5" id="deleteAccountLabel">Delete your account?</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This permanently deletes your account and everything attached to it &mdash; articles, comments and bookmarks. It cannot be undone.</p>
+                    <p class="small text-muted">Consider <a href="{{ url_for('export_my_data') }}">exporting your data</a> first.</p>
+                    <label for="deleteAccountPassword" class="form-label fw-medium">Confirm your password</label>
+                    <div class="input-group-icon">
+                        <i class="fas fa-lock input-icon" aria-hidden="true"></i>
+                        <input type="password" class="form-control" id="deleteAccountPassword" name="password" required autocomplete="current-password">
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete permanently</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
