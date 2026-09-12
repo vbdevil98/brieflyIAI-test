@@ -12,6 +12,8 @@ import logging
 import urllib.parse
 import secrets
 import re
+import hmac
+import base64
 import threading
 from collections import defaultdict, deque, OrderedDict
 from datetime import datetime, timedelta, timezone
@@ -606,6 +608,52 @@ class ArticleStat(db.Model):
     last_viewed_at = db.Column(db.DateTime, nullable=True, index=True)
 
 
+# --- Advertising -------------------------------------------------------------
+# Ads only render when a publisher ID is configured AND ads are switched on. Until
+# AdSense approves the site its units render blank, so ADS_PLACEHOLDER lets you see
+# and position the slots during development without shipping empty boxes to readers.
+ADSENSE_CLIENT_ID = os.environ.get('ADSENSE_CLIENT_ID', 'ca-pub-6975904325280886').strip()
+ADSENSE_SLOT_INFEED = os.environ.get('ADSENSE_SLOT_INFEED', '').strip()
+ADSENSE_SLOT_ARTICLE = os.environ.get('ADSENSE_SLOT_ARTICLE', '').strip()
+ADS_ENABLED = (os.environ.get('ADS_ENABLED', 'false').lower() in ('1', 'true', 'yes')
+               and bool(ADSENSE_CLIENT_ID))
+ADS_PLACEHOLDER = os.environ.get('ADS_PLACEHOLDER', 'false').lower() in ('1', 'true', 'yes')
+
+
+def ads_active():
+    """True when a non-paying reader should actually see ad slots."""
+    return (ADS_ENABLED or ADS_PLACEHOLDER) and not is_premium()
+
+
+def plan_features(plan_key):
+    """
+    Plan benefits, adjusted to what the site actually delivers right now.
+
+    'Ad-free reading' is only advertised when ads are genuinely running -- otherwise
+    the plan would be selling the removal of something that isn't there.
+    """
+    plan = PLANS[plan_key]
+    features = list(plan['features'])
+    if plan_key in PAID_PLANS and not (ADS_ENABLED or ADS_PLACEHOLDER):
+        features = [f for f in features if 'ad-free' not in f.lower()]
+    return features
+
+
+class Payment(db.Model):
+    """One row per payment attempt, so every activation is auditable."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True, index=True)
+    plan = db.Column(db.String(20), nullable=False)
+    billing_period = db.Column(db.String(10), nullable=False, default='monthly')
+    amount_paise = db.Column(db.Integer, nullable=False)
+    currency = db.Column(db.String(10), nullable=False, default='INR')
+    provider = db.Column(db.String(30), nullable=False, default='razorpay')
+    order_id = db.Column(db.String(120), nullable=True, index=True)
+    payment_id = db.Column(db.String(120), nullable=True, unique=True, index=True)
+    status = db.Column(db.String(20), nullable=False, default='created')  # created|paid|failed
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class Subscription(db.Model):
     """
     A user's paid plan.
@@ -1157,7 +1205,13 @@ def inject_global_vars():
             'groq_client': groq_client is not None,
             'is_premium': is_premium(),
             'current_plan': current_plan(),
-            'plans': PLANS}
+            'plans': PLANS,
+            'ads_active': ads_active(),
+            'ads_placeholder': ADS_PLACEHOLDER and not ADS_ENABLED,
+            'adsense_client': ADSENSE_CLIENT_ID,
+            'adsense_slot_infeed': ADSENSE_SLOT_INFEED,
+            'adsense_slot_article': ADSENSE_SLOT_ARTICLE,
+            'payments_enabled': PAYMENTS_ENABLED}
 
 MAX_PAGE = 10000  # guards against ?page=999999999 style requests
 
@@ -2562,41 +2616,236 @@ def storage_report():
 
 @app.route('/pricing')
 def pricing():
+    # Features are filtered to what the site actually delivers today.
+    display_plans = {}
+    for key, plan in PLANS.items():
+        entry = dict(plan)
+        entry['features'] = plan_features(key)
+        display_plans[key] = entry
     return render_template("PRICING_HTML_TEMPLATE",
-                           plans=PLANS,
+                           plans=display_plans,
                            active_plan=current_plan()['key'])
+
+
+# ==============================================================================
+# --- Payments (Razorpay) ---
+#
+# Security model:
+#   * The browser NEVER tells the server that a payment succeeded. It can only hand
+#     back a signature, which the server recomputes with the key secret.
+#   * The webhook is the authoritative path; it is signed by Razorpay and verified
+#     here. The browser callback is a convenience so the user sees success promptly.
+#   * Both paths are idempotent, because Razorpay retries webhooks.
+# ==============================================================================
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '').strip()
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '').strip()
+RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '').strip()
+PAYMENTS_ENABLED = bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
+RAZORPAY_API = 'https://api.razorpay.com/v1'
+
+
+def _razorpay_auth_header():
+    token = base64.b64encode(f"{RAZORPAY_KEY_ID}:{RAZORPAY_KEY_SECRET}".encode()).decode()
+    return {'Authorization': f'Basic {token}', 'Content-Type': 'application/json'}
+
+
+def _plan_amount(plan_key, period):
+    plan = PLANS.get(plan_key)
+    if not plan or plan_key not in PAID_PLANS:
+        return None
+    return plan.get('yearly_paise') if period == 'yearly' else plan.get('price_paise')
+
+
+def _activate_subscription(user_id, plan_key, period, provider_ref, provider='razorpay'):
+    """Grant or extend a plan. Safe to call more than once for the same payment."""
+    days = 365 if period == 'yearly' else 30
+    sub = Subscription.query.filter_by(user_id=user_id).first()
+    now = datetime.now(timezone.utc)
+    if not sub:
+        sub = Subscription(user_id=user_id)
+        db.session.add(sub)
+    # Extend from the existing expiry if the plan is still live, so renewing early
+    # never costs the user days they already paid for.
+    base = now
+    if sub.expires_at and sub.status == 'active':
+        existing = sub.expires_at if sub.expires_at.tzinfo else sub.expires_at.replace(tzinfo=timezone.utc)
+        if existing > now:
+            base = existing
+    sub.plan = plan_key
+    sub.status = 'active'
+    sub.billing_period = period
+    sub.started_at = sub.started_at or now
+    sub.expires_at = base + timedelta(days=days)
+    sub.provider = provider
+    sub.provider_ref = provider_ref
+    db.session.commit()
+    app.logger.info(f"Subscription activated: user={user_id} plan={plan_key} until {sub.expires_at}")
+    return sub
 
 
 @app.route('/billing/checkout', methods=['POST'])
 @login_required
 @rate_limit(10, 600, scope='checkout')
 def billing_checkout():
-    """
-    Placeholder checkout.
+    """Create a Razorpay order and hand the browser what it needs to open checkout."""
+    payload = request.get_json(silent=True) or request.form
+    plan_key = (payload.get('plan') or '').strip()
+    period = (payload.get('period') or 'monthly').strip()
+    if period not in ('monthly', 'yearly'):
+        period = 'monthly'
 
-    This deliberately does NOT take money. Wiring a real gateway means:
-      1. Create a Razorpay (or Stripe) subscription plan matching PLANS above.
-      2. Here: create an order/subscription server-side and return its id.
-      3. Client: open the gateway's checkout widget with that id.
-      4. Add a webhook endpoint that verifies the payment signature and only then
-         sets Subscription.status = 'active' -- never trust the browser for this.
-      5. Handle renewal, failure and cancellation webhooks.
-    Until then this returns a clear "not connected" response rather than pretending.
-    """
-    plan_key = (request.form.get('plan') or request.json.get('plan') if request.is_json else request.form.get('plan')) or ''
-    plan = PLANS.get(plan_key)
-    if not plan or plan_key not in PAID_PLANS:
+    amount = _plan_amount(plan_key, period)
+    if amount is None:
         return jsonify({"success": False, "error": "Unknown plan."}), 400
 
-    app.logger.info(f"Checkout requested for plan={plan_key} by user {session.get('user_id')}")
+    if not PAYMENTS_ENABLED:
+        return jsonify({
+            "success": False, "payment_configured": False,
+            "error": "Payments aren't configured on this server yet.",
+        }), 501
+
+    try:
+        resp = requests.post(
+            f"{RAZORPAY_API}/orders",
+            headers=_razorpay_auth_header(),
+            json={
+                "amount": amount,               # paise
+                "currency": "INR",
+                "receipt": f"sub_{session['user_id']}_{int(time.time())}",
+                "notes": {"plan": plan_key, "period": period, "user_id": str(session['user_id'])},
+            },
+            timeout=int(os.environ.get('PAYMENT_TIMEOUT_SECONDS', '15')))
+        resp.raise_for_status()
+        order = resp.json()
+    except Exception as e:
+        app.logger.error(f"Razorpay order creation failed: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Could not start checkout. Please try again."}), 502
+
+    try:
+        db.session.add(Payment(
+            user_id=session['user_id'], plan=plan_key, billing_period=period,
+            amount_paise=amount, order_id=order.get('id'), status='created'))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Could not record payment order: {e}", exc_info=True)
+
+    user = User.query.get(session['user_id'])
     return jsonify({
-        "success": False,
-        "payment_configured": False,
-        "plan": plan_key,
-        "amount_paise": plan['price_paise'],
+        "success": True,
+        "key_id": RAZORPAY_KEY_ID,          # publishable; the secret never leaves the server
+        "order_id": order.get('id'),
+        "amount": amount,
         "currency": "INR",
-        "error": "Payments aren't connected yet. Add a payment gateway to enable checkout.",
-    }), 501
+        "plan": plan_key,
+        "period": period,
+        "name": "BrieflyAI",
+        "description": f"{PLANS[plan_key]['name']} - {period}",
+        "prefill": {"name": user.name if user else "", "email": ""},
+    })
+
+
+@app.route('/billing/verify', methods=['POST'])
+@login_required
+@rate_limit(20, 600, scope='verify')
+def billing_verify():
+    """
+    Verify the signature Razorpay's checkout widget returns.
+
+    The signature is HMAC-SHA256(order_id|payment_id) using the key secret, so a
+    browser cannot forge it. This gives the user instant feedback; the webhook below
+    remains the authoritative record.
+    """
+    if not PAYMENTS_ENABLED:
+        return jsonify({"success": False, "error": "Payments aren't configured."}), 501
+
+    data = request.get_json(silent=True) or {}
+    order_id = data.get('razorpay_order_id', '')
+    payment_id = data.get('razorpay_payment_id', '')
+    signature = data.get('razorpay_signature', '')
+    if not all([order_id, payment_id, signature]):
+        return jsonify({"success": False, "error": "Incomplete payment details."}), 400
+
+    expected = hmac.new(RAZORPAY_KEY_SECRET.encode(),
+                        f"{order_id}|{payment_id}".encode(),
+                        hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        app.logger.warning(f"Payment signature mismatch for order {order_id} (user {session.get('user_id')})")
+        return jsonify({"success": False, "error": "Payment could not be verified."}), 400
+
+    record = Payment.query.filter_by(order_id=order_id).first()
+    if not record or record.user_id != session.get('user_id'):
+        app.logger.warning(f"Payment record mismatch for order {order_id}")
+        return jsonify({"success": False, "error": "Payment could not be matched to your account."}), 400
+
+    try:
+        if record.status != 'paid':
+            record.status = 'paid'
+            record.payment_id = payment_id
+            db.session.commit()
+            _activate_subscription(record.user_id, record.plan, record.billing_period, payment_id)
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Activation after verify failed for {order_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Payment received but activation failed. We'll fix this shortly."}), 500
+
+    return jsonify({"success": True, "plan": record.plan, "redirect_url": url_for('pricing')})
+
+
+@app.route('/billing/webhook', methods=['POST'])
+@csrf_exempt
+def billing_webhook():
+    """
+    Razorpay -> server notifications. This is the authoritative activation path.
+
+    CSRF-exempt because it is server-to-server with no session or cookie; its
+    authenticity comes from the HMAC signature over the raw request body instead.
+    """
+    if not RAZORPAY_WEBHOOK_SECRET:
+        app.logger.error("Webhook received but RAZORPAY_WEBHOOK_SECRET is not set.")
+        return jsonify({"status": "not configured"}), 503
+
+    signature = request.headers.get('X-Razorpay-Signature', '')
+    raw_body = request.get_data()  # must hash the RAW bytes, not a re-serialised dict
+    expected = hmac.new(RAZORPAY_WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
+    if not signature or not hmac.compare_digest(expected, signature):
+        app.logger.warning("Rejected webhook with an invalid signature.")
+        return jsonify({"status": "invalid signature"}), 400
+
+    try:
+        event = json.loads(raw_body.decode('utf-8'))
+    except Exception:
+        return jsonify({"status": "bad payload"}), 400
+
+    event_type = event.get('event', '')
+    entity = (((event.get('payload') or {}).get('payment') or {}).get('entity')) or {}
+    payment_id = entity.get('id')
+    order_id = entity.get('order_id')
+
+    if event_type not in ('payment.captured', 'order.paid'):
+        return jsonify({"status": "ignored", "event": event_type}), 200
+
+    try:
+        # Idempotent: Razorpay retries, and the same payment may arrive several times.
+        if payment_id and Payment.query.filter_by(payment_id=payment_id, status='paid').first():
+            return jsonify({"status": "already processed"}), 200
+
+        record = Payment.query.filter_by(order_id=order_id).first()
+        if not record:
+            app.logger.warning(f"Webhook for unknown order {order_id}")
+            return jsonify({"status": "unknown order"}), 200
+
+        record.status = 'paid'
+        record.payment_id = payment_id
+        db.session.commit()
+        if record.user_id:
+            _activate_subscription(record.user_id, record.plan, record.billing_period, payment_id)
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Webhook processing failed for order {order_id}: {e}", exc_info=True)
+        # 500 asks Razorpay to retry, which is what we want here.
+        return jsonify({"status": "error"}), 500
 
 
 @app.route('/billing/demo-activate', methods=['POST'])
@@ -2656,6 +2905,8 @@ def health_check():
         status["database"] = "error"
         code = 503
     status["ai"] = "ok" if groq_client else "disabled"
+    status["ads"] = "on" if ADS_ENABLED else ("placeholder" if ADS_PLACEHOLDER else "off")
+    status["payments"] = "configured" if PAYMENTS_ENABLED else "not configured"
     status["news_source"] = "rss"
     status["rss_feeds"] = len(_rss_feed_urls())
     status["caches"] = {
@@ -3302,6 +3553,17 @@ BASE_HTML_TEMPLATE = """
         }
 
         /* ==========================================================================
+           AD SLOTS
+           ========================================================================== */
+        .ad-slot { display: block; margin: 1.75rem 0; text-align: center; min-height: 100px; }
+        .ad-slot__label { display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; color: var(--text-muted-color); opacity: 0.7; margin-bottom: 0.4rem; }
+        .ad-slot ins { display: block; }
+        .ad-slot--infeed { grid-column: 1 / -1; }
+        .ad-slot__placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; min-height: 120px; border: 1px dashed var(--card-border-color); border-radius: var(--border-radius-md); background: var(--light-bg); color: var(--text-muted-color); font-size: 0.8rem; font-weight: 600; }
+        .ad-slot__placeholder i { font-size: 1.3rem; opacity: 0.6; }
+        .ad-slot-col { width: 100%; }
+
+        /* ==========================================================================
            PRICING / PLANS
            ========================================================================== */
         .billing-toggle { display: inline-flex; gap: 0.25rem; padding: 0.3rem; background: var(--card-bg); border: 1px solid var(--card-border-color); border-radius: var(--border-radius-pill); margin: 0 auto 0.5rem; }
@@ -3842,7 +4104,11 @@ BASE_HTML_TEMPLATE = """
         if (BrieflyAI._deferredLoaded) { return; }
         BrieflyAI._deferredLoaded = true;
         // Ad-free is the headline benefit of a paid plan: never load the ad script.
-        var adTags = BrieflyAI.isPremium ? [] : ['https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6975904325280886'];
+        // Load the ad script only when ads are actually switched on and the reader
+        // isn't paying. Loading it with no units on the page just wasted a request.
+        var adTags = ({{ 'true' if ads_active else 'false' }} && !{{ 'true' if ads_placeholder else 'false' }})
+            ? ['https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}']
+            : [];
         window.dataLayer = window.dataLayer || [];
         window.gtag = function () { window.dataLayer.push(arguments); };
         window.gtag('js', new Date());
@@ -4180,6 +4446,15 @@ BASE_HTML_TEMPLATE = """
         if ('requestIdleCallback' in window) { requestIdleCallback(BrieflyAI.loadDeferredScripts, { timeout: 3000 }); }
         else { setTimeout(BrieflyAI.loadDeferredScripts, 1800); }
 
+        // Hand any rendered ad units to AdSense.
+        try {
+            var units = document.querySelectorAll('ins.adsbygoogle');
+            if (units.length) {
+                window.adsbygoogle = window.adsbygoogle || [];
+                units.forEach(function () { window.adsbygoogle.push({}); });
+            }
+        } catch (e) { console.warn('Ad init skipped:', e); }
+
         // Offline support. Registration failures are non-fatal by design.
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(function (err) {
@@ -4505,6 +4780,11 @@ INDEX_HTML_TEMPLATE = """
                     </div>
                 </article>
             </div>
+            {% if ads_active and loop.index == 6 and not loop.last %}
+            <div class="col-12 ad-slot-col">
+                {% with ad_format = 'infeed', ad_slot_id = adsense_slot_infeed %}{% include '_AD_SLOT_TEMPLATE' %}{% endwith %}
+            </div>
+            {% endif %}
             {% endfor %}
         </div>
     {% elif not articles %}
@@ -4793,6 +5073,8 @@ ARTICLE_HTML_TEMPLATE = """
         <hr class="my-4"><h2 class="content-divider-heading">Full Article Content</h2><div class="content-text">{{ article.full_text }}</div>
     {% else %}<div id="apiArticleContent"></div>{% endif %}
     </div>
+
+    {% with ad_format = 'article', ad_slot_id = adsense_slot_article %}{% include '_AD_SLOT_TEMPLATE' %}{% endwith %}
 
     <section class="comment-section mt-5" id="comment-section">
         <div class="comment-toolbar">
@@ -5959,11 +6241,15 @@ PRICING_HTML_TEMPLATE = """
         {% endfor %}
     </div>
 
+    {% if not payments_enabled %}
     <div class="state-card state-card-solid mt-5">
         <div class="state-card-icon state-card-icon-sm"><i class="fas fa-circle-info" aria-hidden="true"></i></div>
-        <h2 class="state-card-title h5">Payments aren't connected yet</h2>
-        <p class="state-card-text">This is the plan model and interface. Hooking up a payment provider is the remaining step before anyone can actually be charged.</p>
+        <h2 class="state-card-title h5">Payments aren't switched on yet</h2>
+        <p class="state-card-text">Checkout is built and ready; it activates once the payment keys are configured on the server.</p>
     </div>
+    {% else %}
+    <p class="text-center text-muted small mt-4 mb-0"><i class="fas fa-lock me-1" aria-hidden="true"></i>Secure payments by Razorpay. Cancel any time.</p>
+    {% endif %}
 
     <section class="mt-5" aria-labelledby="pricingFaq">
         <h2 class="section-heading h4 mb-3" id="pricingFaq">Common questions</h2>
@@ -5977,6 +6263,7 @@ PRICING_HTML_TEMPLATE = """
 {% endblock %}
 
 {% block scripts_extra %}
+{% if payments_enabled %}<script src="https://checkout.razorpay.com/v1/checkout.js" defer></script>{% endif %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     // Monthly / yearly toggle
@@ -6004,30 +6291,100 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Checkout is intentionally not wired to a gateway yet; say so plainly.
+    var paymentsEnabled = {{ 'true' if payments_enabled else 'false' }};
+
+    function currentPeriod() {
+        var active = document.querySelector('.billing-toggle__btn.is-active');
+        return active ? active.dataset.period : 'monthly';
+    }
+
     document.querySelectorAll('.checkout-btn').forEach(function (btn) {
         btn.addEventListener('click', function () {
             var original = btn.innerHTML;
+            var reset = function () { btn.disabled = false; btn.innerHTML = original; };
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
-            var body = new URLSearchParams({ plan: btn.dataset.plan, csrf_token: BrieflyAI.csrfToken });
-            fetch('{{ url_for("billing_checkout") }}', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'X-CSRFToken': BrieflyAI.csrfToken },
-                body: body.toString()
-            })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                BrieflyAI.showToast(data.error || 'Checkout is not available yet.', 'info', 6000);
-            })
-            .catch(function () { BrieflyAI.showToast('Could not start checkout.', 'danger'); })
-            .finally(function () { btn.disabled = false; btn.innerHTML = original; });
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Starting...';
+
+            BrieflyAI.postJSON('{{ url_for("billing_checkout") }}',
+                               { plan: btn.dataset.plan, period: currentPeriod() })
+                .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                .then(function (res) {
+                    var data = res.data;
+                    if (!res.ok || !data.success) {
+                        BrieflyAI.showToast(data.error || 'Could not start checkout.', 'info', 6000);
+                        reset();
+                        return;
+                    }
+                    if (!paymentsEnabled || typeof Razorpay === 'undefined') {
+                        BrieflyAI.showToast('Payment window could not load. Please refresh and try again.', 'danger');
+                        reset();
+                        return;
+                    }
+
+                    var rzp = new Razorpay({
+                        key: data.key_id,
+                        amount: data.amount,
+                        currency: data.currency,
+                        name: data.name,
+                        description: data.description,
+                        order_id: data.order_id,
+                        prefill: data.prefill,
+                        theme: { color: '#4338CA' },
+                        modal: { ondismiss: reset },
+                        handler: function (response) {
+                            // The browser only relays the signature; the server verifies it.
+                            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Confirming...';
+                            BrieflyAI.postJSON('{{ url_for("billing_verify") }}', response)
+                                .then(function (r) { return r.json(); })
+                                .then(function (verified) {
+                                    if (verified.success) {
+                                        BrieflyAI.showToast('Payment confirmed. Welcome aboard!', 'success', 4000);
+                                        setTimeout(function () { window.location.reload(); }, 1200);
+                                    } else {
+                                        BrieflyAI.showToast(verified.error || 'We could not confirm that payment. If you were charged, it will be applied shortly.', 'warning', 9000);
+                                        reset();
+                                    }
+                                })
+                                .catch(function () {
+                                    // Payment may still have gone through; the webhook is authoritative.
+                                    BrieflyAI.showToast('Payment taken, confirming in the background. Refresh in a moment.', 'info', 9000);
+                                    reset();
+                                });
+                        }
+                    });
+                    rzp.on('payment.failed', function (resp) {
+                        BrieflyAI.showToast((resp.error && resp.error.description) || 'Payment failed.', 'danger', 7000);
+                        reset();
+                    });
+                    rzp.open();
+                })
+                .catch(function () { BrieflyAI.showToast('Could not start checkout.', 'danger'); reset(); });
         });
     });
 });
 </script>
 {% endblock %}
+"""
+_AD_SLOT_TEMPLATE = """
+{% if ads_active %}
+<aside class="ad-slot ad-slot--{{ ad_format | default('infeed', true) }}" aria-label="Advertisement">
+    <span class="ad-slot__label">Advertisement</span>
+    {% if ads_placeholder %}
+        {# Dev mode: shows where the unit sits without shipping an empty AdSense box. #}
+        <div class="ad-slot__placeholder">
+            <i class="fas fa-rectangle-ad" aria-hidden="true"></i>
+            <span>Ad slot &middot; {{ ad_format | default('infeed', true) }}</span>
+        </div>
+    {% else %}
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="{{ adsense_client }}"
+             {% if ad_slot_id %}data-ad-slot="{{ ad_slot_id }}"{% endif %}
+             data-ad-format="{{ 'fluid' if ad_format == 'infeed' else 'auto' }}"
+             data-full-width-responsive="true"></ins>
+    {% endif %}
+</aside>
+{% endif %}
 """
 
 # ==============================================================================
@@ -6048,6 +6405,7 @@ template_storage['_COMMENT_TEMPLATE'] = _COMMENT_TEMPLATE
 template_storage['PUBLIC_PROFILE_HTML_TEMPLATE'] = PUBLIC_PROFILE_HTML_TEMPLATE
 template_storage['OFFLINE_TEMPLATE'] = OFFLINE_TEMPLATE
 template_storage['PRICING_HTML_TEMPLATE'] = PRICING_HTML_TEMPLATE
+template_storage['_AD_SLOT_TEMPLATE'] = _AD_SLOT_TEMPLATE
 
 
 # ==============================================================================
